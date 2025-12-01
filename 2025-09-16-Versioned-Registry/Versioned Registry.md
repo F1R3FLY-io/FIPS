@@ -18,7 +18,7 @@ rho:serve:<serve version>:<public key>:<project id>:<project version>
 
 and new methods for managing code in this namespace.
 
-The `lib version` and `serve version` allow us to change the registry API for these services (see [Versioning the Registry API itself](#versioning-the-registry-api-itself) below).
+The `lib version` and `serve version` allow us to change the registry API for these services (see the section "Versioning the Registry API itself" below.)
 
 ## `lib`
 
@@ -50,7 +50,7 @@ Note that in the last case, one would need to use reflection to discover the API
 
 Preliminary releases like `2.6.3-alpha` can never be specified with an asterisk.
 
-# Versioning the Registry API itself {#versioning-the-registry-api-itself}
+# Versioning the Registry API itself
 
 At the moment we provide `insertArbitrary` and `insertSigned` via the `rho:registry` namespace.  If we ever want to change the interface, we'll need a principled way to do it.  We propose treating the name "registry" as though it's a project id and introducing a version into the URL, e.g. `rho:registry:1.0.0`.  Like the design above, the returned channel expects a channel on which to send the endpoint and a notification channel for deprecation alerts:
 
