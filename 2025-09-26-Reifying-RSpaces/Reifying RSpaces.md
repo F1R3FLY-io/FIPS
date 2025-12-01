@@ -18,51 +18,51 @@ The current RSpace implementation (`ISpace` trait in `rspace_interface.rs:52`) d
 
 Methods for managing persistent state and snapshots:
 
-- **`create_checkpoint()`** (`rspace_interface.rs:57`) \- Creates a persistent checkpoint by writing the current store state into the history trie, returning a `Checkpoint` with the root hash.  
+- **`create_checkpoint()`** (`rspace_interface.rs:57`) - Creates a persistent checkpoint by writing the current store state into the history trie, returning a `Checkpoint` with the root hash.  
     
-- **`create_soft_checkpoint()`** (`rspace_interface.rs:89`) \- Creates a fast, in-memory checkpoint without persisting to the history trie. Significantly faster than `create_checkpoint()` as it avoids the computationally expensive trie construction.  
+- **`create_soft_checkpoint()`** (`rspace_interface.rs:89`) - Creates a fast, in-memory checkpoint without persisting to the history trie. Significantly faster than `create_checkpoint()` as it avoids the computationally expensive trie construction.  
     
-- **`revert_to_soft_checkpoint(checkpoint)`** (`rspace_interface.rs:94`) \- Reverts the store to a previously created soft checkpoint.  
+- **`revert_to_soft_checkpoint(checkpoint)`** (`rspace_interface.rs:94`) - Reverts the store to a previously created soft checkpoint.  
     
-- **`reset(root)`** (`rspace_interface.rs:73`) \- Resets the store to a given BLAKE2b256 hash root, reconstructing state from the history trie.  
+- **`reset(root)`** (`rspace_interface.rs:73`) - Resets the store to a given BLAKE2b256 hash root, reconstructing state from the history trie.  
     
-- **`clear()`** (`rspace_interface.rs:67`) \- Clears the current store without affecting the history trie.
+- **`clear()`** (`rspace_interface.rs:67`) - Clears the current store without affecting the history trie.
 
 ### Replay Methods
 
 Methods for deterministic replay and verification:
 
-- **`rig_and_reset(start_root, log)`** (`rspace_interface.rs:172`) \- Prepares the store for replay by resetting to a starting root and loading an event log.  
+- **`rig_and_reset(start_root, log)`** (`rspace_interface.rs:172`) - Prepares the store for replay by resetting to a starting root and loading an event log.  
     
-- **`rig(log)`** (`rspace_interface.rs:174`) \- Sets up the replay mechanism with an event log.  
+- **`rig(log)`** (`rspace_interface.rs:174`) - Sets up the replay mechanism with an event log.  
     
-- **`check_replay_data()`** (`rspace_interface.rs:176`) \- Verifies that replay data is consistent.  
+- **`check_replay_data()`** (`rspace_interface.rs:176`) - Verifies that replay data is consistent.  
     
-- **`is_replay()`** (`rspace_interface.rs:178`) \- Returns whether the store is in replay mode.  
+- **`is_replay()`** (`rspace_interface.rs:178`) - Returns whether the store is in replay mode.  
     
-- **`update_produce(produce)`** (`rspace_interface.rs:180`) \- Updates the replay state with a produce event.
+- **`update_produce(produce)`** (`rspace_interface.rs:180`) - Updates the replay state with a produce event.
 
 ### Producing Methods
 
 Methods for adding data to the tuple space:
 
-- **`produce(channel, data, persist)`** (`rspace_interface.rs:156`) \- Searches for a continuation with patterns matching the given data at the specified channel. If no match is found, stores the data at the channel. If a match is found, returns the continuation along with matching data. The `persist` flag controls whether data "sticks" in the store when no matches are found.  
+- **`produce(channel, data, persist)`** (`rspace_interface.rs:156`) - Searches for a continuation with patterns matching the given data at the specified channel. If no match is found, stores the data at the channel. If a match is found, returns the continuation along with matching data. The `persist` flag controls whether data "sticks" in the store when no matches are found.  
     
-- **`get_waiting_continuations(channels)`** (`rspace_interface.rs:61`) \- Retrieves all continuations waiting on the given channels. Used internally by `produce` to find continuations that match the produced data (`rspace.rs:571`).  
+- **`get_waiting_continuations(channels)`** (`rspace_interface.rs:61`) - Retrieves all continuations waiting on the given channels. Used internally by `produce` to find continuations that match the produced data (`rspace.rs:571`).  
     
-- **`get_joins(channel)`** (`rspace_interface.rs:63`) \- Retrieves all join patterns (multi-channel operations) associated with a channel. Used internally by `produce` to discover which channel combinations have waiting continuations (`rspace.rs:532`).
+- **`get_joins(channel)`** (`rspace_interface.rs:63`) - Retrieves all join patterns (multi-channel operations) associated with a channel. Used internally by `produce` to discover which channel combinations have waiting continuations (`rspace.rs:532`).
 
 ### Consuming Methods
 
 Methods for retrieving and waiting for data:
 
-- **`consume(channels, patterns, continuation, persist, peeks)`** (`rspace_interface.rs:124`) \- Searches for data matching all patterns at the given channels. If no match is found, stores the continuation and patterns at those channels. If a match is found, returns the continuation with matching data. The `persist` flag controls whether continuations remain when no matches are found.  
+- **`consume(channels, patterns, continuation, persist, peeks)`** (`rspace_interface.rs:124`) - Searches for data matching all patterns at the given channels. If no match is found, stores the continuation and patterns at those channels. If a match is found, returns the continuation with matching data. The `persist` flag controls whether continuations remain when no matches are found.  
     
-- **`install(channels, patterns, continuation)`** (`rspace_interface.rs:163`) \- Permanently installs a continuation at the given channels with the specified patterns.  
+- **`install(channels, patterns, continuation)`** (`rspace_interface.rs:163`) - Permanently installs a continuation at the given channels with the specified patterns.  
     
-- **`consume_result(channels, patterns)`** (`rspace_interface.rs:75`) \- Retrieves matched results for given channels and patterns.  
+- **`consume_result(channels, patterns)`** (`rspace_interface.rs:75`) - Retrieves matched results for given channels and patterns.  
     
-- **`get_data(channel)`** (`rspace_interface.rs:59`) \- Retrieves all data stored at a channel. Used internally by `consume` to find data matching the provided patterns (`rspace.rs:517`).
+- **`get_data(channel)`** (`rspace_interface.rs:59`) - Retrieves all data stored at a channel. Used internally by `consume` to find data matching the provided patterns (`rspace.rs:517`).
 
 ## Understanding the Underlying Data Structure
 
@@ -110,37 +110,39 @@ This invariant is fundamental to the correctness of the tuple space and will be 
 
 Any [agent](https://docs.google.com/document/d/13VvNssV67MslHvxycAgywbODodj1ZIBxbxc-TE3oOBo/edit?tab=t.0#heading=h.5g7i17e5p09f) implementing the correct behavioral type can be used as an RSpace; likewise, any RSpace can be reified into an agent.
 
-`agent Space {`  
-  `// constructs a new space agent`  
-  `// - qualifier is one of "default", "temp", or "seq"`  
-  `// - theory is a MeTTaIL theory describing the data that`  
-  `//   can be sent on channels`  
-  `// - may take arbitrarily many more arguments`  
-  `// - may abort if it doesn't support the qualifier`  
-  `constructor(qualifier, theory, ...) { ... }`
+```
+agent Space {  
+  // constructs a new space agent  
+  // - qualifier is one of "default", "temp", or "seq"  
+  // - theory is a MeTTaIL theory describing the data that  
+  //   can be sent on channels  
+  // - may take arbitrarily many more arguments  
+  // - may abort if it doesn't support the qualifier  
+  constructor(qualifier, theory, ...) { ... }
 
-  `// returns a name`  
-  `// - may abort (e.g. if it runs out of names)`  
-  `method gensym() { ... }`
+  // returns a name  
+  // - may abort (e.g. if it runs out of names)  
+  method gensym() { ... }
 
-  `// implements sending on a channel`  
-  `// - may abort (e.g. if process being sent contains a Seq`  
-  `//   name)`  
-  `method produce(channel, process) { ... }`
+  // implements sending on a channel  
+  // - may abort (e.g. if process being sent contains a Seq  
+  //   name)  
+  method produce(channel, process) { ... }
 
-  `// implements receiving on a join of channels`  
-  `// - listMatcherChannel is a list of pairs (m, c) of processes`  
-  `//   - m is a matcher that takes a process to match and returns`  
-  `//     either None or Some(env), where env is a map from`  
-  `//     string to process`  
-  `//   - c is a channel to listen on`  
-  `// - arrowType is one of the following strings:`  
-  `//   "<-" "<=", "<<-"`  
-  `// - body is a process expecting a map from strings to`  
-  `//   processes`  
-  `// - may abort`  
-  `method consume(listMatcherChannel, arrowType, body) { ... }`  
-`}`
+  // implements receiving on a join of channels  
+  // - listMatcherChannel is a list of pairs (m, c) of processes  
+  //   - m is a matcher that takes a process to match and returns  
+  //     either None or Some(env), where env is a map from  
+  //     string to process  
+  //   - c is a channel to listen on  
+  // - arrowType is one of the following strings:  
+  //   "<-" "<=", "<<-"  
+  // - body is a process expecting a map from strings to  
+  //   processes  
+  // - may abort  
+  method consume(listMatcherChannel, arrowType, body) { ... }  
+}
+```
 
 As the implementation of patterns expands to full spatial-behavioral types in the form of datalog formulae, the matchers will become able to allow tailoring the patterns to both the inner data structure and the theory of the data on the channels.
 
@@ -255,7 +257,7 @@ Consumes go into a bag, as usual, but data goes into a vector DB.  Patterns spec
 
 We should look into [tensor logic](https://arxiv.org/pdf/2510.12269) to see whether and how it can be applied to a vector db.
 
-We should look into exposing nonlinear operations on vectors like majority for binary vectors or using a sigmoid elementwise for pushing elements toward 0 or 1\.
+We should look into exposing nonlinear operations on vectors like majority for binary vectors or using a sigmoid elementwise for pushing elements toward 0 or 1.
 
 #### Others
 
@@ -332,7 +334,7 @@ new HMB(`rho:space:HashMapBagSpace`),
 
 1. Tight coupling: ISpace tightly couples the outer structure (HashMap), inner structure (Vec/bags), and core operations  
 2. Generic parameters leak implementation: C, P, A, K types are hardwired throughout  
-3. HotStore is HashMap-specific: HotStore assumes DashMap\<C, Vec\<Datum\>\> and DashMap, Vec\>\>  
+3. HotStore is HashMap-specific: HotStore assumes DashMap<C, Vec<Datum>> and DashMap, Vec>>  
 4. No abstraction for collection semantics: Bag semantics (Vec) are baked in with no way to swap for Queue, Stack, Set, etc.
 
 ### Proposed Trait Hierarchy
@@ -813,10 +815,10 @@ new HMB(`rho:space:HashMapBagSpace`),
 
 ### Migration Path
 
-1. Phase 1: Extract collection abstractions \- Create DataCollection and ContinuationCollection traits \- Implement BagDataCollection wrapping current Vec\<Datum\> \- Refactor HotStore to use these abstractions  
-2. Phase 2: Extract channel store abstraction \- Create ChannelStore trait \- Implement HashMapChannelStore wrapping current HotStoreState \- Update RSpace to depend on ChannelStore trait  
-3. Phase 3: Split ISpace into SpaceAgent \+ extension traits \- Create minimal SpaceAgent trait \- Create CheckpointableSpace and ReplayableSpace extension traits \- Make current RSpace implement all three  
-4. Phase 4: Implement alternative collection types \- QueueDataCollection, SetDataCollection, CellDataCollection \- Write tests for each  
-5. Phase 5: Implement alternative channel stores \- PathMapChannelStore for MeTTa \- VectorChannelStore for array-based names \- Write tests for each  
-6. Phase 6: Create space factory system \- Implement SpaceFactory trait and registry \- Update Rholang integration to use factory pattern
+1. Phase 1: Extract collection abstractions - Create DataCollection and ContinuationCollection traits - Implement BagDataCollection wrapping current Vec<Datum> - Refactor HotStore to use these abstractions  
+2. Phase 2: Extract channel store abstraction - Create ChannelStore trait - Implement HashMapChannelStore wrapping current HotStoreState - Update RSpace to depend on ChannelStore trait  
+3. Phase 3: Split ISpace into SpaceAgent + extension traits - Create minimal SpaceAgent trait - Create CheckpointableSpace and ReplayableSpace extension traits - Make current RSpace implement all three  
+4. Phase 4: Implement alternative collection types - QueueDataCollection, SetDataCollection, CellDataCollection - Write tests for each  
+5. Phase 5: Implement alternative channel stores - PathMapChannelStore for MeTTa - VectorChannelStore for array-based names - Write tests for each  
+6. Phase 6: Create space factory system - Implement SpaceFactory trait and registry - Update Rholang integration to use factory pattern
 

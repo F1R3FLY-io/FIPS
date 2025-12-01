@@ -55,10 +55,14 @@ Preliminary releases like `2.6.3-alpha` can never be specified with an asterisk.
 At the moment we provide `insertArbitrary` and `insertSigned` via the `rho:registry` namespace.  If we ever want to change the interface, we'll need a principled way to do it.  We propose treating the name "registry" as though it's a project id and introducing a version into the URL, e.g. `rho:registry:1.0.0`.  Like the design above, the returned channel expects a channel on which to send the endpoint and a notification channel for deprecation alerts:
 
 ```
-new getRegistry(`rho:registry:1.*`),    notify, ret in {
-  for (registry <- getRegistry!?(*notify)) {    for (result <- registry!?("insertArbitrary", ...)) {
-      ...    }
-  }}
+new getRegistry(`rho:registry:1.*`),
+    notify, ret in {
+  for (registry <- getRegistry!?(*notify)) {
+    for (result <- registry!?("insertArbitrary", ...)) {
+      ...
+    }
+  }
+}
 ```
 
 # Registry API version 1.x
@@ -66,7 +70,17 @@ new getRegistry(`rho:registry:1.*`),    notify, ret in {
 The name returned from using a registry URL for these namespaces will be listened on by a contract that expects two names.  The first is the name on which the entry point of the contract or library should be sent.  The second is the name on which deprecation notices should be sent. For example, see the use of `getTC` below:
 
 ```
-new getTC(`rho:lib:1.*:0x60605a76f7250c19c19090088fdf9fe0d814554cf3790765bab92a5971de56f5:tempConvert:2.3.*`),    stdout(`rho:io:stdout`),    notify, token in {  for (tempConvert <- getTC!?(*notify)) {    for (f2c, c2f <- tempConvert) {      for (degrees <- f2c!?(-40)) {        stdout!(("It's", degrees, "°C outside!"))      }    }  }}
+new getTC(`rho:lib:1.*:0x60605a76f7250c19c19090088fdf9fe0d814554cf3790765bab92a5971de56f5:tempConvert:2.3.*`),
+    stdout(`rho:io:stdout`),
+    notify, token in {
+  for (tempConvert <- getTC!?(*notify)) {
+    for (f2c, c2f <- tempConvert) {
+      for (degrees <- f2c!?(-40)) {
+        stdout!(("It's", degrees, "°C outside!"))
+      }
+    }
+  }
+}
 ```
 
 ## New registry API calls
