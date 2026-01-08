@@ -78,3 +78,5 @@ When casting from a larger integer type to a smaller one, the cast uses modular 
 # Open Question: Units
 
 There have been some [dramatic failures](https://www.simscale.com/blog/nasa-mars-climate-orbiter-metric/) due to using the wrong units. Should we adopt syntax for specifying units [like F\# does](https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/units-of-measure) as well as the numeric type?  We would only be allowed to add, subtract, multiply, and divide unitful numbers; addition and subtraction would require the arguments to have the same units.  Exponentiation and bitwise operations would only work on unitless numbers.
+
+End line
