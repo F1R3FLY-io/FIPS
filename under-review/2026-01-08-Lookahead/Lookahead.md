@@ -38,7 +38,7 @@ The number of steps should be provided in brackets after the arguments to a send
 
 ## Semantics
 
-The process `P` being sent in `x!(P)[n]` should only contain names belonging to the same RSpace, which we'll call `space`.  Effectively, for each possible trace `t` of length `n` a new, empty RSpace `empty_t` will be created from the space agent of `space`, and the process `P` will be executed along that trace in `empty_t`.  The contents of all the `empty_t` spaces get collected into a `Set` object.  If a process cannot be further reduced before reaching a trace of length `n`, it is still considered part of the contents of `empty_t` and is included in the results.
+The process `P` being sent in `x!(P)[n]` should only contain names belonging to the same RSpace, which we'll call `space`.  It is a runtime error to do otherwise.  Effectively, for each possible trace `t` of length `n` a new, empty RSpace `empty_t` will be created from the space agent of `space`, and the process `P` will be executed along that trace in `empty_t`.  The contents of all the `empty_t` spaces get collected into a `Set` object.  If a process cannot be further reduced before reaching a trace of length `n`, it is still considered part of the contents of `empty_t` and is included in the results.
 
 ## Examples
 
