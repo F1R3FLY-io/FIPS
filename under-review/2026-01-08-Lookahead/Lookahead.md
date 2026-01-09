@@ -4,7 +4,7 @@ L. Gregory Meredith ([firefly.ceo@gmail.com](mailto:firefly.ceo@gmail.com))
 Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io))  
 2026-01-08
 
-This proposal introduces new syntax to speculatively execute a process for `n` steps, taking all possible rewrite paths, and gather the leaves of those paths into a multiset.  Something like this is necessary to trigger process rewriting in terms coming from MeTTaIL theories.  This proposal is isomorphic to the current semantics when `n = 0`.
+This proposal introduces new syntax to speculatively execute a process for `n` steps, taking all possible rewrite paths, and gather the leaves of those paths into a `Set` object.  Something like this is necessary to trigger process rewriting in terms coming from MeTTaIL theories.  This proposal is isomorphic to the current semantics when `n = 0`.
 
 ## Use cases
 
