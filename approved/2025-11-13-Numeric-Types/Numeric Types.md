@@ -17,11 +17,15 @@ Until version 11, ECMAScript supported only 64-bit IEEE-754 floating point value
 
 We propose following this pattern to extend the set of numeric types in Rholang without introducing ambiguity between numbers of different types, accidental coercion, or breaking existing code.
 
-Platforms may not support certain numeric types defined below and should throw an error as early as possible (e.g. before deploying the contract in blockchain applications).  Dynamic casting may throw an error at runtime (causing a deployment to abort in blockchain applications).
+Platforms may not support certain non-integral numeric types defined below and should throw an error as early as possible (e.g. before deploying the contract in blockchain applications).  All integer types must be supported by all platforms.  Some may be optimized to integers natively supported by the platform; the remainder should be emulated.  This emulation is typically very inexpensive for integers.
+
+Dynamic casting may throw an error at runtime (causing a deployment to abort in blockchain applications).
+
+Another design document will propose a protocol by means of which a client can request and obtain numeric support information from a Rholang VM.
 
 ## Default: signed 64-bit integers
 
-So as not to change the semantics of existing code, unqualified numeric literals refer to signed 64-bit integers.
+So as not to change the semantics of existing code, unqualified numeric literals refer to signed 64-bit integers.  
 
 ## Signed integers
 
@@ -41,6 +45,12 @@ Signed bigints are denoted `<digits>n`.  Negation uses two's complement.  This w
 
 Division is integer division: `10n / 3n == 3n`.  The remainder can be found using the modulo operator (`%`): `10n % 3n == 1n`.  It can also be found using the `rem` operator (see below). We follow C99 in saying that `(a/b) * b + a%b` shall equal `a`.
 
+Until static typing of channels is in place, we'll need to tag ints in order to support things like
+```
+for (@x <- y) { z!(x / 4) }
+```
+This will be invisible to the user, and will be removed once types are in place.  Greg thinks the tradeoff between having the numeric feature earlier and spending time to implement it only to remove it later is acceptable.
+
 ## Signed bigrats
 
 Bigrats are ratios of bigints.  They're denoted `<digits>r`.  Division is rational division: `10r / 3r == 3r + 1r / 3r`.  The modulus operator always gives 0 on bigrats, since `(a/b) * b == a` exactly.  Negation uses two's complement, and bitwise operators can act on numbers less than 1: `1r/3r & 3r/4r == 1r/4r` since 1/3 \== 0.010101... and 3/4 \== 0.11000...
@@ -48,6 +58,8 @@ Bigrats are ratios of bigints.  They're denoted `<digits>r`.  Division is ration
 ## IEEE 754 floating point
 
 Floating point numbers come in four sizes: single, double, quadruple, and octuple precision. They're denoted as in C99 but they append the suffixes `f32`, `f64`, `f128`, and `f256`, respectively.  For example, `-1.234e5f32 == -123400f32`. The modulus operator and bitwise operators are not defined on floating point numbers and should cause an error as early as possible.
+
+Since there is no easy way to emulate larger sized IEEE-754 floating point numbers efficiently given smaller ones, it is here that the protocol for determining a platform's numeric support is critical.
 
 ## Fixed point
 
@@ -72,9 +84,12 @@ When casting from a larger integer type to a smaller one, the cast uses modular 
 
 # Alternatives
 
-* **Directed acyclic graph of coercions**. C/C++/Java/Scheme/etc. have implicit coercions of smaller numeric types to larger ones.  
-* **Multiple dispatch.** Rather than have coercion as part of the language, Julia defines binary arithmetic functions at each pair of types and implements the coercion explicitly in those functions.  We could conceivably do this with patterns in a purely functional expression sublanguage.  This would also enable custom user-defined numeric types.  This is consistent with the design above.
+* **Directed acyclic graph of coercions**. C/C++/Java/Scheme/etc. have implicit coercions of smaller numeric types to larger ones.  This can be done in a future version without breaking code written under this proposal.
+
+* **Multiple dispatch.** Rather than have coercion as part of the language, Julia defines binary arithmetic functions at each pair of types and implements the coercion explicitly in those functions.  We could conceivably do this with patterns in a purely functional expression sublanguage.  This would also enable custom user-defined numeric types.  This is consistent with the design above, but in discussion, this alternative was universally rejected.
 
 # Open Question: Units
 
 There have been some [dramatic failures](https://www.simscale.com/blog/nasa-mars-climate-orbiter-metric/) due to using the wrong units. Should we adopt syntax for specifying units [like F\# does](https://learn.microsoft.com/en-us/dotnet/fsharp/language-reference/units-of-measure) as well as the numeric type?  We would only be allowed to add, subtract, multiply, and divide unitful numbers; addition and subtraction would require the arguments to have the same units.  Exponentiation and bitwise operations would only work on unitless numbers.
+
+In discussion, it was agreed that units should be their own proposal.
