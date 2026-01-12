@@ -57,7 +57,9 @@ Bigrats are ratios of bigints.  They're denoted `<digits>r`.  Division is ration
 
 ## IEEE 754 floating point
 
-Floating point numbers come in four sizes: single, double, quadruple, and octuple precision. They're denoted as in C99 but they append the suffixes `f32`, `f64`, `f128`, and `f256`, respectively.  For example, `-1.234e5f32 == -123400f32`. The modulus operator and bitwise operators are not defined on floating point numbers and should cause an error as early as possible.
+Floating point numbers come in four sizes: single, double, quadruple, and octuple precision. They're denoted as in C99 but they append the suffixes `f32` (single precision), `f64` (double precision), `f128`, and `f256`, respectively.  For example, `-1.234e5f32 == -123400f32`. The modulus operator and bitwise operators are not defined on floating point numbers and should cause an error as early as possible.
+
+Just as integer literals with no suffix are treated as `i64`, a numeric literal that parses as a floating point but has no suffix (e.g. `-1.2e3` or `10.`) is treated as `f64`.
 
 Since there is no easy way to emulate larger sized IEEE-754 floating point numbers efficiently given smaller ones, it is here that the protocol for determining a platform's numeric support is critical.
 
