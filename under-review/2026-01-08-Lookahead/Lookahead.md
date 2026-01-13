@@ -83,7 +83,7 @@ let square = {
       ret!(x*x)
     }
   }
-} in 
+} in
 // Alice sends the code to Bob.
 Bob!(square) |
 // Bob gets the code.
@@ -143,7 +143,7 @@ for (@code <- Bob) {
           let secret = 5 in {
             new ret, ch in {
               // He runs inst in an empty space.
-              ch!(inst!(*ret, secret))[*] |
+              ch!(inst | instCh!(*ret, secret))[*] |
               // The resulting process is
               // ret!(25) | Alice!(["Here's the secret:", 5])
               //
