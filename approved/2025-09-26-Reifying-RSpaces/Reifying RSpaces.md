@@ -166,7 +166,7 @@ Pathmaps are special because when you send on a channel, you're really also send
 @[0, 1, 2]!({|"hi"|}) | @[0, 1, 2]!({|"hello"|}) | @[0, 1, 3]!({|"there"|})
 = @[0, 1]!({|[2, "hi"], [2, "hello"], [3, "there"]|})
 = @[0, 1]!({|[2, "hi"], [2, "hello"]|}) | @[0, 1]!({|[3, "there"]|})
-= @()!({|[0, 1, 2, "hi"], [0, 1, 2, "hello"], [0, 1, 3, "there"]|}
+= @([])!({|[0, 1, 2, "hi"], [0, 1, 2, "hello"], [0, 1, 3, "there"]|})
 = @[0, 1, 2, "hi"]!({||}) | @[0, 1, 2, "hello"]!({||}) | @[0, 1, 3, "there"]!({||})
 ```
 
@@ -176,10 +176,11 @@ you can receive on a prefix:
 for( x <- @[0, 1] ) { P }
 ```
 
-and get `x` bound to either `{|[2, "hi"], [2, "hello"]|}` or `{|[3, "there"]|}` with the remaining space being:
+and get `x` bound to either `{|[2, "hi"]|}`, `{|[2, "hello"]|}`, or `{|[3, "there"]|}` with the remaining space being
 
-- `@[0, 1, 3]!("there")`, or  
-- `@[0, 1, 2]!("hi") | @[0, 1, 2]!("hello")`
+- @[0, 1]!({[2, "hello"], [3, "there"]|})
+- @[0, 1]!({[2, "hi"], [3, "there"]|})
+- @[0, 1]!({[2, "hi"], [2, "hello"]|})
 
 respectively.
 
