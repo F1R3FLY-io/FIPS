@@ -59,7 +59,7 @@ Below, `file` denotes a file agent instance.
 
 ### `read`
 
-**Signature (conceptual)** `file!read(maxBytes: Int) : (Bool, Bytes)`
+**Signature** `file!read(maxBytes: Int) : (Bool, Bytes)`
 
 **Description** Reads up to `maxBytes` bytes from the current file position. On success, returns `(true, data)` where `data` is a `ByteArray` value (or possibly a UTF-8 `String` for text-mode files, depending on how the runtime distinguishes binary vs text). On EOF, returns `(true, empty)` (or an empty string). On error, returns `(false, error)`.
 
@@ -94,12 +94,8 @@ for(@(true, data) <- file!read(4096)) {
 Example:
 
 ```
-for(@(ok, n) <- file!write("hello\n")) {
-  if (ok) {
-    // ...
-  } else {
-    // handle error
-  }
+for(@(true, n) <- file!write("hello\n")) {
+  // Proceeds after bytes written...
 }
 ```
 
@@ -217,8 +213,6 @@ To avoid the complexity and security pitfalls of full `scanf`, we support only a
 * `%s` – whitespace-delimited UTF-8 string
 
 No width modifiers, no `%n`, no dynamic-width specifiers, and no direct memory-address semantics are supported.
-
-Implementations MAY choose to omit `scanf` entirely; in that case, the method should consistently return `(false, "ENOTIMPL")`.
 
 ---
 
@@ -369,6 +363,6 @@ Implementations MAY also support a special path `*` to mean “apply this overri
 ## Future work / open questions
 
 * **Error model**: this document recommends returning `(Bool, valueOrError)`, but the node’s Rholang runtime may eventually standardize a richer error handling mechanism (exceptions, structured error types).  
-* **Non-file resources**: sockets, HTTP endpoints, and other capabilities can reuse the same configuration machinery, but will need their own agent APIs.  
+* **Non-file resources**: sockets, HTTP endpoints, and other capabilities can reuse the same configuration machinery, but will need their own agent APIs.  Some of this can be shoehorned into the file API using FIFOs.
 * **Security & sandboxing**: the TOML and CLI override mechanisms should respect node-level security policies (e.g. disallow mapping system-channels to arbitrary paths when running in a restricted environment).  
 * **Hot reload**: support for reloading system-channel mappings at runtime is out of scope here, but could be considered later.
