@@ -1,7 +1,7 @@
 # Garbage Collection
 
 Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io))  
-2025-11-18
+2026-01-27
 
 
 ## Introduction
