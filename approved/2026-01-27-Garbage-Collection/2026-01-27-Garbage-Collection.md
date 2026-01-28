@@ -145,3 +145,4 @@ Only public unforgeable names can be accessed by subsequent deploys.  Any proces
 ## Optimization
 
 We can make this efficient by keeping a pair of indices, where the first index tracks permanently public names and the second tracts transiently public names.  There's no way currently to remove URIs from the registry, so any unforgeable name actually stored at a URI in the registry can simply be marked public.  There's no way to remove a replicated `for` from RSpace, so we can mark any unforgeable name in the body of a replicated `for` listening on a public name as public.  There's no way to remove a replicated send from RSpace, so we can mark any unforgeable name in the message sent with replication on a public name as public.  For the rest we can do reference counting, where we increment the count when an unforgeable name is sent or received linearly on a public name, and we decrement the count when there's a synchronization.
+
