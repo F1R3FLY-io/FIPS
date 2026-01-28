@@ -5,7 +5,7 @@ Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io
 
 ## Agents
 
-The current desugaring of agents is the following:
+The current desugaring of [agents](https://github.com/F1R3FLY-io/FIPS/blob/main/approved/2025-08-20-Agents/Agents.md) is the following:
 
 ```
 ⟦agent fooCtor {
@@ -88,7 +88,7 @@ for(r, <fooPtrns> <= fooCtor) {
 }
 ```
 
-Methods can invoke both public and private methods using the method call syntax:
+Methods can invoke both public and private methods using the method call syntax defined above:
 
 ```
 for (@result <- this!fooMethodPub1(...args)) { /* handle result */ }
