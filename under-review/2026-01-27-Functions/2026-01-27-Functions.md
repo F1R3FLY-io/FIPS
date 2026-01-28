@@ -5,10 +5,10 @@ Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io
 
 ## Sugar
 
-It is often useful to be able to provide a small function for e.g. filtering a list.  We propose syntactic sugar for functions in let expressions:
+It is often useful to be able to provide a small function for e.g. filtering a list.  We propose syntactic sugar for functions:
 
 ```
-⟦let foo = (ptrn) => { expr } in P⟧
+⟦fn foo(ptrn) = { expr } in P⟧
 =
 new foo in {
   for (ret, ptrn <= foo) {
@@ -26,7 +26,7 @@ This desugaring works well with the existing `!?` operator:
 
 ```
 ⟦
-  let foo = (ptrn) => { expr } in
+  fn foo(ptrn) = { expr } in
   for (@result <- foo!?(...args)) {
     // use result
   }
@@ -54,7 +54,7 @@ Because `expr` is sent immediately, there are no side effects possible, so invoc
 ### Lookahead
 
 ```
-⟦let foo = (ptrn) => { expr }[n] in P⟧
+⟦fn foo(ptrn) = { expr }[n] in P⟧
 =
 new foo in {
   for (ret, ptrn <= foo) {
