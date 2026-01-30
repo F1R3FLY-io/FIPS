@@ -96,3 +96,4 @@ for (@result <- private!fooMethodPriv1(...args)) { /* handle result */ }
 ```
 
 Because the `private` channel is never exposed by the translation, a client can't use the private methods unless the agent author explicitly breaks the security by sending it to the client.
+
