@@ -1,368 +1,473 @@
 # Rholang System Channel Configuration
 
 Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io))  
-2025-11-18
+2025-11-18 (proposed)
+2026-01-29 (addressed first review comments)
 
 # Introduction
 
-At the moment, system channels have to be added to the source code of the node itself (e.g. [openai\_service.rs](https://github.com/F1R3FLY-io/f1r3node/blob/rust/dev/rholang/src/rust/interpreter/openai_service.rs)). This clearly does not scale. We need a way to expose system resources as [agents](https://docs.google.com/document/d/13VvNssV67MslHvxycAgywbODodj1ZIBxbxc-TE3oOBo/edit?tab=t.0#heading=h.5g7i17e5p09f) to Rholang code.
+At the moment, system channels have to be added to the source code of the node itself (e.g. [openai\_service.rs](https://github.com/F1R3FLY-io/f1r3node/blob/rust/dev/rholang/src/rust/interpreter/openai_service.rs)).  This clearly does not scale.  We need a way to expose system resources as [agents](https://github.com/F1R3FLY-io/FIPS/blob/main/approved/2025-08-20-Agents/Agents.md) to Rholang code.
 
-The goal of this document is to specify how the node maps Rholang “system-channel” URIs to operating-system resources (files, pipes, sockets, etc.), and what API those resources expose as agents.
+We propose to expose files and directories as agents whose names are available in the registry.  To get the names into the registry, we propose to add lines to the configuration file.
 
-## Business Opportunity
+# File and directory agents
 
-Modern LLMs are extremely vulnerable to *prompt injection*: any untrusted text the model reads (web pages, emails, logs, user content, etc.) can contain hidden instructions that override system prompts, leak secrets, or steer tool calls in unexpected ways. Once an LLM has access to powerful tools—files, network sockets, payment APIs, administrative control surfaces—an injection bug is no longer just a bad answer; it can become a remote code-execution primitive against the surrounding system.
+## Errors
 
-The only sane response is to apply the *principle of least authority* (POLA) to tool-using LLMs. A given LLM instance (or “agent”) should see only the minimal set of capabilities required for its task: a narrow log file, not the whole filesystem; an HTTP client scoped to a particular domain, not arbitrary sockets; a single database table, not the entire cluster. In particular, we want to avoid any form of ambient authority (implicit globals, “root” handles, or ad hoc escape hatches) that an injected prompt could discover and exploit.
-
-Rholang is already built around an object-capability model. An *agent instance* in Rholang is an object capability: holding a reference to an agent is exactly the authority to invoke its methods, and there is no way to forge additional authority without someone explicitly passing you more capabilities. System channels, when mapped into Rholang as agents, therefore become first-class, composable object capabilities for OS-level resources.
-
-This makes Rholang an ideal platform for hosting tool-using LLMs. We can represent each OS resource as a narrowly-scoped agent, wire those agents into LLM-facing code via explicit channel passing, and rely on the object-capability discipline to ensure that:
-
-* An LLM instance can only invoke the tools (agents) it has been explicitly given.  
-* Different LLM instances can be sandboxed by giving them disjoint sets of agents.  
-* Security policies can be enforced at configuration time, by controlling which system-channel URIs are available and how they are mapped to concrete OS resources.
-
-The system-channel configuration described in this document is thus not just a convenience for wiring up I/O; it is part of the security boundary for LLM-based systems. By treating OS resources as object capabilities and exposing them through Rholang agents, we obtain a clean, auditable surface for managing and constraining tool-using LLMs.
-
-# File agents
-
-Unix and its derivatives use files as the unit of communication. We can back an agent with a file, named pipe, or other OS-level file descriptor.
-
-A **file agent** is an agent whose methods provide read/write-style access to an underlying file descriptor. In Rholang user code, the agent is called via the `agent` sugar and method-call sugar described in the “Agents” document, e.g.
+In an async message-passing platform like Rholang, it's conceivable that one could register a process for handling errors so the happy path isn't interrupted by error handling:  
 
 ```
-new f(`rho:io:system-channels:foo:bar`) in {
-  for(@data <- f!read(1024)) {
-    // ...
+new errorHandler in {
+  contract errorHandler(@file, @line, @errorCode, @errorMsg) = {
+    // handle errors
+  } |
+  file!onError(*errorHandler);
+  // process the file
+  P
+}
+```
+
+But that tends to separate the error handling from the place where the error occurs, making it harder to reason locally about code.  This proposal recommends returning a list from each method, either `[true, result]` or `[false, error code, error message]`.  Clients will typically invoke methods using pattern matching:
+```
+for (@[ok, ...rest] <- file!method(...args)) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[result] <- rest in {
+      // handle result
+    }
   }
 }
 ```
 
-where `f` is a `File` agent instance.
+A complete proposal should include a set of codes and messages, but I'd like input on that before making something up.
 
 ## File Agent API
 
-The methods on a file agent are essentially the `FILE*` functions provided by `stdio.h`. We do not, however, support the full `printf` / `scanf` spec, as it has security issues; the subset we do support is described below.
+The examples below assume a file agent named `file`.
 
-Each method is exposed as a Rholang agent method and is normally called using method-call sugar:
+### Per Line
 
-```
-for(result <- file!methodName(args...)) { ... }
-```
+File agents provide line-based access to text files, allowing reading from the beginning and appending to the end.  File agents maintain a mutex to prevent extending a file while it's being read and vice versa.  They also maintain a mutex to prevent positional access (see below) while using line-based methods and vice versa.
 
-On success, methods return either the requested value or an appropriate status (e.g. number of bytes written). On error, methods should return a `(false, error)` tuple, where `error` is a machine-readable error code or string, and on success `(true, value)`. The exact error-code set is implementation-defined, but should at least distinguish common POSIX errors (ENOENT, EACCES, EIO, etc.).
+##### `text` method
 
-Below, `file` denotes a file agent instance.
-
----
-
-### `read`
-
-**Signature** `file!read(maxBytes: Int) : (Bool, Bytes)`
-
-**Description** Reads up to `maxBytes` bytes from the current file position. On success, returns `(true, data)` where `data` is a `ByteArray` value (or possibly a UTF-8 `String` for text-mode files, depending on how the runtime distinguishes binary vs text). On EOF, returns `(true, empty)` (or an empty string). On error, returns `(false, error)`.
-
-**Notes**
-
-* A `maxBytes` value of `0` is allowed and must return immediately with an empty buffer.  
-* The method advances the internal file position by the number of bytes actually read.  
-* Implementations SHOULD be non-blocking at the interpreter level if the underlying descriptor is non-blocking; otherwise they block the OS thread but not the Rholang scheduler.
-
-Example:
+The `text` method returns the contents of the file as a single string.
 
 ```
-for(@(true, data) <- file!read(4096)) {
-  // consume data
+for (@[ok, ...rest] <- file!text()) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[text] <- rest in {
+      // handle text
+    }
+  }
 }
 ```
 
----
+##### `lines` method
 
-### `write`
-
-**Signature** `file!write(data: Bytes | String) : (Bool, Int)`
-
-**Description** Writes the contents of `data` starting at the current file position. Returns `(true, nBytesWritten)` on success, `(false, error)` on error.
-
-**Notes**
-
-* For text-mode files, `String` arguments are encoded as UTF-8.  
-* The method MAY perform partial writes; the caller must check `nBytesWritten` and potentially retry.  
-* Advances the file position by `nBytesWritten`.
-
-Example:
-
+The `lines` method reads the entire file, splits the string using the regular expression `\R` (Unicode line break), and returns the resulting list of strings.
 ```
-for(@(true, n) <- file!write("hello\n")) {
-  // Proceeds after bytes written...
+for (@[ok, ...rest] <- file!lines()) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[lines] <- rest in {
+      // handle lines
+    }
+  }
 }
 ```
 
----
+##### `forEachLine` method
 
-### `seek`
-
-**Signature** `file!seek(offset: Int, whence: String) : (Bool, Int)`
-
-**Description** Changes the current file position. `whence` is one of `"set"`, `"cur"`, `"end"`, corresponding to `SEEK_SET`, `SEEK_CUR`, `SEEK_END`. Returns `(true, newPos)` on success, `(false, error)` on error.
-
-**Notes**
-
-* `offset` is a signed integer; negative values are allowed when `whence` is `"cur"` or `"end"` when supported by the OS.  
-* On success, `newPos` is the absolute byte offset from the beginning of the file.
-
-Example:
+The `forEachLine` method processes lines of a text file sequentially.  It streams the entire file; as it encounters Unicode line breaks, it invokes a contract to process each line in sequence using the `!?` operator, so the contract must signal when complete.  (To process them in parallel, use `mapReduceLines` below.)
 
 ```
-for(@(true, pos) <- file!seek(0, "end")) {
-  // pos is file length
+new handle in {
+  contract handle(done, @line) = {
+    // process line, signal when complete
+    done!()
+  } |
+  for (@[ok, ...rest] <- file!forEachLine(handle)) {
+    if (!ok) {
+      let @[code, msg] <- rest in {
+        // handle error
+      }
+    } else {
+      // rest is empty, so continue
+    }
+  }
 }
 ```
 
----
+##### `mapReduceLines` method
 
-### `close`
-
-**Signature** `file!close() : (Bool, Nil)`
-
-**Description** Closes the underlying file descriptor. After `close` succeeds, all further method calls on the agent MUST fail with an appropriate error (e.g. `"EBADF"`). Returns `(true, Nil)` on success, `(false, error)` on error.
-
-**Notes**
-
-* Implementations SHOULD be idempotent: multiple `close` calls either all succeed or all return a consistent “already closed” error.
-
----
-
-### `flush`
-
-**Signature** `file!flush() : (Bool, Nil)`
-
-**Description** Flushes any buffered output for the file agent to the underlying OS file descriptor, analogous to `fflush`.
-
-**Notes**
-
-* For read-only descriptors, `flush` is a no-op that returns success.
-
----
-
-### `getc`
-
-**Signature** `file!getc() : (Bool, Int)`
-
-**Description** Reads a single byte (or Unicode scalar in text mode) from the file. On success, returns `(true, code)`, where `code` is the integer codepoint (0–255 for byte mode). On EOF, returns `(true, -1)` (or another distinguished sentinel). On error, returns `(false, error)`.
-
-**Notes**
-
-* `getc` is essentially `read(1)` with a more convenient scalar result.
-
----
-
-### `putc`
-
-**Signature** `file!putc(code: Int | String) : (Bool, Int)`
-
-**Description** Writes a single byte or character to the file. Returns `(true, 1)` on success, `(false, error)` on error.
-
-**Notes**
-
-* If a `String` is provided, it MUST be either length 1 in characters or the implementation must treat only the first character as significant.  
-* In text mode, the character is encoded as UTF-8.
-
----
-
-### `gets`
-
-**Signature** `file!gets(maxBytes: Int) : (Bool, String)`
-
-**Description** Reads a line of text from the file, up to and including the terminating newline or until `maxBytes` bytes have been read, whichever comes first. Returns `(true, line)` on success, where `line` is a UTF-8 `String` that may or may not include the trailing newline, depending on configuration. On EOF before any bytes are read, returns `(true, "")`. On error, returns `(false, error)`.
-
-**Notes**
-
-* Implementations SHOULD guarantee that the returned string is valid UTF-8.  
-* `maxBytes` is a safety cap to avoid unbounded memory usage on untrusted input; the implementation MAY clamp or reject excessively large values.
-
----
-
-### `puts`
-
-**Signature** `file!puts(line: String) : (Bool, Int)`
-
-**Description** Writes a line of text to the file. Implementations MAY append a trailing newline if one is not present, matching traditional `puts` semantics, or they may require the caller to include the newline. Returns `(true, nBytesWritten)` on success, `(false, error)` on error.
-
-**Notes**
-
-* The exact newline convention (auto-append vs literal) MUST be documented by the implementation; for portability we recommend **not** auto-appending and instead treating `puts` as a thin wrapper over `write`.  
-* The `puts` method plays the role of `printf` since rholang already has string interpolation.
-
----
-
-### `scanf`
-
-**Signature** `file!scanf(fmt: String) : (Bool, List[Any])`
-
-**Description** Parses formatted input from the file according to a restricted `scanf`\-style format string `fmt`. Returns `(true, values)` where `values` is a list of parsed values (ints, floats, strings, etc.), or `(false, error)` if parsing fails or input is exhausted.
-
-**Security and limitations**
-
-To avoid the complexity and security pitfalls of full `scanf`, we support only a small, well-defined subset of format specifiers, for example:
-
-* `%d` – decimal integer  
-* `%u` – unsigned integer  
-* `%f` – floating-point number  
-* `%s` – whitespace-delimited UTF-8 string
-
-No width modifiers, no `%n`, no dynamic-width specifiers, and no direct memory-address semantics are supported.
-
----
-
-### Wide-character functions
-
-The C stdio API also exposes wide-character functions (`fgetwc`, `fputwc`, etc.). Rholang strings are UTF-8 by construction, so we do **not** expose a separate “wide” API initially.
-
-Instead:
-
-* Text-mode operations (`gets`, `puts`, `scanf`) operate on UTF-8 strings.  
-* Binary-mode operations (`read`, `write`, `getc`, `putc`) operate on raw bytes.
-
-If a future need arises for explicit UTF-16 or UTF-32 file operations, we can introduce separate agents or additional methods, but the base file agent API is UTF-8–centric.
-
-## TOML configuration
-
-The Rholang interpreter should take a TOML configuration file. The super table `system-channels` maps Rholang colon-paths to files or named pipes. The colon-paths all get prefixed by `rho:io:system-channel:` at the URI level, so
+The `mapReduceLines` method processes lines of a text file in parallel, accumulating the results.  It streams the file; as it encounters Unicode line breaks, it invokes a contract to accumulate the line.  It then combines the results using the provided function and returns the fully accumulated value.
 
 ```
-[system-channels.foo.bar]
-name = "bar.txt"
-mode = "r"
-type = "file"        # "file" | "pipe" | "socket" (future)
-encoding = "utf-8"   # or "binary"
-create = false       # if true, create if missing
-truncate = false     # if true, truncate on open
-append = false       # if true, open in append mode
-buffered = true      # if false, use unbuffered I/O
+new reduce in {
+  contract reduce(ret, @accumulator, @line) = {
+    // combine accumulator with the line
+    ret!(newAccumulator)
+  } |
+  for (@[ok, ...rest] <- file!mapReduceLines(reduce)) {
+    if (!ok) {
+      let @[code, msg] <- rest in {
+        // handle error
+      }
+    } else {
+      let @[result] <- rest in {
+        // do something with the
+        // fully accumulated value
+      }
+    }
+  }
+}
 ```
 
-allows `bar.txt` to be imported as an agent via
+##### `mapReduceLinesOrdered` method
+
+The `mapReduceLinesOrdered` method behaves the same as `mapReduceLines` but guarantees to accumulate the lines in order.  Note that this does not guarantee that the handling of each line is processed in order, only that the results are accumulated in that way.
 
 ```
-new bar(`rho:io:system-channels:foo:bar`) in { ... }
+new reduce in {
+  contract reduce(ret, @accumulator, @line) = {
+    // combine accumulator with the line
+    ret!(newAccumulator)
+  } |
+  for (@[ok, ...rest] <- file!mapReduceLinesOrdered(reduce)) {
+    if (!ok) {
+      let @[code, msg] <- rest in {
+        // handle error
+      }
+    } else {
+      let @[result] <- rest in {
+        // do something with the
+        // fully accumulated value
+      }
+    }
+  }
+}
 ```
 
-### Table layout
+##### `appendLines` method
 
-* The table name after `system-channels.` determines the colon-path segment(s). For example:  
-    
-  * `[system-channels.stdout]` → `rho:io:system-channels:stdout`  
-  * `[system-channels.kernel.logs.http]` → `rho:io:system-channels:kernel:logs:http`
-
-
-* All tables under `system-channels` MUST have at least:  
-    
-  * `name` – the OS-level path or special name (e.g. `"stdout"`, `"stdin"`, `"stderr"`, `"fifo:/var/run/foo"`).  
-  * `mode` – `"r"`, `"w"`, `"rw"`, `"a"`, possibly with `+` modifiers.
-
-
-* Optional fields:  
-    
-  * `type` – `"file"` (default) or `"pipe"` or `"socket"` (reserved for future).  
-  * `encoding` – `"utf-8"` (default) or `"binary"`.  
-  * `create` – boolean; if true, create missing files with default permissions.  
-  * `truncate` – boolean; if true and opening for write, truncate existing file.  
-  * `append` – boolean; if true, open in append mode.  
-  * `buffered` – boolean; if false, disable user-space buffering.  
-  * `permissions` – optional string like `"0644"` to control file creation mode.
-
-### Resolution rules
-
-* The TOML file is loaded at node startup.  
-    
-* For a URI `rho:io:system-channels:x:y:z`, the interpreter:  
-    
-  1. Strips the prefix `rho:io:system-channels:` and splits `x:y:z` into segments.  
-  2. Looks for the TOML table `[system-channels.x.y.z]`.  
-  3. If not found, it panics with a runtime error.
-
-## Command-line flags
-
-The node needs a way to select which TOML configuration file to use and to override specific mappings without editing the file. This is especially important for testing, local development, and containerized deployments.
-
-### Change the config file
-
-The node SHOULD accept a command-line flag to specify the system-channel configuration TOML file, e.g.
-
-* `--system-channels-config /path/to/system-channels.toml`
-
-Behavior:
-
-* If the flag is provided, the node loads the given file instead of the default.  
-    
-* If the file cannot be read or parsed, the node SHOULD fail fast with a clear error message.  
-    
-* The default search order (if the flag is **not** provided) might be:  
-    
-  1. `${RHO_SYSTEM_CHANNELS_CONFIG}` environment variable, if set.  
-  2. `./system-channels.toml` (relative to the working directory).  
-  3. `/etc/f1r3node/system-channels.toml` or another build-time default.
-
-Implementations SHOULD document the actual default path(s) and environment variable name, but the pattern above provides a predictable override hierarchy:
-
-1. CLI flag  
-2. Environment variable  
-3. Built-in default
-
-### Override mapping
-
-Sometimes it is useful to override just one or two channels without touching the TOML file (e.g. redirecting `stdout` to a test log, or pointing a particular channel to a local FIFO).
-
-To support this, the node SHOULD accept one or more flags of the form:
-
-* `--system-channel OVERRIDE`  
-* or a short form like `-S OVERRIDE`
-
-where `OVERRIDE` has the syntax:
+The `appendLines` method takes a list of strings and appends them to the end of the text file.
 
 ```
-path=name,mode[,encoding=...,type=...,create=...,truncate=...,append=...,buffered=...]
+for (@[ok, ...rest] <- file!appendLines(lines)) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty
+    // continue
+  }
+}
 ```
 
-Examples:
+### Positional
 
-```shell
-# Redirect system stdout to /tmp/stdout.log in append mode:
-f1r3node \
-  --system-channel stdout=/tmp/stdout.log,mode=a,encoding=utf-8,append=true
+File agents provide positional access to both binary and text files.  Positional access relies on acquiring read and write locks for regions of the file, allowing multiple readers and single writers of overlapping regions.  Data in a region cannot be read while a writer has a lock on it.  Also, file agents maintain a mutex to prevent simultaneous line-based access and positional access.
 
-# Override a nested channel:
-f1r3node \
-  --system-channel kernel.logs.http=/var/log/http.log,mode=rw,encoding=binary
+#### Bytes
+
+##### `read` method
+
+The `read` method takes a position `pos` and a length `n`, seeks to that position, and reads up to `n` bytes, returning the result as a byte array.
+
+```
+// read 10 bytes from position 5
+for (@[ok, ...rest] <- file!read(5, 10)) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[bytes] <- rest in {
+      // handle bytes
+    }
+  }
+}
 ```
 
-Semantics:
+##### `write` method
 
-* `path` is the TOML table suffix, e.g. `stdout` or `kernel.logs.http`.  
-* `name` is the OS-level resource path.  
-* `mode` is required.  
-* Additional key–value pairs override corresponding TOML keys for that channel only.
+The `write` method takes a position and a byte array. It seeks to that position and writes out the bytes.  Writing past the end of the file extends the file.
 
-Resolution order for a given channel:
+```
+for (@[ok, ...rest] <- file!write(5, bytes)) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty
+    // continue
+  }
+}
+```
 
-1. Command-line overrides (highest precedence).  
-2. Values from the TOML configuration file.  
-3. Built-in defaults (e.g. mapping `stdout` to the process stdout).
+## Directory Agent API
 
-This means you can:
+The examples below assume a directory agent named `dir`.
 
-* Use TOML for the canonical description of all system-channels in production.  
-* Use command-line flags to tweak mappings in tests or local runs without editing the TOML or rebuilding the node.
+Directory agents provide capability-scoped access to a filesystem directory tree. All paths passed to a directory agent are interpreted as relative to the directory agent’s configured root, and are normalized before use. Any path that attempts to escape the root must be rejected.
 
-Implementations MAY also support a special path `*` to mean “apply this override to all channels matching a pattern”, but that is optional and not part of the minimal spec here.
+Directory agents also provide a way to obtain file agents and subdirectory agents scoped to children of the directory, so Rholang code can compose the `File Agent API` above without requiring every file to be registered in configuration.
 
----
+### Listing and metadata
+
+##### `entries` method
+
+Returns the immediate children of the directory as a list of entry records. Each entry record is a map whose keys are strings, and contains at least:
+
+-   `name`: string
+    
+-   `kind`: `"file" | "dir"`
+    
+-   `size`: u64
+    
+-   `readonly`: boolean
+
+```
+for (@[ok, ...rest] <- dir!entries()) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[entries] <- rest in {
+      // handle entries
+    }
+  }
+}
+``` 
+
+##### `exists` method
+
+Returns `true` if a relative path exists under the directory root.
+
+```
+for (@ok <- dir!exists("notes/todo.txt")) {
+  // ok is true/false
+}
+for (@[ok, ...rest] <- dir!exists("notes/todo.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[exists] <- rest in {
+      if (exists) {
+	      // do something
+	    } else {
+	      // do something else
+	    }
+    }
+  }
+}
+``` 
+
+##### `stat` method
+
+Returns an entry record for a relative path.
+
+```
+for (@[ok, ...rest] <- dir!stat("notes/todo.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[entry] <- rest in {
+      // handle entry
+    }
+  }
+}
+```
+
+### Creating scoped agents
+
+##### `openFile` method
+
+Creates a file agent (or returns a cached one) scoped to the given relative path and returns that agent channel.
+
+```
+for (@[ok, ...rest] <- dir!openFile("notes/todo.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[file] <- rest in {
+      // use file
+    }
+  }
+}
+```
+
+##### `openDir` method
+
+Creates a directory agent (or returns a cached one) scoped to the given relative subdirectory and returns that agent channel.
+
+```
+for (@[ok, ...rest] <- dir!openDir("notes")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[notesSubDir] <- rest in {
+      // use notesSubDir
+    }
+  }
+}
+``` 
+
+### File and directory management
+
+All mutating operations must be atomic when the underlying filesystem supports it (notably `rename`), and otherwise must fail cleanly.
+
+##### `createFile` method
+
+Creates an empty file at the given relative path. Fails if it already exists.
+
+On success, returns the channel to the newly created file agent.
+
+```
+for (@[ok, ...rest] <- dir!createFile("notes/new.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[newFile] <- rest in {
+      // use newFile (file agent for notes/new.txt)
+    }
+  }
+}
+``` 
+
+##### `createDir` method
+
+Takes a path and (optionally) an options map. Creates a directory at the given relative path.  If the `parents` entry in the options map is `true`, it creates intermediate directories.
+
+On success, returns the channel to the newly created directory agent.
+
+```
+for (@[ok, ...rest] <- dir!createDir("notes/2026", {"parents": true})) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    let @[newDir] <- rest in {
+      // use newDir
+    }
+  }
+}
+``` 
+
+##### `removeFile` method
+
+Deletes a file.
+
+```
+for (@[ok, ...rest] <- dir!removeFile("notes/old.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty, so continue
+  }
+}
+``` 
+
+##### `removeDir` method
+
+Takes a path and (optionally) an options map. Deletes a directory.  
+If the `recursive` entry of the options map is `true`, it deletes its contents first.
+
+```
+for (@[ok, ...rest] <- dir!removeDir("notes/archive", {"recursive": true})) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty, so continue
+  }
+}
+``` 
+
+##### `rename` method
+
+Renames (moves) a path under the same directory root. Implementations should prefer an atomic rename.
+
+```
+for (@[ok, ...rest] <- dir!rename("notes/todo.txt", "notes/todo.done.txt")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty, so continue
+  }
+}
+``` 
+
+##### `copyFile` method
+
+Copies a file from one relative path to another.
+
+```
+for (@[ok, ...rest] <- dir!copyFile("notes/todo.txt", "notes/todo.bak")) {
+  if (!ok) {
+    let @[code, msg] <- rest in {
+      // handle error
+    }
+  } else {
+    // rest is empty, so continue
+  }
+}
+```
 
 ## Future work / open questions
 
-* **Error model**: this document recommends returning `(Bool, valueOrError)`, but the node’s Rholang runtime may eventually standardize a richer error handling mechanism (exceptions, structured error types).  
-* **Non-file resources**: sockets, HTTP endpoints, and other capabilities can reuse the same configuration machinery, but will need their own agent APIs.  Some of this can be shoehorned into the file API using FIFOs.
-* **Security & sandboxing**: the TOML and CLI override mechanisms should respect node-level security policies (e.g. disallow mapping system-channels to arbitrary paths when running in a restricted environment).  
+* **JSON, JSONL, binary records, etc.**: These common cases should be libraries that build on the file & directory APIs above.
 * **Hot reload**: support for reloading system-channel mappings at runtime is out of scope here, but could be considered later.
+* **Error codes**: when we have files on different systems like windows/mac/posix/etc., how do we choose a uniform set of errors?
+* **Error syntax**: the big `if` block and destructuring assignment in each case seems like a lot of boilerplate.  Is there sugar that would help?  Maybe something like a try/catch block?
+  ``` 
+  ⟦
+  try @result <- file!method(...args) {
+    // handle result
+  }
+  catch @[code, msg] {
+    // handle error
+  }
+  ⟧ = 
+  for (@[ok, ...rest] <- file!method(...args)) {
+    if (!ok) {
+      let @[code, msg] <- rest in {
+        // handle error
+      }
+    } else {
+      let @[result] <- rest in {
+        // handle result
+      }
+    }
+  }
+  ```
