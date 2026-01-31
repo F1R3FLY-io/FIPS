@@ -471,3 +471,4 @@ for (@[ok, ...rest] <- dir!copyFile("notes/todo.txt", "notes/todo.bak")) {
     }
   }
   ```
+* **How do we expose capabilities to file and directory agents through the configuration file?**
