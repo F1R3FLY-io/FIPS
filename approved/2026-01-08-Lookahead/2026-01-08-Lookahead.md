@@ -4,7 +4,7 @@ L. Gregory Meredith ([firefly.ceo@gmail.com](mailto:firefly.ceo@gmail.com))
 Michael Stay ([director.research@f1r3fly.io](mailto:director.research@f1r3fly.io))  
 2026-01-08
 
-This proposal introduces new syntax to speculatively execute a process for `n` steps, taking all possible rewrite paths, and gather the leaves of those paths into a `Set` object.  Something like this is necessary to trigger process rewriting in terms coming from MeTTaIL theories.  This proposal is isomorphic to the current semantics when `n = 0`.
+This proposal introduces new syntax to speculatively execute a process for `n` steps, taking all possible rewrite paths, and gather the leaves of those paths into a `PathMap` object.  Something like this is necessary to trigger process rewriting in terms coming from MeTTaIL theories.  This proposal is isomorphic to the current semantics when `n = 0`.
 
 ## Use cases
 
@@ -38,7 +38,7 @@ The number of steps should be provided in brackets after the arguments to a send
 
 ## Semantics
 
-The process `P` being sent in `x!(P)[n]` should only contain names belonging to the same RSpace, which we'll call `space`.  It is a runtime error to do otherwise.  Effectively, for each possible trace `t` of length `n` a new, empty RSpace `empty_t` will be created from the space agent of `space`, and the process `P` will be executed along that trace in `empty_t`.  The contents of all the `empty_t` spaces get collected into a `Set` object.  If a process cannot be further reduced before reaching a trace of length `n`, it is still considered part of the contents of `empty_t` and is included in the results.
+The process `P` being sent in `x!(P)[n]` should only contain names belonging to the same RSpace, which we'll call `space`.  It is a runtime error to do otherwise.  Effectively, for each possible trace `t` of length `n` a new, empty RSpace `empty_t` will be created from the space agent of `space`, and the process `P` will be executed along that trace in `empty_t`.  If the program executes successfully along a trace, that trace gets inserted into a `success` `PathMap` object.  If a process cannot be further reduced before reaching a trace of length `n`, it is still considered part of the contents of `empty_t` and is included in the results.  If a program aborts (whether due to use of the `abort` keyword, running out of gas, or for any other reason), an extra two-element list containing an error code for the failure and a message is concatenated to the end of the trace and the trace is inserted into a `failure` `PathMap`.  The names of `success` and `failure` are then placed on the channel `x`.
 
 ## Examples
 
@@ -64,10 +64,12 @@ let lambda = free LambdaCalc() in {
   new x, so(`rho:io:stdout`) in {
     // Run the lambda term to completion
     x!(lambda`app(lam(λx.x), lam(λy.y))`)[*] |
-    // Because lambda calculus is confluent, there's a single result
-    for (@Set(result) <- x) {
-      // Prints lam(λy.y)
-      so!(result)
+    // Because lambda calculus is confluent, any trace is
+    // as good as any other
+    for (@{| trace, ..._ |}, _ <- x) {
+      let @result <- trace.last() in {
+        so!(result)
+      }
     }
   }
 }
@@ -94,14 +96,16 @@ for (@code <- Bob) {
     // the instance is listening.
     ch!(code)[*] |
     // Bob gets the Set containing the resulting instance.
-    for (@Set(inst) <- ch) {
-      match inst {
-        // Bob uses a pattern to extract the channel.
-        for (_, _ <- instCh) { _ }} => {
-          // Bob invokes the function and
-          // continues with the result in P.
-          let secret = 5 in {
-            inst | for (@squared <- instCh!?(secret)) { P }
+    for (@{| trace, ..._ |, _} <- ch) {
+      let @inst <- trace.last() in {
+        match inst {
+          // Bob uses a pattern to extract the channel.
+          for (_, _ <- instCh) { _ }} => {
+            // Bob invokes the function and
+            // continues with the result in P.
+            let secret = 5 in {
+              inst | for (@squared <- instCh!?(secret)) { P }
+            }
           }
         }
       }
@@ -135,22 +139,26 @@ for (@code <- Bob) {
     // on which the instance is listening.
     ch!(code)[*] |
     // Bob gets the Set containing the resulting process.
-    for (@Set(inst) <- ch) {
-      match inst {
-        // Bob uses a pattern to extract the channel.
-        for (_, _ <- instCh) { _ }} => {
-          // He invokes the confined function
-          let secret = 5 in {
-            new ret, ch in {
-              // He runs inst in an empty space.
-              ch!(inst | instCh!(*ret, secret))[*] |
-              // The resulting process is
-              // ret!(25) | Alice!(["Here's the secret:", 5])
-              //
-              // Bob extracts just the message sent on ret.
-              for (@Set(=ret!(squared) | _) <- ch) {
-                // The message to Alice never gets delivered.
-                P
+    for (@{| trace, ..._ |, _} <- ch) {
+      let @inst <- trace.last() in {
+        match inst {
+          // Bob uses a pattern to extract the channel.
+          for (_, _ <- instCh) { _ }} => {
+            // He invokes the confined function
+            let secret = 5 in {
+              new ret, ch in {
+                // He runs inst in an empty space.
+                ch!(inst | instCh!(*ret, secret))[*] |
+                // The resulting process is
+                // ret!(25) | Alice!(["Here's the secret:", 5])
+                //
+                // Bob extracts just the message sent on ret.
+                for (@{| trace, ..._ |} <- ch) {
+                  let @{=ret!(squared) | _} <- trace.last() in {
+                    // The message to Alice never gets delivered.
+                    P
+                  }
+                }
               }
             }
           }
