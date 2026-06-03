@@ -34,9 +34,9 @@ for(r, <fooPtrns> <= fooCtor) {
   }}
 }
 
-⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?(@"y", ...args)) { P }⟧
-⟦x!y(...args);P⟧ = ⟦x!?(@"y", ...args);P⟧
-⟦x!y(...args).⟧  = ⟦x!?(@"y", ...args).⟧
+⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?("y", ...args)) { P }⟧
+⟦x!y(...args);P⟧ = ⟦x!?("y", ...args);P⟧
+⟦x!y(...args).⟧  = ⟦x!?("y", ...args).⟧
 ```
 
 where `r # Pc, P1, …, Pn, Q`.  Note that the channels this and return can be used freely in method bodies; the channels become bound in the desugaring.  Only this can be used in Q, since it's not guaranteed that Q will receive a return channel; if it does, it will be the first element of args.
