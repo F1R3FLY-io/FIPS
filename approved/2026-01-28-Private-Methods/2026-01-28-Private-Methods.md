@@ -34,9 +34,9 @@ for(r, <fooPtrns> <= fooCtor) {
   }}
 }
 
-⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?(@"y", ...args)) { P }⟧
-⟦x!y(...args);P⟧ = ⟦x!?(@"y", ...args);P⟧
-⟦x!y(...args).⟧  = ⟦x!?(@"y", ...args).⟧
+⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?("y", ...args)) { P }⟧
+⟦x!y(...args);P⟧ = ⟦x!?("y", ...args);P⟧
+⟦x!y(...args).⟧  = ⟦x!?("y", ...args).⟧
 ```
 
 If any `method` is declared, the `default` case has to be provided.
