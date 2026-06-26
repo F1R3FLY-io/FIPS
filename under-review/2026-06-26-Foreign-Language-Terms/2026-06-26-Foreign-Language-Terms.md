@@ -58,15 +58,110 @@ carries possible readings until ordinary disambiguation resolves them.
 
 ## Proposed Syntax
 
-The surface grammar is:
+This section gives the FIPS surface fragment in BNFC notation. It is not a full
+Rholang grammar. It assumes the existing host grammar already provides `Proc`,
+`Name`, `Guard`, `Ident`, and `Integer`; this fragment specifies only the syntax
+introduced by this proposal, plus the host surfaces with which FLTs compose.
 
-```text
-FLT         ::= [Tag] DelimitedBody
-Tag         ::= Language [ ":" Category ]
-Hole        ::= "${" Identifier [ ":" Category ] "}"
-Lookahead   ::= Name "!" "(" ProcessList ")" "[" (Uint64 | "*") "]"
-ValueBind   ::= "let" Identifier "<-" Process "in" "{" Process "}"
+```bnfc
+-- Existing host categories assumed by this FIPS fragment:
+-- Proc, Name, Guard, Ident, Integer.
+
+entrypoints Proc, Flt, Pattern, Semantics ;
+
+-- FLTs are process terms and may also appear as receive/match patterns.
+FltProc.       Proc ::= Flt ;
+FltPattern.    Pattern ::= Flt ;
+NativePattern. Pattern ::= Proc ;
+
+TaggedFlt.     Flt ::= FltTag FltBody ;
+InferredFlt.   Flt ::= FltBody ;
+
+LangTag.       FltTag ::= Ident ;
+CatTag.        FltTag ::= Ident ":" Ident ;
+
+-- The modal lexer emits the delimiter/body tokens named here. Equality of
+-- symmetric delimiters, run length, heredoc words, and bracket depth are lexical
+-- mode obligations, not context-free BNFC obligations.
+InlineBody.    FltBody ::= "`" [FltBodyItem] "`" ;
+FenceBody.     FltBody ::= FenceDelim [FltBodyItem] FenceDelim ;
+SymBody.       FltBody ::= SymmetricDelim [FltBodyItem] SymmetricDelim ;
+RunBody.       FltBody ::= SymmetricRunDelim [FltBodyItem] SymmetricRunDelim ;
+ParenBody.     FltBody ::= "(" [FltBodyItem] ")" ;
+BracketBody.   FltBody ::= "[" [FltBodyItem] "]" ;
+BraceBody.     FltBody ::= "{" [FltBodyItem] "}" ;
+AngleBody.     FltBody ::= "<" [FltBodyItem] ">" ;
+HeredocBody.   FltBody ::= HeredocOpen [FltBodyItem] HeredocClose ;
+
+GuestPart.     FltBodyItem ::= GuestChunk ;
+HolePart.      FltBodyItem ::= Hole ;
+terminator FltBodyItem "" ;
+
+HoleUntyped.   Hole ::= "${" Ident "}" ;
+HoleTyped.     Hole ::= "${" Ident ":" Ident "}" ;
+
+-- Value binding. This is separate from lookahead and from `new`.
+LetValue.      Proc ::= "let" Ident "<-" Proc "in" "{" Proc "}" ;
+
+-- Sends may be ordinary sends or sends with the approved Lookahead suffix.
+SendPlain.     Proc ::= Name "!" "(" [Proc] ")" ;
+SendLookahead. Proc ::= Name "!" "(" [Proc] ")" LookaheadSuffix ;
+LookaheadN.    LookaheadSuffix ::= "[" Integer "]" ;
+LookaheadAll.  LookaheadSuffix ::= "[" "*" "]" ;
+
+-- Receive heads accept native or FLT patterns, all three arrows, joins, and an
+-- optional guard.
+Receive.        Proc ::= "for" "(" ReceiveHead ")" "{" Proc "}" ;
+ReceiveGuard.   ReceiveHead ::= JoinPattern "where" Guard ;
+ReceiveNoGuard. ReceiveHead ::= JoinPattern ;
+
+LinearJoin.     JoinPattern ::= [LinearBind] ;
+RepeatedJoin.   JoinPattern ::= [RepeatedBind] ;
+PeekJoin.       JoinPattern ::= [PeekBind] ;
+
+LinearFltBind.   LinearBind ::= "@" Pattern "<-" NameSource ;
+RepeatedFltBind. RepeatedBind ::= "@" Pattern "<=" Name ;
+PeekFltBind.     PeekBind ::= "@" Pattern "<<-" Name ;
+
+separator nonempty LinearBind "&" ;
+separator nonempty RepeatedBind "&" ;
+separator nonempty PeekBind "&" ;
+
+SimpleSource.      NameSource ::= Name ;
+ReceiveSendSource. NameSource ::= Name "?!" ;
+SendReceiveSource. NameSource ::= Name "!?" "(" [Proc] ")" ;
+
+-- Virtual-host binding and calls.
+SemanticsDecl. Semantics ::= "semantics" DottedPath ;
+HostCall.      Proc ::= Flt "(" [Proc] ")" ;
+
+PathOne.       DottedPath ::= Ident ;
+PathMore.      DottedPath ::= Ident "." DottedPath ;
+
+separator Proc "," ;
+
+-- Token names used by the modal lexer. These declarations describe the parser
+-- interface; the lexical conventions below give the extra delimiter invariants.
+token GuestChunk (char - ["$"])+ ;
+token FenceDelim ('`' '`' '`' '`'*) ;
+token SymmetricDelim ["/#!|"] ;
+token SymmetricRunDelim ["/#!|"] ["/#!|"]+ ;
+token HeredocOpen ('<' '<' letter (letter | digit | '_')*) ;
+token HeredocClose (letter (letter | digit | '_')*) ;
 ```
+
+Lexical conventions:
+
+- `FenceDelim` closes only on the same backtick run length that opened it.
+- `SymmetricDelim` and `SymmetricRunDelim` close only on the same character or
+  run that opened the body.
+- Paired delimiters are depth-counted by the modal lexer before the enclosed
+  `[FltBodyItem]` stream is handed to the parser.
+- `HeredocOpen` records the word after `<<`; `HeredocClose` is accepted only on
+  a line equal to that word.
+- `GuestChunk` is guest-language text in the current delimiter mode. `${...}` is
+  emitted as a `Hole`, not as guest text, unless the language declares a
+  different antiquote token.
 
 An omitted tag asks the parser to infer both language and category. A tag
 without a category pins the language and asks the guest parser to use that
