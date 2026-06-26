@@ -1,42 +1,45 @@
 @startuml
-title Canonical Interlanguage Bridge
+title Rholang-Native Virtual Host Bridge
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "Source value\nRholang Par or guest value" as Source #DBEAFE
-rectangle "Bridge signature\ncanonical BridgeType T" as Sig #FEF3C7
-rectangle "Source codec\nto Canon(T)" as Decode #FDE68A
-rectangle "Canonical value\nloss-rejecting domain" as Canon #DCFCE7
+rectangle "Rholang caller\nnew ret in { ... }" as Caller #DBEAFE
+rectangle "Bridge service name\ntsNode" as Service #FEF3C7
+rectangle "Bridge signature\nservice + params + result" as Sig #FEF3C7
+rectangle "Source codec\nFLT + args to Canon(T)" as Decode #FDE68A
+rectangle "Canonical request\nprogram AST + typed params" as Canon #DCFCE7
 rectangle "Target type profile\nruntime representation" as Profile #EDE9FE
-rectangle "Target runtime value\nparameter or result" as Runtime #CCFBF1
-rectangle "Runtime step\ndeterministic effects" as Step #EDE9FE
-rectangle "Return codec\nfrom profile to Canon(T)" as ReturnCodec #FDE68A
-rectangle "Rholang result\nPar" as Result #DBEAFE
-rectangle "Bridge error\nfail closed" as Error #FEE2E2
+rectangle "Virtual runtime\nexecute guest term" as Runtime #CCFBF1
+rectangle "Return codec\nprofile result to Par" as ReturnCodec #FDE68A
+rectangle "Return channel\nret" as Ret #DBEAFE
+rectangle "Rholang continuation\nfor (@(ok,payload) <- ret)" as Cont #DBEAFE
+rectangle "BridgeError\nordinary value" as Error #FEE2E2
 
-Source --> Sig : value plus declared type
-Sig --> Decode : choose codec
+Caller --> Service : tsNode!(*ret, FLT, args)
+Service --> Sig : lookup bridge contract
+Sig --> Decode : choose codecs
 Decode --> Canon : decode and validate
-Decode -[#DC2626,dashed]-> Error : invalid source
+Decode -[#DC2626,dashed]-> Error : invalid request
 Canon --> Profile : select representation
-Profile --> Runtime : encode for target
+Profile --> Runtime : encode and evaluate
 Profile -[#DC2626,dashed]-> Error : unsupported policy
-Runtime --> Step : evaluate
-Step --> ReturnCodec : runtime result
-ReturnCodec --> Result : validate and encode Par
-ReturnCodec -[#DC2626,dashed]-> Error : invalid result
+Runtime --> ReturnCodec : result or runtime error
+ReturnCodec --> Ret : ret!((true, value))
+Error -[#DC2626,dashed]-> Ret : ret!((false, error))
+ReturnCodec -[#DC2626,dashed]-> Ret : ret!((false, error))
+Ret --> Cont : ordinary receive
 
 legend right
   |= Color |= Concept |
-  |<#DBEAFE> | Language boundary |
-  |<#FEF3C7> | Bridge contract |
+  |<#DBEAFE> | Rholang process/channel |
+  |<#FEF3C7> | Bridge service contract |
   |<#FDE68A> | Codecs and validation |
-  |<#DCFCE7> | Canonical value |
-  |<#EDE9FE> | Runtime profile / step |
-  |<#CCFBF1> | Runtime value |
-  |<#FEE2E2> | Deterministic error |
+  |<#DCFCE7> | Canonical request |
+  |<#EDE9FE> | Runtime profile |
+  |<#CCFBF1> | Virtual runtime |
+  |<#FEE2E2> | Deterministic error value |
 endlegend
 @enduml

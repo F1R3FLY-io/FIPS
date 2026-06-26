@@ -171,16 +171,16 @@ separator nonempty Decl ";" ;
 separator nonempty ConcDecl "/\\" ;
 separator Name "," ;
 
--- Virtual-host declaration and invocation. BridgeType is language-neutral;
--- runtime-specific representations are selected by profile declarations.
+-- Virtual-host declaration. BridgeType is language-neutral; runtime-specific
+-- representations are selected by profile declarations. Invocation uses
+-- ordinary Rholang sends and receives on the declared service name.
 SemanticsPath.     SemanticsDecl ::= "semantics" DottedPath ;
 BridgeDecl.        SemanticsDecl ::= "semantics" DottedPath "bridge" "{" [BridgeItem] "}" ;
+BridgeServiceItem. BridgeItem ::= "service" Ident ;
 BridgeProfileItem. BridgeItem ::= "profile" DottedPath ;
 BridgeParamItem.   BridgeItem ::= "param" Ident ":" BridgeType ;
 BridgeResultItem.  BridgeItem ::= "result" ":" BridgeType ;
 separator BridgeItem ";" ;
-
-HostCall.      Proc ::= Flt "(" [Proc] ")" ;
 
 BridgeUnit.    BridgeType ::= "Unit" ;
 BridgeBool.    BridgeType ::= "Bool" ;
@@ -481,25 +481,42 @@ perl{ print(${foo}) }
 an external runtime:
 
 ```text
-semantics Foreign.Runtime bridge {
-  profile Host.Structural;
+semantics TypeScript.Node bridge {
+  service tsNode;
+  profile ECMAScript.Strict;
   param n: Integer { range = nonnegative, loss = reject };
   result: List<Integer { loss = reject }>;
 }
 ```
 
-The guest still needs a front-end grammar if it supports holes. The parsed
-template and hole bindings are passed to the external runtime as separate
-parameters. The runtime must not receive host values by source concatenation.
+A bridge declaration names a Rholang service. Code invokes that service with
+ordinary sends and receives. The first argument is a return channel, the second
+argument is the parsed FLT/program term, and the remaining arguments follow the
+declared `param` order.
 
 ```text
-foreign<<CODE
-  squares(n)
-CODE (${n})
+new ret, out, err in {
+  tsNode!(
+    *ret,
+    ts:Module```
+      export default (n) => Array.from({ length: n }, (_, i) => i * i)
+    ```,
+    5
+  ) |
+  for (@(ok, payload) <- ret) {
+    match ok {
+      true => out!(payload)
+      false => err!(payload)
+    }
+  }
+}
 ```
 
-The value bound to `${n}` is delivered as a typed parameter to the runtime, not
-inserted into the foreign source.
+The bridge replies exactly once on the return channel with `(true, value)` or
+`(false, BridgeError)`. The guest still needs a front-end grammar if it supports
+holes. Parsed templates, hole bindings, and Rholang arguments are passed to the
+runtime as separate typed values; the runtime must not receive host values by
+source concatenation.
 
 ### Interlanguage Type Mapping
 
@@ -509,7 +526,7 @@ a foreign numeric type". The bridge has four layers:
 
 | Layer | Purpose | Example |
 | --- | --- | --- |
-| Bridge signature | Author-facing contract in the FIPS syntax | `param n: Integer { loss = reject }` |
+| Bridge signature | Author-facing service contract in the FIPS syntax | `service tsNode; param n: Integer { loss = reject }` |
 | Rholang codec | Converts between `Par` values and canonical values | `GInt` to canonical `Integer` |
 | Canonical bridge type | Language-neutral value meaning | `Record`, `Variant`, `Decimal`, `PathMap<T>` |
 | Type profile | Runtime-specific representation and validation | `Integer` as a host `i64`, `bigint`, decimal object, or ABI integer |
@@ -588,7 +605,7 @@ profile may map `Integer { range = safeNumber }` to an ECMAScript `number`,
 `number` with explicit NaN and infinity policy. TypeScript annotations are not a
 runtime contract; the bridge signature remains authoritative.
 
-![Virtual host bridge: Rholang and foreign values cross through a canonical bridge type and per-runtime profile, with fail-closed codec validation in both directions](diagrams/06-virtual-host-bridge.svg)
+![Virtual host bridge: a Rholang caller sends an FLT and typed arguments to a bridge service with a return channel, then receives either a successful value or BridgeError through ordinary Rholang communication](diagrams/06-virtual-host-bridge.svg)
 
 PlantUML source:
 [diagrams/06-virtual-host-bridge.puml](diagrams/06-virtual-host-bridge.puml).
@@ -613,9 +630,9 @@ define the minimum context a virtual host may observe.
 
 The minimal-cell rule is:
 
-`A virtual-host call may read only the cells required by its bridge signature,
-capabilities, and evaluation budget. It may write only <result>, <error>, and
-<trace>.`
+`A virtual-host service invocation may read only the cells required by its bridge
+signature, capabilities, and evaluation budget. It may write only <result>,
+<error>, and <trace>.`
 
 ![Virtual host cells: the external runtime receives only the minimum cells needed to evaluate the guest term and return a bridge result or deterministic error](diagrams/07-virtual-host-cells.svg)
 
@@ -658,25 +675,34 @@ success PathMap. It does not receive a bare future trace directly.
 ### Virtual Host with Explicit Bridge
 
 ```text
-semantics Foreign.Runtime bridge {
-  profile Host.Structural;
+semantics TypeScript.Node bridge {
+  service tsNode;
+  profile ECMAScript.Strict;
   param n: Integer { range = nonnegative, loss = reject };
   result: List<Integer { loss = reject }>;
 }
 
-let n = 5 in {
-  out!(
-    foreign<<CODE
-      squares(n)
-    CODE (${n})
-  )
+new ret, out, err in {
+  tsNode!(
+    *ret,
+    ts:Module```
+      export default (n) => Array.from({ length: n }, (_, i) => i * i)
+    ```,
+    5
+  ) |
+  for (@(ok, payload) <- ret) {
+    match ok {
+      true => out!(payload)
+      false => err!(payload)
+    }
+  }
 }
 ```
 
 If the selected profile cannot represent `n` as a nonnegative exact integer, the
-bridge fails before the foreign runtime executes. A TypeScript profile, for
-example, must choose whether such an integer is represented as a safe
-ECMAScript `number`, a `bigint`, or a profile-defined exact numeric object.
+bridge sends `(false, BridgeError)` on `ret` before the foreign runtime executes.
+The caller observes failure through ordinary Rholang communication instead of
+through an out-of-band exception.
 
 ## Implementation Evidence
 
