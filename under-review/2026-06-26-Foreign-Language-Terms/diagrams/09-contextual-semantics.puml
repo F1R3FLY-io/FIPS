@@ -1,0 +1,33 @@
+@startuml
+title Contextual Semantics and Minimal Context
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "Guest subterm\np" as P #DCFCE7
+rectangle "Context\nC[-]" as C #FEF3C7
+rectangle "Filled term\nC[p]" as CP #DBEAFE
+rectangle "Active\nrewrite?" as Active #FDE68A
+rectangle "Transition label\nminimal C[-]" as Label #EDE9FE
+rectangle "Result\np'" as Result #DCFCE7
+rectangle "Inert embedding\nno guest step" as Inert #FEE2E2
+
+P --> CP : fill hole
+C --> CP : surrounds subterm
+CP --> Active : evaluate redex
+Active --> Label : yes
+Label --> Result : witness rewrite
+Active -[#DC2626,dashed]-> Inert : no
+
+legend right
+  |= Color |= Concept |
+  |<#DCFCE7> | Guest term/result |
+  |<#FEF3C7> | Context C[-] |
+  |<#DBEAFE> | Filled process |
+  |<#FDE68A> | Active/inert decision |
+  |<#EDE9FE> | Minimal context label |
+  |<#FEE2E2> | No semantic step |
+endlegend
+@enduml

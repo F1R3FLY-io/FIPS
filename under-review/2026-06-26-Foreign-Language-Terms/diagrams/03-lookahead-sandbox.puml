@@ -16,7 +16,7 @@ collections "Sandboxed\nempty RSpaces" as Spaces #FCE7F3
 database "success PathMap" as Success #DCFCE7
 database "failure PathMap" as Failure #FEE2E2
 queue "channel x" as X #FEF3C7
-participant "receive\nfor (... <- x)" as Receive #DBEAFE
+participant "receive\nfor (@success, @failure <- x)" as Receive #DBEAFE
 
 Send -> Lookahead : suffix belongs to the send
 Lookahead -> Spaces : fork every rewrite trace
@@ -25,9 +25,9 @@ loop each possible trace
 end
 Spaces --> Success : insert successful leaf
 Spaces --> Failure : insert abort trace and error
-Success --> X : place PathMap name
-Failure --> X : place PathMap name
-X -> Receive : consume an offered name
+Success --> X : offer success name
+Failure --> X : offer failure name
+X -> Receive : consume offered names
 
 legend right
   |= Color |= Concept |

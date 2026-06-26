@@ -1,0 +1,36 @@
+@startuml
+title Guarded Receive Atomicity
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+start
+:Candidate send and receive\nshare a channel;
+:Spatial pattern match;
+if (pattern matches?) then (yes)
+  :Bind captured values;
+  :Evaluate where guard;
+  if (guard is true?) then (yes)
+    :Commit COMM;
+    :Consume linear data and continuation;
+    :Spawn continuation;
+    stop
+  else (no)
+    :Reject candidate;
+    :Consume nothing;
+    stop
+  endif
+else (no)
+  :No COMM;
+  :Consume nothing;
+  stop
+endif
+
+legend right
+  |= Color |= Meaning |
+  |<#FFFFFF> | Control flow is RSpace commit logic |
+  |<#DCFCE7> | Only true guard commits |
+  |<#FEE2E2> | False guard behaves as mismatch |
+endlegend
+@enduml

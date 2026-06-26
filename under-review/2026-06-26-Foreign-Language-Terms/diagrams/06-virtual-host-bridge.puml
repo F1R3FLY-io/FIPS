@@ -1,0 +1,38 @@
+@startuml
+title Virtual Host Bridge
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "Rholang Par value\nGInt / GBigInt / GDouble / ..." as Rho #DBEAFE
+rectangle "Bridge signature\nparam n: SafeNumber" as Sig #FEF3C7
+rectangle "Conversion\nallowed?" as Check #FDE68A
+rectangle "ECMAScript value\nnumber / bigint / object" as JS #DCFCE7
+rectangle "TypeScript runtime\nannotations erased" as TS #EDE9FE
+rectangle "Host result" as HostResult #DCFCE7
+rectangle "Result converts\nback to Rholang?" as BackCheck #FDE68A
+rectangle "Rholang result\nPar" as Result #DBEAFE
+rectangle "Bridge error\nfail closed" as Error #FEE2E2
+
+Rho --> Sig : value plus declared type
+Sig --> Check : validate category and range
+Check --> JS : yes
+Check -[#DC2626,dashed]-> Error : no
+JS --> TS : pass as parameter
+TS --> HostResult : deterministic return
+HostResult --> BackCheck : validate result type
+BackCheck --> Result : yes
+BackCheck -[#DC2626,dashed]-> Error : no
+
+legend right
+  |= Color |= Concept |
+  |<#DBEAFE> | Rholang boundary |
+  |<#FEF3C7> | Bridge contract |
+  |<#FDE68A> | Fail-closed checks |
+  |<#DCFCE7> | Host values |
+  |<#EDE9FE> | Virtual runtime |
+  |<#FEE2E2> | Deterministic error |
+endlegend
+@enduml

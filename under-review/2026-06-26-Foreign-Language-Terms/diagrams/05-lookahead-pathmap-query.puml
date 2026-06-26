@@ -1,0 +1,39 @@
+@startuml
+title Lookahead Result PathMap Query
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam sequence {
+  ArrowColor #374151
+  LifeLineBorderColor #6B7280
+  LifeLineBackgroundColor #F9FAFB
+  ParticipantBorderColor #374151
+}
+
+participant "send with suffix\nfoo!(FLT)[*]" as Send #DBEAFE
+participant "Lookahead\nsandbox runner" as LA #FEF3C7
+database "success\nPathMap" as Success #DCFCE7
+database "failure\nPathMap" as Failure #FEE2E2
+queue "foo" as Foo #FEF3C7
+participant "receiver\n@success, @failure" as Rx #DBEAFE
+participant "PathMap API\nreadZipper / atPath" as Api #EDE9FE
+participant "continuation\nbar!(leaf)" as Cont #DBEAFE
+
+Send -> LA : P is an FLT process
+LA -> Success : insert successful leaves
+LA -> Failure : insert abort traces and errors
+LA -> Foo : offer(success, failure)
+Foo -> Rx : receive both PathMap names
+Rx -> Api : success.readZipper().atPath(path)
+Api --> Rx : selected leaf or Nil
+Rx -> Cont : continue with leaf
+
+legend right
+  |= Color |= Concept |
+  |<#DBEAFE> | Host process |
+  |<#FEF3C7> | Lookahead channel |
+  |<#DCFCE7> | Success result |
+  |<#FEE2E2> | Failure result |
+  |<#EDE9FE> | PathMap query API |
+endlegend
+@enduml

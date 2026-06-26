@@ -1,0 +1,50 @@
+@startuml
+title Minimal Virtual-Host Evaluation Cells
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "Virtual-host call" as Call #DBEAFE
+
+frame "Readable minimal context" as Read #F8FAFC {
+  rectangle "<source>\nGuest AST/source" as Source #FEF3C7
+  rectangle "<holes>\nTyped bindings" as Holes #DCFCE7
+  rectangle "<bridge>\nConversion policy" as Bridge #FEF3C7
+  rectangle "<capabilities>\nAllowed effects" as Caps #EDE9FE
+  rectangle "<fuel>\nBudget" as Fuel #FCE7F3
+}
+
+frame "Writable result context" as Write #F8FAFC {
+  rectangle "<result>\nRholang value" as Result #DBEAFE
+  rectangle "<error>\nFail-closed error" as Error #FEE2E2
+  rectangle "<trace>\nDeterministic observations" as Trace #E0F2FE
+}
+
+rectangle "External runtime" as Runtime #DCFCE7
+
+Call --> Source
+Call --> Holes
+Call --> Bridge
+Call --> Caps
+Call --> Fuel
+Source --> Runtime
+Holes --> Runtime
+Bridge --> Runtime
+Caps --> Runtime
+Fuel --> Runtime
+Runtime --> Result
+Runtime --> Error
+Runtime --> Trace
+
+legend right
+  |= Color |= Concept |
+  |<#DBEAFE> | Rholang call/result |
+  |<#FEF3C7> | Source and bridge contract |
+  |<#DCFCE7> | Typed bindings/runtime |
+  |<#EDE9FE> | Capability boundary |
+  |<#FCE7F3> | Resource bound |
+  |<#FEE2E2> | Error cell |
+  |<#E0F2FE> | Trace cell |
+endlegend
+@enduml
