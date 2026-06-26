@@ -129,21 +129,10 @@ The result of parsing is a typed guest AST with hole nodes. Ambiguous parses are
 carried as ordinary parser ambiguity until the surrounding host context,
 expected category, guard, or disambiguation policy resolves them.
 
-```mermaid
-flowchart LR
-  Host["Host parser"] --> Tag["Optional L or L:Cat tag"]
-  Tag --> Delim["Author delimiter"]
-  Delim --> Guest["Guest parser(s)"]
-  Guest --> AST["Typed guest AST with holes"]
-  AST --> HostAST["Host process AST"]
+![FLT parse pipeline: the host parser reads the optional tag and delimiter, delegates the bounded body to guest parser candidates, then embeds the typed guest AST in the host process AST](diagrams/01-parse-pipeline.svg)
 
-  classDef host fill:#DBEAFE,stroke:#1D4ED8,color:#111827;
-  classDef guest fill:#DCFCE7,stroke:#15803D,color:#111827;
-  classDef syntax fill:#FEF3C7,stroke:#D97706,color:#111827;
-  class Host,HostAST host;
-  class Guest,AST guest;
-  class Tag,Delim syntax;
-```
+PlantUML source:
+[diagrams/01-parse-pipeline.puml](diagrams/01-parse-pipeline.puml).
 
 ### Hole Elaboration
 
@@ -171,26 +160,10 @@ In pattern position, the same hole syntax marks a typed capture. Matching
 against a received value binds only the subtree occupying the hole's grammar
 position.
 
-```mermaid
-flowchart TB
-  Template["FLT template\nperl{ print(${x}) }"]
-  Fill["Construction\n${x} fills from environment"]
-  Capture["Pattern\n${x} captures matched subtree"]
-  Bound["Bound AST value\nnot source text"]
-  Match["Captured AST value\navailable to guards"]
+![Hole elaboration: a single FLT template uses construction position to fill a typed AST hole and pattern position to capture a typed AST subtree for guards](diagrams/02-hole-elaboration.svg)
 
-  Template --> Fill --> Bound
-  Template --> Capture --> Match
-
-  classDef template fill:#FEF3C7,stroke:#B45309,color:#111827;
-  classDef construct fill:#DBEAFE,stroke:#1D4ED8,color:#111827;
-  classDef pattern fill:#EDE9FE,stroke:#7C3AED,color:#111827;
-  classDef value fill:#DCFCE7,stroke:#15803D,color:#111827;
-  class Template template;
-  class Fill construct;
-  class Capture pattern;
-  class Bound,Match value;
-```
+PlantUML source:
+[diagrams/02-hole-elaboration.puml](diagrams/02-hole-elaboration.puml).
 
 ### Reduction
 
@@ -213,24 +186,10 @@ The bracket suffix belongs to the send. The process `P`, which may be an FLT, is
 speculatively executed in sandboxed RSpaces according to the Lookahead FIPS. The
 names of the resulting success and failure `PathMap`s are placed on `x`.
 
-```mermaid
-flowchart LR
-  Send["x!(FLT)[*]"] --> Sandbox["Speculative sandbox RSpaces"]
-  Sandbox --> Success["success PathMap"]
-  Sandbox --> Failure["failure PathMap"]
-  Success --> Channel["Names placed on x"]
-  Failure --> Channel
-  Channel --> Receive["for (... <- x) { ... }"]
+![Lookahead over an FLT send: the send suffix forks each rewrite trace into sandboxed empty RSpaces and places success and failure PathMap names on the channel](diagrams/03-lookahead-sandbox.svg)
 
-  classDef send fill:#DBEAFE,stroke:#1D4ED8,color:#111827;
-  classDef sandbox fill:#FCE7F3,stroke:#BE185D,color:#111827;
-  classDef map fill:#DCFCE7,stroke:#15803D,color:#111827;
-  classDef recv fill:#FEF3C7,stroke:#B45309,color:#111827;
-  class Send send;
-  class Sandbox sandbox;
-  class Success,Failure map;
-  class Channel,Receive recv;
-```
+PlantUML source:
+[diagrams/03-lookahead-sandbox.puml](diagrams/03-lookahead-sandbox.puml).
 
 ### Value Binding
 
@@ -293,25 +252,10 @@ rendered text contains a closing delimiter, statement separator, or guest syntax
 cannot escape its slot because rendered text is not concatenated into the guest
 source.
 
-```mermaid
-flowchart LR
-  Source["Guest source template"] --> Parse["Parse once"]
-  Parse --> Hole["Typed hole node"]
-  Value["Host value as AST"] --> Check["Category check"]
-  Check --> Graft["AST graft"]
-  Hole --> Graft
-  Graft --> Result["Final guest AST"]
-  Text["Rendered text attack"] -. rejected .-> Graft
+![No-injection boundary: the guest source template is parsed once, host values enter only as typechecked ASTs, and rendered text attacks are rejected before grafting](diagrams/04-no-injection-boundary.svg)
 
-  classDef source fill:#FEF3C7,stroke:#B45309,color:#111827;
-  classDef parse fill:#DBEAFE,stroke:#1D4ED8,color:#111827;
-  classDef ast fill:#DCFCE7,stroke:#15803D,color:#111827;
-  classDef reject fill:#FEE2E2,stroke:#DC2626,color:#111827;
-  class Source source;
-  class Parse,Check parse;
-  class Hole,Value,Graft,Result ast;
-  class Text reject;
-```
+PlantUML source:
+[diagrams/04-no-injection-boundary.puml](diagrams/04-no-injection-boundary.puml).
 
 If a guest language already uses `${...}` for its own syntax, that language may
 declare an alternate antiquote token for host holes. A fully opaque text guest

@@ -1,0 +1,28 @@
+@startuml
+title FLT Parse Pipeline
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "Host parser" as Host #DBEAFE
+rectangle "Optional tag\nL or L:Cat" as Tag #FEF3C7
+rectangle "Author delimiter" as Delim #FEF3C7
+rectangle "Guest parser(s)" as Guest #DCFCE7
+rectangle "Typed guest AST\nwith holes" as AST #DCFCE7
+rectangle "Host process AST" as HostAST #DBEAFE
+
+Host --> Tag : reads
+Tag --> Delim : selects grammar\nor defers inference
+Delim --> Guest : bounds guest body
+Guest --> AST : parses body
+AST --> HostAST : embeds term
+
+legend right
+  |= Color |= Concept |
+  |<#DBEAFE> | Host parser / host AST |
+  |<#FEF3C7> | FLT surface syntax |
+  |<#DCFCE7> | Guest parser / guest AST |
+endlegend
+@enduml

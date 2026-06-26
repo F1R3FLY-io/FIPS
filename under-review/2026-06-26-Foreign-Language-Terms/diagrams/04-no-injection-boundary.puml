@@ -1,0 +1,33 @@
+@startuml
+title No-Injection Boundary
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "Guest source\ntemplate" as Source #FEF3C7
+rectangle "Parse once" as Parse #DBEAFE
+rectangle "Typed hole\nnode" as Hole #DCFCE7
+rectangle "Host value\nas AST" as Value #DCFCE7
+rectangle "Category check" as Check #DBEAFE
+rectangle "AST graft" as Graft #DCFCE7
+rectangle "Final guest\nAST" as Result #DCFCE7
+rectangle "Rendered text attack\nclosing delimiter / separator" as Attack #FEE2E2
+
+Source --> Parse : before values are known
+Parse --> Hole : creates structural slot
+Value --> Check : value is already AST
+Check --> Graft : type-compatible only
+Hole --> Graft : replace this node only
+Graft --> Result : preserve outer tree
+Attack -[#DC2626,dashed]-> Graft : rejected\nnever parsed as source
+
+legend right
+  |= Color |= Concept |
+  |<#FEF3C7> | Guest source template |
+  |<#DBEAFE> | Parser / typecheck step |
+  |<#DCFCE7> | Typed AST boundary |
+  |<#FEE2E2> | Rejected text attack |
+endlegend
+@enduml

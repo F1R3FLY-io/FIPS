@@ -1,0 +1,27 @@
+@startuml
+title Hole Elaboration: Fill and Capture
+left to right direction
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+
+rectangle "FLT template\nperl{ print(${x}) }" as Template #FEF3C7
+rectangle "Construction context\nfill ${x} from environment" as Fill #DBEAFE
+rectangle "Pattern context\ncapture ${x} from match" as Capture #EDE9FE
+rectangle "Bound AST value\nnot source text" as Bound #DCFCE7
+rectangle "Captured AST value\navailable to guards" as Matched #DCFCE7
+
+Template --> Fill : term position
+Template --> Capture : pattern position
+Fill --> Bound : AST graft
+Capture --> Matched : typed subtree binding
+
+legend right
+  |= Color |= Concept |
+  |<#FEF3C7> | FLT template |
+  |<#DBEAFE> | Construction-side fill |
+  |<#EDE9FE> | Pattern-side capture |
+  |<#DCFCE7> | Typed AST values |
+endlegend
+@enduml
