@@ -71,9 +71,16 @@ selects one.
 - **Pattern position**: a matching context where a hole captures a subtree into
   an environment.
 - **Bridge signature**: the typed contract for converting values between
-  Rholang and a virtual host.
-- **Virtual host**: an external runtime, such as an ECMAScript or TypeScript
-  runtime, bound through a `semantics <Host>` declaration.
+  Rholang and another language.
+- **Canonical bridge type**: a language-neutral type such as `Integer`,
+  `Record`, or `Variant` that describes the meaning of a value before any
+  runtime-specific representation is chosen.
+- **Type profile**: a per-language mapping from canonical bridge types to the
+  value domain of a concrete runtime.
+- **Codec**: a deterministic encoder or decoder for one direction of a bridge
+  mapping. A codec may be partial, but every failure must be explicit.
+- **Virtual host**: an external runtime bound through a `semantics <Host>`
+  declaration.
 - **Context**: a one-hole term `C[-]`; filling the hole with `p` is written
   `C[p]`.
 - **Minimal evaluation context**: the smallest context that witnesses a rewrite
@@ -164,25 +171,55 @@ separator nonempty Decl ";" ;
 separator nonempty ConcDecl "/\\" ;
 separator Name "," ;
 
--- Virtual-host declaration and invocation.
-SemanticsPath. SemanticsDecl ::= "semantics" DottedPath ;
-BridgeDecl.    SemanticsDecl ::= "semantics" DottedPath "bridge" "{" [BridgeItem] "}" ;
-BridgeParam.   BridgeItem ::= "param" Ident ":" BridgeType ;
-BridgeResult.  BridgeItem ::= "result" ":" BridgeType ;
+-- Virtual-host declaration and invocation. BridgeType is language-neutral;
+-- runtime-specific representations are selected by profile declarations.
+SemanticsPath.     SemanticsDecl ::= "semantics" DottedPath ;
+BridgeDecl.        SemanticsDecl ::= "semantics" DottedPath "bridge" "{" [BridgeItem] "}" ;
+BridgeProfileItem. BridgeItem ::= "profile" DottedPath ;
+BridgeParamItem.   BridgeItem ::= "param" Ident ":" BridgeType ;
+BridgeResultItem.  BridgeItem ::= "result" ":" BridgeType ;
 separator BridgeItem ";" ;
 
 HostCall.      Proc ::= Flt "(" [Proc] ")" ;
 
+BridgeUnit.    BridgeType ::= "Unit" ;
 BridgeBool.    BridgeType ::= "Bool" ;
-BridgeString.  BridgeType ::= "String" ;
-BridgeBytes.   BridgeType ::= "ByteArray" ;
-BridgeSafeNum. BridgeType ::= "SafeNumber" ;
-BridgeBigInt.  BridgeType ::= "BigInt" ;
-BridgeFloat.   BridgeType ::= "FiniteFloat64" ;
+BridgeText.    BridgeType ::= "Text" ;
+BridgeBytes.   BridgeType ::= "Bytes" ;
+BridgeInteger. BridgeType ::= "Integer" BridgePolicyOpt ;
+BridgeRational. BridgeType ::= "Rational" BridgePolicyOpt ;
+BridgeDecimal. BridgeType ::= "Decimal" BridgePolicyOpt ;
+BridgeBinaryFloat32. BridgeType ::= "BinaryFloat32" BridgePolicyOpt ;
+BridgeBinaryFloat64. BridgeType ::= "BinaryFloat64" BridgePolicyOpt ;
 BridgeProc.    BridgeType ::= "Proc" ;
 BridgeName.    BridgeType ::= "Name" ;
-BridgeList.    BridgeType ::= "[" BridgeType "]" ;
+BridgeAst.     BridgeType ::= "GuestAst" "<" Ident ">" ;
+BridgeList.    BridgeType ::= "List" "<" BridgeType ">" ;
+BridgeSet.     BridgeType ::= "Set" "<" BridgeType ">" ;
+BridgeMap.     BridgeType ::= "Map" "<" BridgeType "," BridgeType ">" ;
+BridgeTuple.   BridgeType ::= "(" [BridgeType] ")" ;
+BridgeRecord.  BridgeType ::= "Record" "{" [BridgeField] "}" ;
+BridgeVariant. BridgeType ::= "Variant" "{" [BridgeVariantCase] "}" ;
+BridgeOption.  BridgeType ::= "Option" "<" BridgeType ">" ;
+BridgeResultType. BridgeType ::= "Result" "<" BridgeType "," BridgeType ">" ;
 BridgePathMap. BridgeType ::= "PathMap" "<" BridgeType ">" ;
+BridgeOpaque.  BridgeType ::= "Opaque" "<" DottedPath ">" ;
+
+BridgeFieldItem. BridgeField ::= Ident ":" BridgeType ;
+BridgeVariantEmpty. BridgeVariantCase ::= Ident ;
+BridgeVariantPayload. BridgeVariantCase ::= Ident "(" BridgeType ")" ;
+
+NoBridgePolicy.   BridgePolicyOpt ::= ;
+SomeBridgePolicy. BridgePolicyOpt ::= "{" [BridgePolicy] "}" ;
+BridgePolicyFlag. BridgePolicy ::= Ident ;
+BridgePolicyPair. BridgePolicy ::= Ident "=" BridgePolicyValue ;
+BridgePolicyIdent. BridgePolicyValue ::= Ident ;
+BridgePolicyInt.   BridgePolicyValue ::= Integer ;
+
+separator BridgeType "," ;
+separator BridgeField ";" ;
+separator BridgeVariantCase "|" ;
+separator BridgePolicy "," ;
 
 PathOne.       DottedPath ::= Ident ;
 PathMore.      DottedPath ::= Ident "." DottedPath ;
@@ -444,9 +481,10 @@ perl{ print(${foo}) }
 an external runtime:
 
 ```text
-semantics TypeScript.Node bridge {
-  param n: SafeNumber;
-  result: [SafeNumber];
+semantics Foreign.Runtime bridge {
+  profile Host.Structural;
+  param n: Integer { range = nonnegative, loss = reject };
+  result: List<Integer { loss = reject }>;
 }
 ```
 
@@ -455,70 +493,102 @@ template and hole bindings are passed to the external runtime as separate
 parameters. The runtime must not receive host values by source concatenation.
 
 ```text
-ts<<TS
-  export default (n) => Array.from({ length: n }, (_, i) => i * i)
-TS (${n})
+foreign<<CODE
+  squares(n)
+CODE (${n})
 ```
 
-The value bound to `${n}` is delivered as a parameter to the TypeScript runtime,
-not inserted into the TypeScript source.
+The value bound to `${n}` is delivered as a typed parameter to the runtime, not
+inserted into the foreign source.
 
-### Bridge Types
+### Interlanguage Type Mapping
 
-TypeScript annotations are not a runtime contract. The TypeScript Handbook
-describes type annotations as erased; therefore this FIPS requires an explicit
-bridge signature. The bridge signature is the authority for conversion.
+[Proposed] A bridge maps values between languages through a canonical, typed
+middle domain. It is not a table of ad hoc pairs such as "Rholang integer to
+a foreign numeric type". The bridge has four layers:
 
-| Rholang value | Default bridge type | ECMAScript/TypeScript value | Failure cases |
+| Layer | Purpose | Example |
+| --- | --- | --- |
+| Bridge signature | Author-facing contract in the FIPS syntax | `param n: Integer { loss = reject }` |
+| Rholang codec | Converts between `Par` values and canonical values | `GInt` to canonical `Integer` |
+| Canonical bridge type | Language-neutral value meaning | `Record`, `Variant`, `Decimal`, `PathMap<T>` |
+| Type profile | Runtime-specific representation and validation | `Integer` as a host `i64`, `bigint`, decimal object, or ABI integer |
+
+The canonical bridge domain is the pivot. A mapping from Rholang to language `L`
+is written as:
+
+`Rholang Par ⇀ Canon(T) ⇀ L`
+
+The reverse direction is:
+
+`L ⇀ Canon(T) ⇀ Rholang Par`
+
+Each arrow is a deterministic partial function. Partiality is acceptable only
+when failure is explicit, stable, and reported as a bridge error.
+
+A type profile must define, for every canonical type it supports:
+
+1. the concrete runtime representation;
+2. the codec from canonical values into that representation;
+3. the codec from runtime values back into canonical values;
+4. equality and canonicalization rules;
+5. ownership, aliasing, and mutability rules for structured values; and
+6. deterministic bridge errors for every unsupported or invalid value.
+
+This shape is intentionally close to interface-type systems such as the
+WebAssembly Component Model: authors name structural value contracts, while
+profiles own the concrete ABI or runtime representation.
+
+| Family | Canonical bridge types | Semantics | Profile obligations |
 | --- | --- | --- | --- |
-| `GBool` | `Bool` | `boolean` | non-bool |
-| `GString` | `String` | `string` | invalid declared category |
-| `GByteArray` | `ByteArray` | `Uint8Array` | unsupported host runtime |
-| `GInt`, signed/unsigned typed ints | `SafeNumber` | `number` | outside `[-(2^53 - 1), 2^53 - 1]` |
-| `GInt`, `GBigInt` | `BigInt` | `bigint` | host lacks BigInt |
-| `GDouble` | `FiniteFloat64` | `number` | NaN or Infinity unless explicitly allowed |
-| `GBigRat` | no implicit default | bridge-declared rational object | no declared representation |
-| `GFixedPoint` | no implicit default | bridge-declared decimal object | scale or precision mismatch |
-| `EList`, `ETuple` | `[T]` | frozen array | element conversion failure |
-| `EPathMap` | `PathMap<T>` | opaque bridge object | path/value conversion failure |
-| `Proc`, `Name` | `Proc`, `Name` | opaque structural object | host asks for source-only value |
+| Unit and booleans | `Unit`, `Bool` | Absence of value and truth values | Preserve exact truth domain |
+| Text and bytes | `Text`, `Bytes` | Unicode text and uninterpreted byte sequences | Declare encoding, normalization, and invalid-input policy |
+| Exact numbers | `Integer`, `Rational`, `Decimal` | Mathematical numeric values | Declare range, precision, scale, and overflow policy |
+| Binary floats | `BinaryFloat32`, `BinaryFloat64` | IEEE-style finite or non-finite binary floats | Declare NaN, infinity, signed-zero, and rounding policy |
+| Products | `List<T>`, `Set<T>`, `Map<K,V>`, tuples, `Record{...}` | Structured values with child types | Define ordering, equality, mutability, and duplicate-key policy |
+| Sums | `Variant{...}`, `Option<T>`, `Result<T,E>` | Tagged alternatives | Preserve tag identity and payload type |
+| Rholang structures | `Proc`, `Name`, `PathMap<T>`, `GuestAst<L>` | Host process, name, trace map, or guest AST values | Keep structural form; never require source rendering |
+| Opaque handles | `Opaque<P>` | Capability or runtime-owned resource | Define lifetime, authority, serialization, and revocation policy |
 
-The ECMAScript `Number` type is IEEE 754 binary64 and includes NaN and infinities.
-The ECMAScript `BigInt` type represents arbitrary-size integers. Because Rholang
-has exact integer and rational forms, a bridge must never silently narrow an exact
-value to a lossy `number`.
+Bridge policies refine canonical types without changing the core type algebra.
+The default policy is `loss = reject`. Lossy conversion, rounding,
+canonicalization, range truncation, mutation, or ambient authority must be named
+explicitly in the bridge declaration or the runtime profile.
 
 ```text
-Algorithm: Convert a Rholang value to a virtual-host parameter
+Algorithm: Bridge a value through a canonical type
 
 Input:
-  v, a Rholang Par value
-  T, a declared BridgeType
+  v, a value from source language S
+  T, a declared canonical BridgeType
+  P, the target language type profile
 
-If T is SafeNumber:
-  1. Require v to be an integer value.
-  2. Require -(2^53 - 1) <= v <= 2^53 - 1.
-  3. Return the ECMAScript number with that integer value.
+Let decode(S, T, v) be the source-language codec into Canon(T).
+Let encode(P, T, c) be the target-profile codec from Canon(T).
 
-If T is BigInt:
-  1. Require v to be an exact integer value.
-  2. Return an ECMAScript bigint with the same mathematical value.
-
-If T is FiniteFloat64:
-  1. Require v to be GDouble.
-  2. Decode the stored f64 bits.
-  3. Reject NaN and Infinity unless the bridge explicitly declares them.
-  4. Return the ECMAScript number with the same f64 value.
-
-For composite T:
-  1. Convert every child recursively.
-  2. If any child fails, fail the whole conversion.
+1. Decode v into canonical value c using decode(S, T, v).
+2. Validate c against every policy attached to T.
+3. Encode c into the target runtime using encode(P, T, c).
+4. If decoding, validation, or encoding fails, return a deterministic
+   BridgeError and perform no guest step.
+5. Otherwise pass the encoded value to the runtime.
 
 Output:
-  a host value or a bridge error; errors are deterministic and fail closed.
+  a target runtime value or a fail-closed BridgeError.
 ```
 
-![Virtual host bridge: Rholang values cross the bridge only through declared conversion rules; TypeScript source and runtime values stay separate](diagrams/06-virtual-host-bridge.svg)
+For every loss-rejecting type `T`, the Rholang codec must satisfy the round-trip
+law `fromCanon_T(toCanon_T(v)) = v` for every Rholang value `v` in the declared
+domain. A type profile may canonicalize target-language values, but only if the
+canonicalization is declared and stable under equality for `T`.
+
+TypeScript and ECMAScript are one possible profile, not the bridge model. Such a
+profile may map `Integer { range = safeNumber }` to an ECMAScript `number`,
+`Integer { representation = bigint }` to `bigint`, and `BinaryFloat64` to
+`number` with explicit NaN and infinity policy. TypeScript annotations are not a
+runtime contract; the bridge signature remains authoritative.
+
+![Virtual host bridge: Rholang and foreign values cross through a canonical bridge type and per-runtime profile, with fail-closed codec validation in both directions](diagrams/06-virtual-host-bridge.svg)
 
 PlantUML source:
 [diagrams/06-virtual-host-bridge.puml](diagrams/06-virtual-host-bridge.puml).
@@ -588,23 +658,25 @@ success PathMap. It does not receive a bare future trace directly.
 ### Virtual Host with Explicit Bridge
 
 ```text
-semantics TypeScript.Node bridge {
-  param n: SafeNumber;
-  result: [SafeNumber];
+semantics Foreign.Runtime bridge {
+  profile Host.Structural;
+  param n: Integer { range = nonnegative, loss = reject };
+  result: List<Integer { loss = reject }>;
 }
 
 let n = 5 in {
   out!(
-    ts<<TS
-      export default (n) => Array.from({ length: n }, (_, i) => i * i)
-    TS (${n})
+    foreign<<CODE
+      squares(n)
+    CODE (${n})
   )
 }
 ```
 
-If `n` is a `GBigInt` larger than `2^53 - 1`, this program must fail conversion
-for `SafeNumber`. The author must instead declare `param n: BigInt` and use a
-host implementation that accepts `bigint`.
+If the selected profile cannot represent `n` as a nonnegative exact integer, the
+bridge fails before the foreign runtime executes. A TypeScript profile, for
+example, must choose whether such an integer is represented as a safe
+ECMAScript `number`, a `bigint`, or a profile-defined exact numeric object.
 
 ## Implementation Evidence
 
@@ -688,5 +760,8 @@ until parser policy is stable.
   <https://tc39.es/ecma262/#sec-ecmascript-language-types-bigint-type>
 - TypeScript Handbook, erased types:
   <https://www.typescriptlang.org/docs/handbook/2/basic-types.html#erased-types>
+- WebAssembly Component Model, WIT and Canonical ABI:
+  <https://component-model.bytecodealliance.org/design/wit.html> and
+  <https://component-model.bytecodealliance.org/design/canonical-abi.html>
 - K Framework User Manual:
   <https://kframework.org/docs/user_manual/>

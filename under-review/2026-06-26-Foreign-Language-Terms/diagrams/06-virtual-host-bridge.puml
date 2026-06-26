@@ -1,38 +1,42 @@
 @startuml
-title Virtual Host Bridge
+title Canonical Interlanguage Bridge
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "Rholang Par value\nGInt / GBigInt / GDouble / ..." as Rho #DBEAFE
-rectangle "Bridge signature\nparam n: SafeNumber" as Sig #FEF3C7
-rectangle "Conversion\nallowed?" as Check #FDE68A
-rectangle "ECMAScript value\nnumber / bigint / object" as JS #DCFCE7
-rectangle "TypeScript runtime\nannotations erased" as TS #EDE9FE
-rectangle "Host result" as HostResult #DCFCE7
-rectangle "Result converts\nback to Rholang?" as BackCheck #FDE68A
+rectangle "Source value\nRholang Par or guest value" as Source #DBEAFE
+rectangle "Bridge signature\ncanonical BridgeType T" as Sig #FEF3C7
+rectangle "Source codec\nto Canon(T)" as Decode #FDE68A
+rectangle "Canonical value\nloss-rejecting domain" as Canon #DCFCE7
+rectangle "Target type profile\nruntime representation" as Profile #EDE9FE
+rectangle "Target runtime value\nparameter or result" as Runtime #CCFBF1
+rectangle "Runtime step\ndeterministic effects" as Step #EDE9FE
+rectangle "Return codec\nfrom profile to Canon(T)" as ReturnCodec #FDE68A
 rectangle "Rholang result\nPar" as Result #DBEAFE
 rectangle "Bridge error\nfail closed" as Error #FEE2E2
 
-Rho --> Sig : value plus declared type
-Sig --> Check : validate category and range
-Check --> JS : yes
-Check -[#DC2626,dashed]-> Error : no
-JS --> TS : pass as parameter
-TS --> HostResult : deterministic return
-HostResult --> BackCheck : validate result type
-BackCheck --> Result : yes
-BackCheck -[#DC2626,dashed]-> Error : no
+Source --> Sig : value plus declared type
+Sig --> Decode : choose codec
+Decode --> Canon : decode and validate
+Decode -[#DC2626,dashed]-> Error : invalid source
+Canon --> Profile : select representation
+Profile --> Runtime : encode for target
+Profile -[#DC2626,dashed]-> Error : unsupported policy
+Runtime --> Step : evaluate
+Step --> ReturnCodec : runtime result
+ReturnCodec --> Result : validate and encode Par
+ReturnCodec -[#DC2626,dashed]-> Error : invalid result
 
 legend right
   |= Color |= Concept |
-  |<#DBEAFE> | Rholang boundary |
+  |<#DBEAFE> | Language boundary |
   |<#FEF3C7> | Bridge contract |
-  |<#FDE68A> | Fail-closed checks |
-  |<#DCFCE7> | Host values |
-  |<#EDE9FE> | Virtual runtime |
+  |<#FDE68A> | Codecs and validation |
+  |<#DCFCE7> | Canonical value |
+  |<#EDE9FE> | Runtime profile / step |
+  |<#CCFBF1> | Runtime value |
   |<#FEE2E2> | Deterministic error |
 endlegend
 @enduml
