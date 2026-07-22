@@ -17,7 +17,7 @@ The current desugaring of [agents](https://github.com/F1R3FLY-io/FIPS/blob/main/
 }⟧
 =
 for(r, <fooPtrns> <= fooCtor) {
-  new this in {
+  new this, private in {
     // At least return channel and method name
     for(...@args <= this) {
       match args {
@@ -30,8 +30,8 @@ for(r, <fooPtrns> <= fooCtor) {
     
     // Set up state and return the instance
     ⟦Pc⟧ |
-    r!(bundle+{this})
-  }}
+    r!(bundle+{*this})
+  }
 }
 
 ⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?("y", ...args)) { P }⟧
@@ -39,9 +39,9 @@ for(r, <fooPtrns> <= fooCtor) {
 ⟦x!y(...args).⟧  = ⟦x!?("y", ...args).⟧
 ```
 
-If any `method` is declared, the `default` case has to be provided.
+Every agent block must provide a `default` clause (see [Agents](../2025-08-20-Agents/Agents.md)).
 
-The agents proposal doesn't provide for private methods.  Here we propose a small extension of the agent syntax and semantics to allow private methods.
+The agents proposal binds a `private` channel in the base desugaring but doesn't dispatch on it. Here we propose a small extension of the agent syntax and semantics to add a parallel dispatcher over that channel, giving agents private methods.
 
 ## Private keyword
 
@@ -83,8 +83,8 @@ for(r, <fooPtrns> <= fooCtor) {
     
     // Set up state and return the instance
     ⟦Pc⟧ |
-    r!(bundle+{this})
-  }}
+    r!(bundle+{*this})
+  }
 }
 ```
 

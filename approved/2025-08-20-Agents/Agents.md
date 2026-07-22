@@ -17,7 +17,7 @@ Many F1R3FLY node Rholang contracts have been written to emulate OOP-style objec
 }⟧
 =
 for(r, <fooPtrns> <= fooCtor) {
-  new this in {
+  new this, private in {
     // At least return channel and method name
     for(...@args <= this) {
       match args {
@@ -30,8 +30,8 @@ for(r, <fooPtrns> <= fooCtor) {
     
     // Set up state and return the instance
     ⟦Pc⟧ |
-    r!(bundle+{this})
-  }}
+    r!(bundle+{*this})
+  }
 }
 
 ⟦for(z <- x!y(...args)) { P }⟧ = ⟦for(z <- x!?("y", ...args)) { P }⟧
@@ -40,6 +40,10 @@ for(r, <fooPtrns> <= fooCtor) {
 ```
 
 where `r # Pc, P1, …, Pn, Q`.  Note that the channels this and return can be used freely in method bodies; the channels become bound in the desugaring.  Only this can be used in Q, since it's not guaranteed that Q will receive a return channel; if it does, it will be the first element of args.
+
+Every agent block must provide a `default` clause. The dispatch loop's `match` needs an exhaustive arm because messages of unexpected shape can arrive on `this` at runtime; without a `default`, those messages would deadlock the agent. The constraint applies to every agent, including those with no `method` declarations.
+
+The desugaring also binds a `private` channel unconditionally, even though the base agent block doesn't dispatch on it. This makes `private` available as a fresh unforgeable name unique to each instance — agent bodies can incorporate `*private` into compound address keys (e.g., `@[*private, *stateToken]`) to scope instance-local state. The [Private Methods FIP](../2026-01-28-Private-Methods/2026-01-28-Private-Methods.md) builds on this by adding a parallel dispatcher over `private` when private declarations are present.
 
 The constructor pattern interacts with the send-return syntax nicely:
 
@@ -55,29 +59,29 @@ for(barInstance <- barCtor!?(...barArgs)) {
 ## Example
 ```
 new Stack, uriOut, merge, sizeP, elemP in {
-  agent Stack {
-    constructor() {
-      @(*this, *sizeP)!(0) |
-      contract merge(@stack, @begin, @end, ret) = {
-        match (end - begin) {
-          0 => ret!([])
-          1 => {
-            for(@value <<- @(stack, *elemP, begin)) {
-              ret!([value])
-            }
-          }
-          _ => {
-            new left, right in {
-              merge!(stack, begin, begin + (end - begin) / 2, *left) |
-              merge!(stack, begin + (end - begin) / 2, end, *right) |
-              
-              for(@leftList <- left & @rightList <- right) {
-                ret!(leftList ++ rightList)
-              }
-            }
+  contract merge(@stack, @begin, @end, ret) = {
+    match (end - begin) {
+      0 => ret!([])
+      1 => {
+        for(@value <<- @(stack, *elemP, begin)) {
+          ret!([value])
+        }
+      }
+      _ => {
+        new left, right in {
+          merge!(stack, begin, begin + (end - begin) / 2, *left) |
+          merge!(stack, begin + (end - begin) / 2, end, *right) |
+          
+          for(@leftList <- left & @rightList <- right) {
+            ret!(leftList ++ rightList)
           }
         }
       }
+    }
+  } |
+  agent Stack {
+    constructor() {
+      @(*this, *sizeP)!(0)
     } |
     method isEmpty() {
       for (@size <<- @(*this, *sizeP)) {
@@ -104,7 +108,7 @@ new Stack, uriOut, merge, sizeP, elemP in {
         } else {
           for(@value <- @(*this, *elemP, size - 1)) {
             @(*this, *sizeP)!(size - 1) |
-            ret!((true, value))
+            return!((true, value))
           }
         }
       }
@@ -116,11 +120,12 @@ new Stack, uriOut, merge, sizeP, elemP in {
           
           for(@merged <- mergedCh) {
             @(*this, *sizeP)!(size) |
-            ret!(merged)
+            return!(merged)
           }
         }
       }
-    }
+    } |
+    default(...@args) { Nil }
   }
 }
 ```
