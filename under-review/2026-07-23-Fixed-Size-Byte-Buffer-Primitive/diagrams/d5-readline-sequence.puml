@@ -1,0 +1,28 @@
+@startuml
+title file!readLine(buf) — end to end;  status reply = happens-before
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #37474F
+skinparam ParticipantBorderColor #37474F
+skinparam LifeLineBorderColor #90A4AE
+actor Client #4F82C2
+participant "File agent" as File #3C9C9C
+participant "Buffer agent" as Buf #5FA75F
+
+Client -> File : file!readLine(buf)
+activate File
+loop until newline, buffer full, or EOF
+  File -> File : read chunk at current position
+  File -> Buf : buf!writeBytes(chunk)
+  activate Buf
+  Buf --> File : [true, nWritten]
+  deactivate Buf
+end
+File --> Client : [true, nRead, flags]  (flags: eof, truncated)
+deactivate File
+note over Client, Buf
+buf handle is unchanged and still valid.
+Client reads buf ONLY inside the success
+continuation — the reply is the happens-before edge.
+end note
+@enduml

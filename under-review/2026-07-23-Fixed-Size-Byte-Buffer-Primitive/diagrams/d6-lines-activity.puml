@@ -1,0 +1,32 @@
+@startuml
+title file!lines(bufOfBufs) — fill each inner buffer, drop overflow to newline
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ActivityBackgroundColor #DDF0DD
+skinparam ActivityBorderColor #37474F
+skinparam ActivityDiamondBackgroundColor #FBE7D2
+skinparam ActivityDiamondBorderColor #E08A3C
+start
+:i := 0;
+:nLines := 0;
+while (i < m  and  not EOF ?) is (yes)
+  :inner := bufOfBufs[i];
+  :clear inner;
+  while (byte available  and  inner not full  and  byte != newline ?) is (yes)
+    :append byte to inner;
+  endwhile (no)
+  if (byte == newline ?) then (yes)
+    :consume newline;
+  else (inner full before newline)
+    while (byte available  and  byte != newline ?) is (yes)
+      :drop byte  (line exceeds inner capacity);
+    endwhile (no)
+    :consume newline if present;
+    :mark inner truncated;
+  endif
+  :nLines := nLines + 1;
+  :i := i + 1;
+endwhile (no)
+:return [true, nLines, flags];
+stop
+@enduml

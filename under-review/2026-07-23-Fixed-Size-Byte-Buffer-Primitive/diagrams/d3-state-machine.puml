@@ -1,0 +1,19 @@
+@startuml
+title Buffer lifecycle (state machine)
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam StateBackgroundColor #DDF0DD
+skinparam StateBorderColor #37474F
+[*] --> Empty : alloc(n, unit)\n<latex>C = n</latex> (bytes) or <latex>C = 4n</latex> (utf8)
+Empty --> Filling : writeBytes / writeByte
+Filling --> Filling : writeBytes fits\n(<latex>\ell + k \le C</latex>)
+Filling --> Full : write reaches <latex>\ell = C</latex>
+Full --> Full : writeBytes =>\n[false, BUFERR_CAPACITY_EXCEEDED]
+Filling --> Draining : read(n) advances <latex>\rho</latex>
+Full --> Draining : read(n)
+Draining --> Draining : read(n) while <latex>\rho < \ell</latex>
+Empty --> Empty : clear()
+Filling --> Empty : clear()
+Full --> Empty : clear()
+Draining --> Empty : clear()
+@enduml

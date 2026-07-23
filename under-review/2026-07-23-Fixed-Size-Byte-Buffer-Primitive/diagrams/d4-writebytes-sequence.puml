@@ -1,0 +1,22 @@
+@startuml
+title Method dispatch — buf!writeBytes(chunk) — state token as mutex
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #37474F
+skinparam ParticipantBorderColor #37474F
+skinparam LifeLineBorderColor #90A4AE
+actor Client #4F82C2
+participant "Buffer agent\ndispatch loop on this" as Agent #5FA75F
+entity "state token\n@(this, stateP) = <latex>\langle b, \ell, \rho\rangle</latex>" as State #E08A3C
+
+Client -> Agent : buf!writeBytes(chunk)  =  this!(ret, writeBytes, chunk)
+activate Agent
+Agent -> State : consume @(this, stateP)  — LOCK
+activate State
+note right of State : token removed;\nconcurrent writers block here
+Agent -> Agent : <latex>k = \min(|\mathrm{chunk}|,\; C - \ell)</latex>\nwrite <latex>k</latex> bytes;  <latex>\ell' = \ell + k</latex>
+Agent -> State : re-send @(this, stateP) with <latex>\langle b', \ell', \rho\rangle</latex>  — UNLOCK
+deactivate State
+Agent -> Client : ret!([true, <latex>k</latex>])
+deactivate Agent
+@enduml

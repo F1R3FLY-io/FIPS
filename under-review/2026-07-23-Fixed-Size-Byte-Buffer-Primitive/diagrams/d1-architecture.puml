@@ -1,0 +1,29 @@
+@startuml
+title Fixed-Size Byte Buffer — Layered Architecture
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+skinparam ArrowColor #37474F
+
+package "Rholang user space" #EAF2FB {
+  component "Client process\nholds bundle+ handle" as Client #D6E4F0
+  component "File agent\nrho:io:fs:1.*" as File #D2ECEC
+}
+package "Agent API  (sole client surface)" #DDF0DD {
+  component "Buffer agent — dispatch loop on this\nmethod => [true, ...] or [false, code, msg]" as Agent #BFE3BF
+}
+package "Native primitive  (f1r3node)" #FBE7D2 {
+  component "Fixed-size byte buffer\nstate <latex>\langle b, \ell, \rho\rangle</latex>, capacity <latex>C</latex>" as Buf #F4C99A
+}
+package "Runtime substrate" #ECECEC {
+  database "RSpace\nstate = parked messages" as RSpace #E7DEF2
+  component "Cost engine (phlogiston)\nalloc cost <latex>= \kappa \cdot C</latex>" as Cost #F2DEDE
+}
+
+Client -down-> Agent : buf!method(args)  (send-return)
+File -down-> Agent : fills via  buf!writeBytes(chunk)
+Agent -down-> Buf : guarded ops — capacity enforced
+Buf -down-> RSpace : state tokens  @(this, stateP)
+Buf -right-> Cost : charge on alloc / write
+@enduml

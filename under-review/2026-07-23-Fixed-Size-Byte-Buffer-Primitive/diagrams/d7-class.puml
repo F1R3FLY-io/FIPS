@@ -1,0 +1,35 @@
+@startuml
+title Buffer factory, buffer agent, and File-agent integration
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ClassBorderColor #37474F
+skinparam ClassBackgroundColor #DDF0DD
+skinparam ClassAttributeFontColor #263238
+
+class "BufferFactory\nrho:lang:buffer:1.*" as Factory #F4C99A {
+  + alloc(nUnits, unit) : bundle+ handle
+  + allocBytes(n)
+  + allocUtf8(n)
+}
+class "Buffer agent" as Buffer {
+  - bytes b   (|b| = C)
+  - length ℓ
+  - cursor ρ
+  - capacity C
+  --
+  + capacity() / length() / remaining()
+  + isFull() / isEmpty()
+  + writeByte(x) / writeBytes(xs)
+  + read(n) / slice(o,n) / toByteArray()
+  + view() / charAt(i) / chars()
+  + clear()
+  + default(...args)
+}
+class "File agent" as File #D2ECEC {
+  + read(buf) / readAt(buf, o)
+  + readLine(buf) / write(buf)
+  + lines(bufOfBufs)
+}
+Factory ..> Buffer : creates (returns bundle+)
+File ..> Buffer : fills via buf!writeBytes
+@enduml

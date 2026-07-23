@@ -1,0 +1,16 @@
+@startuml
+title Buffer memory layout — regions of a capacity-<latex>C</latex> buffer
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+rectangle "consumed\n[0, <latex>\rho</latex>)" as R1 #D9D9D9
+rectangle "unread / filled\n[<latex>\rho</latex>, <latex>\ell</latex>)" as R2 #A6D854
+rectangle "free\n[<latex>\ell</latex>, <latex>C</latex>)" as R3 #F7F7F7
+R1 -[hidden]right- R2
+R2 -[hidden]right- R3
+note bottom of R1 : offset 0
+note bottom of R2 : cursor <latex>\rho</latex> .. fill level <latex>\ell</latex>
+note bottom of R3 : capacity <latex>C</latex>
+legend bottom
+invariant  <latex>0 \le \rho \le \ell \le C</latex>
+endlegend
+@enduml
