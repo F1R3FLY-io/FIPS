@@ -6,30 +6,39 @@ skinparam ClassBorderColor #37474F
 skinparam ClassBackgroundColor #DDF0DD
 skinparam ClassAttributeFontColor #263238
 
-class "BufferFactory\nrho:lang:buffer:1.*" as Factory #F4C99A {
+class "BufferFactory\nrho:lang:buffer" as Factory #F4C99A {
   + alloc(nUnits, unit) : bundle+ handle
-  + allocBytes(n)
-  + allocUtf8(n)
+  + allocBytes(n) / allocUtf8(n)
+  + allocRows(m, innerN, innerUnit)
+  + default(...args)
 }
 class "Buffer agent" as Buffer {
-  - bytes b   (|b| = C)
-  - length ℓ
-  - cursor ρ
-  - capacity C
+  - meta @(this, metaP) = (ℓ, ρ, C, unit, lease, lo, hi) | REVOKED
+  - append-only chunks @(this, chunkP, j), lo <= j < hi
   --
-  + capacity() / length() / remaining()
+  + capacity() / length() / remaining() / unit()
   + isFull() / isEmpty()
   + writeByte(x) / writeBytes(xs)
   + read(n) / slice(o,n) / toByteArray()
-  + view() / charAt(i) / chars()
-  + clear()
+  + validUtf8PrefixLen() / view()
+  + beginFill() : fillToken
+  + endFill(fillToken)
+  + clear() / close()
+  + default(...args)
+}
+class "Rows agent (buffer of buffers)" as Rows #E7DEF2 {
+  + capacityRows() / innerUnit()
+  + getAt(i) : inner buffer
+  + clear() / close()
   + default(...args)
 }
 class "File agent" as File #D2ECEC {
-  + read(buf) / readAt(buf, o)
-  + readLine(buf) / write(buf)
-  + lines(bufOfBufs)
+  + readInto(buf) / readAtInto(offset, buf)
+  + readLineInto(buf) / writeFrom(buf)
+  + readLinesInto(rows)
 }
 Factory ..> Buffer : creates (returns bundle+)
-File ..> Buffer : fills via buf!writeBytes
+Factory ..> Rows : allocRows creates
+Rows *-- Buffer : m inner buffers
+File ..> Buffer : fills via writeBytes\nunder a fill lease
 @enduml
