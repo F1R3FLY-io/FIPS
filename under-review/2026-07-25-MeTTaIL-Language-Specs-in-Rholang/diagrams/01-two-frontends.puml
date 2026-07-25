@@ -1,0 +1,47 @@
+@startuml
+title Two Frontends, One Specification Seam
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+package "Frontends (authoring)" #F8FAFC {
+  rectangle "**`language!` macro**\nRust token stream\n<latex>\texttt{parse\_macro\_input!}</latex>\nast/src/language/parse.rs" as Macro #FEF3C7
+  rectangle "**Rholang spec value** [Proposed]\nnested List / Map / String\nelaborated by <latex>\mathcal{E}</latex>\n(this FIPS)" as RhoSpec #E0E7FF
+}
+
+rectangle "**`LanguageDef`**\nthe sole backend input\nast/src/language/model.rs" as LD #DBEAFE
+
+package "Backends (generation)" #F8FAFC {
+  rectangle "PraTTaIL / WPDA\nparser codegen\n<latex>\rightarrow</latex> Rust source" as Pratt #DCFCE7
+  rectangle "rho-native lowering\n<latex>\rightarrow \texttt{rhoapi::Par}</latex>" as RhoGen #DCFCE7
+  rectangle "Dovetail + set automaton\n<latex>\rightarrow</latex> rule DAG" as Dove #DCFCE7
+  rectangle "test / simulator / Blockly\nemitters" as Emit #DCFCE7
+}
+
+rectangle "AST types, freshness fns,\nmetadata, `Language` impl\n<latex>\rightarrow</latex> Rust source" as Rust #DCFCE7
+
+Macro --> LD : parses Rust tokens
+RhoSpec --> LD : elaborates a value\n**fail-closed**
+LD --> Pratt
+LD --> RhoGen
+LD --> Dove
+LD --> Emit
+LD --> Rust
+
+note bottom of LD
+  Every generator's signature is
+  <latex>f(\&\,\texttt{LanguageDef}) \rightarrow \text{artifact}</latex>.
+  The seam is already clean; this FIPS
+  adds a second producer, not a new seam.
+end note
+
+legend right
+  |= Color |= Role |
+  |<#FEF3C7> | Existing Rust frontend (retained) |
+  |<#E0E7FF> | Proposed Rholang frontend |
+  |<#DBEAFE> | The shared specification datatype |
+  |<#DCFCE7> | Backend generators (unchanged) |
+endlegend
+@enduml

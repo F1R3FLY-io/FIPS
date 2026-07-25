@@ -1,0 +1,56 @@
+@startuml
+title Lifecycle of a Rholang-Authored Language Specification
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam sequenceArrowColor #334155
+skinparam ParticipantBorderColor #64748B
+
+participant "Rholang\nprocess" as P #E0E7FF
+participant "spec value\n<latex>v</latex>" as V #E0E7FF
+participant "elaborator\n<latex>\mathcal{E}</latex>" as E #FDE68A
+participant "validator\n<latex>\mathcal{V}</latex>" as VAL #FDE68A
+participant "identity\n<latex>\mathcal{F}</latex>" as FP #FBCFE8
+participant "versioned\nregistry" as REG #DDD6FE
+participant "backend\ngenerators" as BE #DCFCE7
+participant "RSpace /\nFLT resolver" as RS #BFDBFE
+
+== 1. Construction (pure — no COMM) ==
+P -> V : build nested List / Map / String literals
+note right of V #E0E7FF
+  Constructing a spec is **value construction**.
+  No send, no receive, no name creation.
+  Two processes building the same spec
+  produce <latex>\alpha</latex>-identical values.
+end note
+
+== 2. Elaboration and validation (fail-closed) ==
+P -> E : <latex>\mathcal{E}(v)</latex>
+E -> E : canonicalize (sort option keys,\nreject unknown tags)
+E --> P : <latex>\texttt{Err(SpecError)}</latex> on any malformed node
+E -> VAL : <latex>\texttt{LanguageDef}</latex>
+VAL -> VAL : <latex>\texttt{validate\_language}</latex> +\ncomposition + auto-injection +\nstratification
+VAL --> P : <latex>\texttt{Err(ValidationError)}</latex> with a **value path**,\nnot a Rust <latex>\texttt{Span}</latex>
+
+== 3. Identity ==
+VAL -> FP : augmented <latex>\texttt{LanguageDef}</latex>
+FP -> FP : <latex>\mathcal{F} = \texttt{mettail-langdef-v1:}\mathrm{fnv1a64}(\mathrm{ident}(d))</latex>
+note right of FP #FBCFE8
+  Identical to the macro path:
+  <latex>\mathcal{F}(\mathcal{E}(v)) = \mathcal{F}(\texttt{parse}(s))</latex>
+  whenever <latex>v</latex> and <latex>s</latex> denote the same language.
+end note
+
+== 4. Registration ==
+FP -> REG : <latex>\texttt{insertVersion(ret, "lib", deployer, id, ver, }v\texttt{)}</latex>
+REG --> P : <latex>\texttt{rho:lib:1.*:}\langle\mathit{pk}\rangle\texttt{:}\langle\mathit{id}\rangle\texttt{:}\langle\mathit{ver}\rangle</latex>
+
+== 5. Installation ==
+REG -> BE : <latex>\texttt{LanguageDef}</latex>
+BE -> RS : <latex>\texttt{rhoapi::Par}</latex> driver network,\nset-automaton pattern DAG
+BE -> RS : reflected head tags <latex>\ulcorner \mathcal{F}\cdot L \urcorner</latex>
+
+== 6. Use ==
+P -> RS : FLT <latex>\texttt{L`term`}</latex> resolved by <latex>\mathcal{F}</latex>
+RS --> P : reduced reflected term
+@enduml

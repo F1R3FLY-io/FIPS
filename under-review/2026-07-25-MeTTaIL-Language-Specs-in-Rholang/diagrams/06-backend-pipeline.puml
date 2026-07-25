@@ -1,0 +1,74 @@
+@startuml
+title From a Rholang Spec Value to a Target Artifact — What Needs a Rust Compiler, and What Does Not
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+rectangle "**Authoring**" as A #F8FAFC {
+  rectangle "Rholang spec value <latex>v</latex>\nmaps / lists / tuples / strings" as V #E0E7FF
+  rectangle "<latex>\texttt{language!}</latex> Rust source <latex>s</latex>" as S #FEF3C7
+}
+
+rectangle "<latex>\mathcal{E}(v)</latex> — elaborator [Proposed]\npure, total-or-fail-closed" as EL #E0E7FF
+rectangle "<latex>\texttt{syn::parse\_str}</latex> +\n<latex>\texttt{reconstruct\_language\_def}</latex> [Implemented]" as PA #FEF3C7
+rectangle "**<latex>\texttt{LanguageDef}</latex>**" as LD #DBEAFE
+
+rectangle "**Semantics lane — emits DATA**" as SEM #ECFDF5 {
+  rectangle "<latex>\texttt{lower\_language\_def}</latex>\n<latex>\rightarrow \texttt{rhoapi::Par}</latex> contracts" as L1 #DCFCE7
+  rectangle "<latex>\texttt{rho\_net\_*}</latex> driver network\n+ set-automaton pattern DAG\n<latex>\rightarrow \texttt{rhoapi::Par}</latex>" as L2 #DCFCE7
+  rectangle "<latex>\texttt{NativeHandlerSpec}</latex> table\n<latex>\rightarrow</latex> system-process <latex>\texttt{Definition}</latex>s" as L3 #DCFCE7
+}
+
+rectangle "**Syntax lane — emits RUST SOURCE**" as SYN #FEF2F2 {
+  rectangle "PraTTaIL / WPDA pipeline\n<latex>\texttt{run\_pipeline}</latex>\n<latex>\rightarrow</latex> a <latex>\texttt{String}</latex> of Rust,\nthen <latex>\texttt{parse::<TokenStream>()}</latex>" as P1 #FEE2E2
+  rectangle "AST enums, freshness fns,\nmetadata, <latex>\texttt{Language}</latex> impl,\nproptest strategies" as P2 #FEE2E2
+}
+
+rectangle "**f1r3node Rho machine**\nRSpace + spatial matcher + reducer\n(cross-compiled once, per target)" as VM #BFDBFE
+rectangle "<latex>\texttt{riscv64gc-unknown-none-elf}</latex>\nbare-metal image" as RV #C7D2FE
+rectangle "<latex>\texttt{rustc}</latex>" as RUSTC #FCA5A5
+
+V --> EL
+S --> PA
+EL --> LD
+PA --> LD
+LD --> L1
+LD --> L2
+LD --> L3
+LD --> P1
+LD --> P2
+
+L1 --> VM : installed as data
+L2 --> VM : installed as data
+L3 --> VM : injected via <latex>\texttt{extra\_system\_processes}</latex>
+P1 --> RUSTC
+P2 --> RUSTC
+RUSTC --> VM
+VM --> RV : cross-compile
+
+note bottom of SEM #ECFDF5
+  **Already data.** A running node can install these
+  from a spec value with no compiler in the loop.
+end note
+
+note bottom of SYN #FEF2F2
+  **Still code.** <latex>\texttt{run\_pipeline}</latex>'s terminal step is
+  <latex>\texttt{combined.parse::<TokenStream>()}</latex> over concatenated
+  Rust source. Getting a *parser* for a spec authored
+  at runtime is the one genuinely missing artifact —
+  named as work item **W-4** in this FIPS.
+end note
+
+legend right
+  |= Color |= Meaning |
+  |<#E0E7FF> | Proposed Rholang path |
+  |<#FEF3C7> | Existing Rust path (retained) |
+  |<#DBEAFE> | Shared specification datatype |
+  |<#DCFCE7> | Generator emitting installable DATA |
+  |<#FEE2E2> | Generator emitting Rust SOURCE |
+  |<#FCA5A5> | Rust compiler dependency |
+  |<#BFDBFE> | Runtime substrate |
+endlegend
+@enduml

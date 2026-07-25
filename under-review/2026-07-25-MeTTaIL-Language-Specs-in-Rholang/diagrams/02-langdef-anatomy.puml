@@ -1,0 +1,102 @@
+@startuml
+title LanguageDef Anatomy — Where Rust Actually Leaks In
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam classAttributeIconSize 0
+skinparam ArrowColor #334155
+
+class LanguageDef #DBEAFE {
+  + name : Ident
+  + options : HashMap<String, AttributeValue>
+  + extends_names / include_names / mixin_names : Vec<Ident>
+  + types : Vec<LangType>
+  + refinement_types : Vec<RefinementTypeDef>
+  + token_defs : Vec<TokenDef>
+  + mode_defs : Vec<ModeDef>
+  + sync_constraints : Vec<SyncConstraint>
+  + tree_invariants : Vec<TreeInvariant>
+  + terms : Vec<GrammarRule>
+  + equations : Vec<Equation>
+  + rewrites : Vec<RewriteRule>
+  + logic : Option<LogicBlock>
+  + guard_config : Option<GuardConfig>
+}
+
+class LangType #FEE2E2 {
+  + name : Ident
+  + **native_type : Option<syn::Type>**  <latex>\;\bigstar_1</latex>
+  + collection_kind : Option<CollectionCategory>
+}
+
+class GrammarRule #FEE2E2 {
+  + label : Ident
+  + category : Ident
+  + term_context : Option<Vec<TermParam>>
+  + syntax_pattern : Option<Vec<SyntaxExpr>>
+  + **rust_code : Option<RustCodeBlock>**  <latex>\;\bigstar_2</latex>
+  + eval_mode : Option<EvalMode>
+  + is_right_assoc : bool
+  + prefix_bp : Option<u8>
+}
+
+class TokenDef #FEE2E2 {
+  + name : Ident
+  + pattern : String
+  + category : Option<Ident>
+  + **rust_code : Option<TokenStream>**  <latex>\;\bigstar_3</latex>
+  + priority / push_mode / is_pop / stream
+}
+
+class LogicBlock #FEE2E2 {
+  + relations : Vec<RelationDecl>
+  + **content : TokenStream**  <latex>\;\bigstar_4</latex>
+}
+
+class TheoryRegistration #FEE2E2 {
+  + name : Ident
+  + **theory_type : syn::Type**  <latex>\;\bigstar_5</latex>
+  + handled_types : Option<Vec<Ident>>
+}
+
+class Equation #DCFCE7 {
+  + name, type_context, premises
+  + left : Pattern
+  + right : Pattern
+}
+class RewriteRule #DCFCE7 {
+  + name, type_context, premises
+  + left : Pattern
+  + right : Pattern
+}
+class GuardConfig #DCFCE7 {
+  + builtin_predicates
+  + connectives
+  + channels
+}
+
+LanguageDef *-- LangType
+LanguageDef *-- GrammarRule
+LanguageDef *-- TokenDef
+LanguageDef *-- LogicBlock
+LanguageDef *-- Equation
+LanguageDef *-- RewriteRule
+LanguageDef *-- GuardConfig
+GuardConfig *-- TheoryRegistration
+
+note as N #FEF3C7
+  **Exactly five fields carry Rust.** Verified exhaustively by
+  a regex sweep for fields typed Option<syn::Type>, syn::Expr, or TokenStream
+  over ast/src/{language/model,grammar,types,pattern,fragment,compose}.rs.
+  <latex>\bigstar_1, \bigstar_5</latex> are type **NAMES**; <latex>\bigstar_2, \bigstar_3, \bigstar_4</latex> are executable Rust **CODE**.
+  Everything else is Ident, String, numeric, bool, or a closed enum.
+end note
+
+legend right
+  |= Color |= Meaning |
+  |<#DBEAFE> | Root specification record |
+  |<#FEE2E2> | Carries a Rust type or Rust code |
+  |<#DCFCE7> | Fully declarative — no Rust anywhere |
+  |<#FEF3C7> | Verification note |
+endlegend
+@enduml

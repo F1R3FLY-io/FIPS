@@ -1,0 +1,50 @@
+@startuml
+title A Tag Names a Handler — One MeTTaIL Mechanism at Two Levels
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+rectangle "**Level 1 — Foreign Language Term**\n(approved-track FIPS 2026-06-26)" as FLT #BFDBFE {
+  rectangle "<latex>\texttt{lam`App(\$\{f\}, K)`}</latex>\n<latex>\texttt{perl:Str\{ \"hello\" \}}</latex>" as FLTex #DBEAFE
+  rectangle "the tag <latex>\texttt{lam}</latex> selects\n**a guest grammar + reflector**\nkeyed by the language fingerprint <latex>\mathcal{F}</latex>" as FLTres #DBEAFE
+  rectangle "the element is **raw guest source**\nbounded by an author-chosen delimiter" as FLTel #DBEAFE
+}
+
+rectangle "**Level 2 — Language specification**\n(this FIPS)" as SPEC #A7F3D0 {
+  rectangle "<latex>\texttt{(\"arrow\", \"Term\", \"Term\")}</latex>\n<latex>\texttt{(\"App\", \"M0\", \"N\")}</latex>" as SPECex #DCFCE7
+  rectangle "the tag <latex>\texttt{\"arrow\"}</latex> selects\n**an elaborator arm**\nfrom a closed, versioned set" as SPECres #DCFCE7
+  rectangle "the element is **an already-parsed\nRholang value**" as SPECel #DCFCE7
+}
+
+rectangle "**The unforgeable realisation**\n<latex>\ulcorner \mathcal{F} \cdot L \urcorner \;=\; \texttt{GPrivate}(\texttt{mettail.term.}\mathcal{F}\texttt{.}L)</latex>\nrholang-codegen/src/rho\\_net\\_lower.rs" as TAG #FBCFE8
+
+FLTex --> FLTres : names
+FLTres --> FLTel : interprets
+SPECex --> SPECres : names
+SPECres --> SPECel : interprets
+
+FLTres -[#BE185D]-> TAG : resolved through
+SPECres -[#BE185D]-> TAG : **installs** the tags\nthat level 1 resolves
+
+note bottom of TAG #FBCFE8
+  A conventional namespace can be squatted; a <latex>\texttt{GPrivate}</latex> derived from
+  the definition fingerprint cannot. Cross-language matching therefore
+  fails **closed**: a mismatch is a *non*-firing, never a *wrong* firing.
+end note
+
+note as N #FEF3C7
+  **Where the two levels differ, honestly.** Level 1 interprets *source text*, so it is a
+  reader-level construct and inherits the modal-lexer delimiter obligations. Level 2
+  interprets *values*, so it needs no lexer at all. The shared content is the resolution
+  discipline — <latex>\tau \cdot e \mapsto H(\tau)(e)</latex> with <latex>H</latex> keyed by an unforgeable identity — not the syntax.
+end note
+
+legend right
+  |= Color |= Level |
+  |<#BFDBFE> | FLT — a tag over guest source |
+  |<#A7F3D0> | Spec notation — a tag over a Rholang value |
+  |<#FBCFE8> | The shared unforgeable identity |
+endlegend
+@enduml

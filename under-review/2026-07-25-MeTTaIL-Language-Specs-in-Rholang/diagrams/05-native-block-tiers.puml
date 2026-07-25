@@ -1,0 +1,59 @@
+@startuml
+title The `semantics` Clause and the Four NativeEval Forms
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+left to right direction
+
+rectangle "An extender fragment\n<latex>\texttt{semantics}\;\langle \mathit{LanguageExpr} \rangle</latex>\n(optional; defaults to <latex>\texttt{Rust}</latex>)" as SEM #FDE68A
+
+rectangle "A rule with a native body\n<latex>\texttt{Add . a:Int, b:Int |- a \"+\" b : Int}</latex>" as SRC #FEE2E2
+
+rectangle "**(\"op\", name)** — declarative operator\nclosed algebra: add sub mul div mod neg\neq ne lt gt le ge and or xor not concat len\n**needs no semantics target**" as T0 #DCFCE7
+rectangle "**(\"carrier\", kind, params)** — declarative literal\n<latex>\texttt{(\"carrier\", \"int\", \{ suffix : i32 \})}</latex>\n**needs no semantics target**" as T1 #DCFCE7
+rectangle "**(\"handler\", urn)** — named capability\n<latex>\texttt{mtl:native:}\mathcal{F}\texttt{:Int\_PowInt}</latex>\nresolved against the node's registry" as T2 #FEF3C7
+rectangle "**(\"src\", semantics, text)** — bootstrap escape\nsource text in the named semantics language" as T3 #FCA5A5
+
+rectangle "<latex>\texttt{rho\_binop}</latex> / <latex>\texttt{rho\_unop}</latex>\n<latex>\rightarrow \texttt{rhoapi::Par}</latex> contract\n**already ignores the host body**" as OUT0 #BFDBFE
+rectangle "<latex>\texttt{NativeKind}</latex> +\nframework literal parsers" as OUT1 #BFDBFE
+rectangle "<latex>\texttt{NativeHandlerSpec}</latex>\n<latex>\texttt{Arc<dyn Fn(\&[GroundTerm]) \to Option<GroundTerm>>}</latex>\nchannel <latex>\texttt{[0xF1, }i\texttt{]}</latex>, body\\_ref <latex>\texttt{0xF100} + i</latex>" as OUT2 #BFDBFE
+rectangle "<latex>\texttt{semantics = Rust}</latex>: project to <latex>\texttt{language!}</latex>,\nrequires a compiler at install time\n<latex>\texttt{semantics} \neq \texttt{Rust}</latex>: **fail-closed** today" as OUT3 #FCA5A5
+
+SEM --> SRC : scopes the reading of every <latex>\texttt{![ … ]}</latex>
+
+SRC --> T0 : 67 / 250 fold bodies
+SRC --> T1 : 13 / 13 literal evals
+SRC --> T2 : the long tail, by name
+SRC --> T3 : verbatim migration of today's bodies
+
+T0 --> OUT0
+T1 --> OUT1
+T2 --> OUT2
+T3 --> OUT3
+
+note bottom of OUT2 #FEF3C7
+  **Unregistered URN <latex>\Rightarrow</latex> inert, never unsafe.**
+  The evaluator yields <latex>\texttt{None}</latex> and the redex is left
+  unreduced — the same fold-gate semantics as an
+  arithmetic overflow or a non-value operand.
+end note
+
+note bottom of T0 #ECFDF5
+  A specification whose every <latex>\texttt{NativeEval}</latex> avoids
+  <latex>\texttt{(\"src\", …)}</latex> is **installation-pure**: elaborable and
+  installable with no compiler in the loop.
+  **28 of 31 shipped languages qualify.**
+end note
+
+legend right
+  |= Color |= Status |
+  |<#FDE68A> | The `semantics` clause (Stay) |
+  |<#FEE2E2> | Host-embedding source, today |
+  |<#DCFCE7> | Fully declarative — v1 |
+  |<#FEF3C7> | Capability reference — v1; registry already exists |
+  |<#BFDBFE> | Existing implementation, reached unchanged |
+  |<#FCA5A5> | Requires a toolchain, or fails closed |
+endlegend
+@enduml

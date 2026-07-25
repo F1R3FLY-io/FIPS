@@ -1,0 +1,47 @@
+@startuml
+title Three Layers — Authoring Surface, Presentation Content, and the Seam
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+package "L0 — authoring surface  [Branch]" #FFFBEB {
+  rectangle "<latex>\texttt{extender N(Base) \{ … \}}</latex>\n<latex>\texttt{language L = N(Arg)}</latex>" as DECL #FDE68A
+  rectangle "<latex>\mathit{ExtenderExpr}</latex>\nunion <latex>\backslash/</latex> · call · <latex>\texttt{empty}</latex>\n<latex>\texttt{semantics}</latex> · <latex>\texttt{context}</latex>\nsix content suffixes" as EE #FDE68A
+}
+
+package "L1 — presentation content" #EEF2FF {
+  rectangle "**DDL text**  [Branch]\n<latex>\texttt{types \{ ![i64] as Int \}}</latex>\nparsed by <latex>\texttt{mettail-ast}</latex>'s own\n<latex>\texttt{*\_fragment}</latex> parsers (needs <latex>\texttt{syn}</latex>)" as DDL #FEF3C7
+  rectangle "**Canonical value**  [Proposed]\n<latex>\texttt{[\{ name : Int , carrier : i64 \}]}</latex>\nmaps · lists · tuples · strings\n(needs no <latex>\texttt{syn}</latex>)" as VAL #E0E7FF
+}
+
+rectangle "**L2 — the seam**  [Implemented]\n<latex>\texttt{LanguageDef}</latex>\n<latex>\mathcal{F} = \texttt{language\_definition\_fingerprint}</latex>" as LD #DBEAFE
+
+rectangle "backends\nparser · rho-native · Dovetail · emitters" as BE #DCFCE7
+
+DECL --> EE : body
+EE --> DDL : <latex>\texttt{types \{ … \}}</latex>
+EE --> VAL : <latex>\texttt{types = }v</latex>   ★ this FIPS
+DDL --> LD : <latex>\mathrm{parse\_ddl}</latex>
+VAL --> LD : <latex>\mathcal{E}_{\mathrm{pres}}</latex>
+LD --> BE
+
+DDL <-[#BE185D,dashed]-> VAL : **encoding parity**\n<latex>\mathcal{E}_{\mathrm{pres}}(\mathsf{enc}(\mathrm{parse\_ddl}(t))) = \mathrm{parse\_ddl}(t)</latex>
+
+note bottom of VAL #ECFDF5
+  Only the value form can be **sent on a channel**,
+  **stored in the tuplespace**, **versioned in the registry**,
+  **transformed by Rholang code**, and **matched with Rholang patterns**.
+  That is why it is normative for identity and interchange.
+end note
+
+legend right
+  |= Color |= Layer |
+  |<#FDE68A> | L0 — Stay's extender surface |
+  |<#FEF3C7> | L1 — bootstrap DDL-text encoding |
+  |<#E0E7FF> | L1 — proposed canonical value encoding |
+  |<#DBEAFE> | L2 — the shared specification datatype |
+  |<#DCFCE7> | Backend generators (unchanged) |
+endlegend
+@enduml

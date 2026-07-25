@@ -1,0 +1,53 @@
+@startuml
+title What a Malicious Specification Can and Cannot Do
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+actor "adversary" as ADV #FCA5A5
+rectangle "hostile spec value <latex>v^{\dagger}</latex>" as BAD #FEE2E2
+
+package "Containment boundary" #F8FAFC {
+  rectangle "**G1 — Shape gate**\n<latex>\mathcal{E}</latex> rejects any node whose tag\nis outside the closed elaborator set" as G1 #DCFCE7
+  rectangle "**G2 — Well-formedness gate**\n<latex>\texttt{validate\_language}</latex>, composition,\nauto-injection, stratification" as G2 #DCFCE7
+  rectangle "**G3 — Identity gate**\n<latex>\mathcal{F}(v^{\dagger}) \neq \mathcal{F}(v)</latex> for any honest <latex>v</latex>;\ntags become <latex>\texttt{GPrivate}(\texttt{mettail.term.}\mathcal{F}^{\dagger}\texttt{.}L)</latex>" as G3 #DCFCE7
+  rectangle "**G4 — Capability gate**\n<latex>\texttt{(\"handler\", }\mathit{urn}\texttt{)}</latex> resolves only against\n**already-registered** evaluators" as G4 #DCFCE7
+  rectangle "**G5 — Budget gate**\ncross-language fuel; guard metering;\nsaturation bounds <latex>\texttt{MAX\_ITERS}</latex>/<latex>\texttt{MAX\_NODES}</latex>" as G5 #DCFCE7
+}
+
+rectangle "victim language <latex>L</latex>\nterms and drivers under <latex>\mathcal{F}_L</latex>" as VICTIM #BFDBFE
+rectangle "host Rholang state\n(names, RSpace data)" as HOST #BFDBFE
+
+ADV --> BAD : authors and publishes
+BAD --> G1
+G1 --> G2 : shape OK
+G2 --> G3 : well-formed
+G3 --> G4
+G4 --> G5
+
+G1 -[#DC2626]-> ADV : **reject** unknown tag,\nbad arity, wrong scalar type
+G2 -[#DC2626]-> ADV : **reject** undeclared category,\nnegation cycle, dangling label
+G3 -[#DC2626]-> VICTIM : cannot forge <latex>\mathcal{F}_L</latex>;\npatterns simply never match
+G4 -[#DC2626]-> ADV : unregistered URN <latex>\Rightarrow</latex> **inert**
+G5 -[#DC2626]-> ADV : divergent theory <latex>\Rightarrow</latex> **starves itself**,\nnot the node
+
+BAD -[#DC2626,dashed]-> HOST : **no path** — a spec is a value;\nelaboration performs no COMM and\ncreates no name
+
+note bottom #FEF3C7
+  **Residual risks, stated plainly.** (i) *Resource exhaustion at elaboration*: a spec is
+  attacker-sized data, so <latex>|v|</latex> must be bounded before <latex>\mathcal{E}</latex> runs, and the WPDA/set-automaton
+  build is superlinear in the rule count. (ii) *Namespace confusion*: two distinct languages
+  may declare the same constructor **label**; only the fingerprint separates them, so any
+  surface that resolves by bare name is unsafe. (iii) *A hostile spec is still a denial-of-service
+  vector against its own installer* — install must be metered like any other deploy.
+end note
+
+legend right
+  |= Color |= Role |
+  |<#FEE2E2> | Attacker-supplied data |
+  |<#DCFCE7> | Fail-closed gate |
+  |<#BFDBFE> | Protected asset |
+endlegend
+@enduml
