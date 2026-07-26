@@ -56,7 +56,7 @@ Three properties follow, and they are the point of the change.
 3. **The Rust compiler leaves the specification-authoring critical path.** This
    is a necessary — though, as §VIII establishes honestly, not sufficient —
    precondition for a non-Rust target such as a bare-metal RISC-V (Reduced
-   Instruction Set Computer, fifth generation) **Rho machine** — an
+   Instruction Set Computing, fifth generation) **Rho machine** — an
    implementation of the Rholang runtime: RSpace, the spatial matcher, and the
    reducer.
 
@@ -75,15 +75,6 @@ The acknowledged design inspiration for making specifications ordinary values
 is Clojure's **code-is-data** tradition [Hickey 2020], itself descended from
 McCarthy's S-expression [McCarthy 1960]. The notation proposed here is designed
 to be idiomatic **Rholang**, not a transliteration of any other format.
-
-**Novelty.** There is no prior specification of how an **OSLF** (Operational
-Semantics in Logical Form) language presentation should be represented in
-Rholang. In particular the omnibus **GSLT** (Generalised Structured Language
-Theory) specification — Meredith, Stay *et al.*, `publications/GSLT-intro/omnibus.tex`
-and its rendered `omnibus.pdf`, cited throughout as [Omnibus] — gives the
-normative syntax and the mathematical presentation of a GSLT but says nothing
-about a Rholang representation of one. This FIPS is the first to specify that
-representation.
 
 ## Status and Evidence
 
