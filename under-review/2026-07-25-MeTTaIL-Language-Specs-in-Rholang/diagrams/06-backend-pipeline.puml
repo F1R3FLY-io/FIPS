@@ -1,74 +1,97 @@
 @startuml
-title From a Rholang Spec Value to a Target Artifact — What Needs a Rust Compiler, and What Does Not
+title Two Lanes Below One Seam — What Needs a Rust Compiler, and What Does Not
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 skinparam ArrowColor #334155
+skinparam ActivityBorderColor #334155
+skinparam NoteBackgroundColor #F1F5F9
+skinparam NoteBorderColor #94A3B8
 
-rectangle "**Authoring**" as A #F8FAFC {
-  rectangle "Rholang spec value <latex>v</latex>\nmaps / lists / tuples / strings" as V #E0E7FF
-  rectangle "<latex>\texttt{language!}</latex> Rust source <latex>s</latex>" as S #FEF3C7
-}
+|#EEF2FF|Authoring|
+|#DBEAFE|The seam|
+|#ECFDF5|Semantics lane — emits DATA|
+|#FEF2F2|Syntax lane — emits RUST SOURCE|
+|#EFF6FF|Target|
 
-rectangle "<latex>\mathcal{E}(v)</latex> — elaborator [Proposed]\npure, total-or-fail-closed" as EL #E0E7FF
-rectangle "<latex>\texttt{syn::parse\_str}</latex> +\n<latex>\texttt{reconstruct\_language\_def}</latex> [Implemented]" as PA #FEF3C7
-rectangle "**<latex>\texttt{LanguageDef}</latex>**" as LD #DBEAFE
+|Authoring|
+start
+split
+  :Rholang specification value <latex>v</latex>
+  maps · lists · tuples · strings
+  (or DDL text, desugared to the same value);<<#E0E7FF>>
+  :<latex>\mathcal{E}(v)</latex> — the elaborator [Proposed]
+  pure, total-or-fail-closed;<<#E0E7FF>>
+split again
+  :""language!"" Rust source <latex>s</latex>;<<#FEF3C7>>
+  :""syn::parse_str"" +
+  ""reconstruct_language_def"" [Implemented];<<#FEF3C7>>
+end split
 
-rectangle "**Semantics lane — emits DATA**" as SEM #ECFDF5 {
-  rectangle "<latex>\texttt{lower\_language\_def}</latex>\n<latex>\rightarrow \texttt{rhoapi::Par}</latex> contracts" as L1 #DCFCE7
-  rectangle "<latex>\texttt{rho\_net\_*}</latex> driver network\n+ set-automaton pattern DAG\n<latex>\rightarrow \texttt{rhoapi::Par}</latex>" as L2 #DCFCE7
-  rectangle "<latex>\texttt{NativeHandlerSpec}</latex> table\n<latex>\rightarrow</latex> system-process <latex>\texttt{Definition}</latex>s" as L3 #DCFCE7
-}
+|The seam|
+:**""LanguageDef""**
+the sole input to every generator
+—— **BOTH lanes below consume THIS** ——;<<#DBEAFE>>
 
-rectangle "**Syntax lane — emits RUST SOURCE**" as SYN #FEF2F2 {
-  rectangle "PraTTaIL / WPDA pipeline\n<latex>\texttt{run\_pipeline}</latex>\n<latex>\rightarrow</latex> a <latex>\texttt{String}</latex> of Rust,\nthen <latex>\texttt{parse::<TokenStream>()}</latex>" as P1 #FEE2E2
-  rectangle "AST enums, freshness fns,\nmetadata, <latex>\texttt{Language}</latex> impl,\nproptest strategies" as P2 #FEE2E2
-}
+split
+  |Semantics lane — emits DATA|
+  :""lower_language_def""
+  <latex>\rightarrow \texttt{rhoapi::Par}</latex> scalar contracts;<<#DCFCE7>>
+  :""rho_net_*"" driver network
+  + interned set-automaton pattern DAG
+  <latex>\rightarrow \texttt{rhoapi::Par}</latex>;<<#DCFCE7>>
+  :""NativeHandlerSpec"" table
+  <latex>\rightarrow</latex> system-process ""Definition""s,
+  injected via ""extra_system_processes"";<<#DCFCE7>>
+  note right
+    **Already data.** A running node can install all of this
+    from a specification value with no compiler in the loop.
+    The crate's own documentation says so:
+    <i>lower_language_def emits normalized Rholang AST</i>
+    <i>(rhoapi::Par) for the supported native scalar subset …</i>
+    <i>and keeps Rholang-looking text only as a</i>
+    <i>reader/debug annotation.</i>
+    — rholang-codegen/src/lib.rs module documentation
+  end note
+  :**installed with NO compile step**;<<#BFDBFE>>
+split again
+  |Syntax lane — emits RUST SOURCE|
+  :PraTTaIL / WPDA pipeline ""run_pipeline""
+  <latex>\rightarrow</latex> a ""String"" of Rust source, then
+  ""combined.parse::<TokenStream>()"";<<#FEE2E2>>
+  :AST enums, freshness fns, metadata,
+  ""Language"" impl, proptest strategies,
+  test / simulator / Blockly emitters;<<#FEE2E2>>
+  :""rustc"";<<#FCA5A5>>
+  note right
+    **Still code.** ""run_pipeline""'s terminal step is a
+    ""parse::<TokenStream>()"" over concatenated Rust source
+    (prattail/src/pipeline/state.rs::run_pipeline_with_analysis).
+    Obtaining a //parser// for a language authored at runtime is
+    the one genuinely missing artifact — work item **W-4**,
+    serializable WPDA tables walked by the existing ""WpdaWalker"".
+  end note
+  :installed **only after a compile step**;<<#BFDBFE>>
+end split
 
-rectangle "**f1r3node Rho machine**\nRSpace + spatial matcher + reducer\n(cross-compiled once, per target)" as VM #BFDBFE
-rectangle "<latex>\texttt{riscv64gc-unknown-none-elf}</latex>\nbare-metal image" as RV #C7D2FE
-rectangle "<latex>\texttt{rustc}</latex>" as RUSTC #FCA5A5
-
-V --> EL
-S --> PA
-EL --> LD
-PA --> LD
-LD --> L1
-LD --> L2
-LD --> L3
-LD --> P1
-LD --> P2
-
-L1 --> VM : installed as data
-L2 --> VM : installed as data
-L3 --> VM : injected via <latex>\texttt{extra\_system\_processes}</latex>
-P1 --> RUSTC
-P2 --> RUSTC
-RUSTC --> VM
-VM --> RV : cross-compile
-
-note bottom of SEM #ECFDF5
-  **Already data.** A running node can install these
-  from a spec value with no compiler in the loop.
-end note
-
-note bottom of SYN #FEF2F2
-  **Still code.** <latex>\texttt{run\_pipeline}</latex>'s terminal step is
-  <latex>\texttt{combined.parse::<TokenStream>()}</latex> over concatenated
-  Rust source. Getting a *parser* for a spec authored
-  at runtime is the one genuinely missing artifact —
-  named as work item **W-4** in this FIPS.
-end note
+|Target|
+:**f1r3node Rho machine**
+RSpace + spatial matcher + reducer
+(cross-compiled once, per target);<<#BFDBFE>>
+:""riscv64gc-unknown-none-elf""
+bare-metal image;<<#C7D2FE>>
+stop
 
 legend right
-  |= Color |= Meaning |
-  |<#E0E7FF> | Proposed Rholang path |
-  |<#FEF3C7> | Existing Rust path (retained) |
-  |<#DBEAFE> | Shared specification datatype |
-  |<#DCFCE7> | Generator emitting installable DATA |
-  |<#FEE2E2> | Generator emitting Rust SOURCE |
-  |<#FCA5A5> | Rust compiler dependency |
-  |<#BFDBFE> | Runtime substrate |
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#E0E7FF> | **P3** Proposed Rholang value path |
+  |<#FEF3C7> | **P2** Existing Rust path (retained) |
+  |<#DBEAFE> | **P4** Shared specification datatype |
+  |<#DCFCE7> | **P5** Generator emitting installable DATA |
+  |<#FEE2E2> | **P6** Generator emitting Rust SOURCE |
+  |<#FCA5A5> | **P7** Rust compiler dependency |
+  |<#BFDBFE> | **P8** Runtime substrate |
+  |<#C7D2FE> | **P13** The end asset — here, the target image the pipeline must produce |
+  |<#F1F5F9> | **P14** Out-of-band note (verification) |
 endlegend
 @enduml

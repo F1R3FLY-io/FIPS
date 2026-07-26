@@ -7,41 +7,64 @@ skinparam defaultFontName SansSerif
 skinparam ArrowColor #334155
 
 package "Frontends (authoring)" #F8FAFC {
-  rectangle "**`language!` macro**\nRust token stream\n<latex>\texttt{parse\_macro\_input!}</latex>\nast/src/language/parse.rs" as Macro #FEF3C7
-  rectangle "**Rholang spec value** [Proposed]\nnested List / Map / String\nelaborated by <latex>\mathcal{E}</latex>\n(this FIPS)" as RhoSpec #E0E7FF
+  rectangle "**""language!"" macro**\nRust token stream\n""parse_macro_input!(input as LanguageDef)""\nmacros/src/lib.rs:44" as Macro #FEF3C7
+  rectangle "**DDL text** [Branch]\n""types { ![i64] as Int }""\n**surface sugar**: ""parse_ddl"" produces a\n//value//, never a second LanguageDef" as Ddl #FEF3C7
+  rectangle "**Rholang spec value** [Proposed]\nnested Map / List / Tuple / String\nelaborated by <latex>\mathcal{E}</latex>\n(this FIPS)" as RhoSpec #E0E7FF
 }
 
-rectangle "**`LanguageDef`**\nthe sole backend input\nast/src/language/model.rs" as LD #DBEAFE
+rectangle "**""LanguageDef""**\nthe sole backend input\nast/src/language/model.rs" as LD #DBEAFE
 
 package "Backends (generation)" #F8FAFC {
-  rectangle "PraTTaIL / WPDA\nparser codegen\n<latex>\rightarrow</latex> Rust source" as Pratt #DCFCE7
+  rectangle "PraTTaIL / WPDA\nparser codegen\n<latex>\rightarrow</latex> Rust source" as Pratt #FEE2E2
   rectangle "rho-native lowering\n<latex>\rightarrow \texttt{rhoapi::Par}</latex>" as RhoGen #DCFCE7
-  rectangle "Dovetail + set automaton\n<latex>\rightarrow</latex> rule DAG" as Dove #DCFCE7
-  rectangle "test / simulator / Blockly\nemitters" as Emit #DCFCE7
+  rectangle "Dovetail + set automaton\n<latex>\rightarrow</latex> rule DAG (data)" as Dove #DCFCE7
+  rectangle "test / simulator / Blockly\nemitters\n<latex>\rightarrow</latex> Rust and JSON source" as Emit #FEE2E2
 }
 
-rectangle "AST types, freshness fns,\nmetadata, `Language` impl\n<latex>\rightarrow</latex> Rust source" as Rust #DCFCE7
+rectangle "AST types, freshness fns,\nmetadata, ""Language"" impl\n<latex>\rightarrow</latex> Rust source" as Rust #FEE2E2
 
-Macro --> LD : parses Rust tokens
-RhoSpec --> LD : elaborates a value\n**fail-closed**
+Macro --> LD : parses Rust tokens\n<b><color:#B91C1C>a SECOND arrow into LanguageDef</color></b>\n(frozen, not extended — §III.2)
+Ddl -[#7C3AED,dashed]-> RhoSpec : ""parse_ddl"" desugars a block body\nto a **value**, never to a LanguageDef
+RhoSpec --> LD : <latex>\mathcal{E}</latex> — the **sole decoder FROM A VALUE**\nfail-closed
 LD --> Pratt
 LD --> RhoGen
 LD --> Dove
 LD --> Emit
 LD --> Rust
 
-note bottom of LD
+note bottom of LD #F1F5F9
   Every generator's signature is
   <latex>f(\&\,\texttt{LanguageDef}) \rightarrow \text{artifact}</latex>.
-  The seam is already clean; this FIPS
-  adds a second producer, not a new seam.
+  The seam is already clean; this FIPS adds a
+  second **producer**, not a new seam. Verified
+  in §I.2 against macros/src/lib.rs.
+  ——
+  **TWO arrows terminate here, and the diagram says so.**
+  The one-decoder property is scoped to the arrow this
+  FIPS adds: <latex>\mathcal{E}</latex> is the sole decoder **from a value**.
+  ""language!"" still parses Rust tokens directly, because
+  routing it through the value form would require every
+  construct to have a v1 value spelling — and §IV.12's
+  gaps G-1 … G-3 say **two** shipped languages do not:
+  ""RhoCalc"" (G-1 and G-3) and ""CalcLambda"" (G-2). The
+  boundary is narrower than "everything with Rust in it":
+  ""Calculator"" and ""LedTest"" carry native bodies and
+  would route through the value form as ""(&#34;src&#34;, &#34;Rust&#34;, …)"".
+  The macro parser is therefore **frozen**, and the
+  residual drift risk is bounded by §VI.3's corpus
+  fingerprint test rather than declared impossible.
 end note
 
 legend right
-  |= Color |= Role |
-  |<#FEF3C7> | Existing Rust frontend (retained) |
-  |<#E0E7FF> | Proposed Rholang frontend |
-  |<#DBEAFE> | The shared specification datatype |
-  |<#DCFCE7> | Backend generators (unchanged) |
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#FEF3C7> | **P2** Existing Rust frontend and its DDL-text sugar |
+  |<#E0E7FF> | **P3** Proposed Rholang value path |
+  |<#DBEAFE> | **P4** The shared specification datatype |
+  |<#DCFCE7> | **P5** Generator emitting installable DATA |
+  |<#FEE2E2> | **P6** Generator emitting Rust SOURCE |
+  |<#F1F5F9> | **P14** Out-of-band note (verification) |
+  |= Arrow |= Meaning |
+  |<#334155> solid | **A1** ordinary dataflow |
+  |<#7C3AED> dashed | **A4** a total-on-its-domain function into the value form |
 endlegend
 @enduml

@@ -1,0 +1,85 @@
+@startuml
+title Work-Item Sequencing — Dependencies and the Two Delivered Outcomes
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+rectangle "**W-9** land ""mettail-spec""\nfrom the ""modules"" branch, rebased\nonto the current ""ast/"" layout\n//not a leaf: a fork reconciliation//" as W9 #FDE68A
+rectangle "**W-1** add a tuple category\nto ""languages/src/rhocalc.rs""" as W1 #FEF3C7
+rectangle "**W-1b** rename ""rhocalc.rs"" <latex>\rightarrow</latex> ""rholang.rs""\nand ""RhoCalc"" <latex>\rightarrow</latex> ""Rholang""" as W1b #FEF3C7
+rectangle "**W-2** generalize ""ValidationError""\nover ""Location ::= RustSpan | ValuePath | Inherited""\n//17 variants, not purely additive//" as W2 #FEF3C7
+rectangle "**W-8** rename ""logic"" <latex>\rightarrow</latex> ""relations""\n(""logic"" kept as a deprecated alias)" as W8 #FEF3C7
+
+rectangle "**W-7** ★ ""mettail-langdef-v2:"" over BLAKE3\n+ **length-prefixed** identity encoding\n+ the normative reflected-tag grammar (§IX.5)" as W7 #FBCFE8
+rectangle "**W-3a** replace <latex>\bigstar_1</latex> and <latex>\bigstar_5</latex> with closed\nalphabets — ""Carrier"" for carriers, a registered\nname for theories\n//requires extending ""NativeKind"" first//" as W3 #FBCFE8
+rectangle "**W-3b** replace ""LanguageDef::name : syn::Ident""\nwith a validated ""String""" as W3b #FBCFE8
+
+rectangle "**W-10** ★ the four §IX.5 requirements:\nreserved-label fence — //LANDED (39e523cb)//,\ntag grammar, fingerprint-scoped native channels,\ncanonical reflected-collection encoding\n//3 legs remain//" as W10 #FDBA74
+rectangle "**W-12** ★ INVARIANT: every FIRING-VISIBLE and\nevery CARRIER channel name contains <latex>\mathcal{F}</latex>\n""sa:pattern/{F}/lhs:{H}"" · ""sa:scalar/{F}/{label}""\n""ac:{F}/{op}"" · ""ac:{F}/{loc}/{op}""\n//20 emitters by SWEEP, not 2 by enumeration//\n//closes the §IX.6.1 cross-fingerprint WRONG FIRING//" as W12 #FDBA74
+
+rectangle "**L1 value encoder** ""enc""\n+ **the sole decoder FROM A VALUE** <latex>\mathcal{E}</latex>\n+ ""parse_ddl : TokenStream"" <latex>\rightarrow</latex> ""Value""" as CORE #E0E7FF
+rectangle "parity, round-trip,\nand corpus tests" as TEST #A7F3D0
+rectangle "**W-5** carry <latex>\mathcal{F}</latex> on the NTIR\nalongside ""content_hash""" as W5 #DDD6FE
+rectangle "**W-6** the ""LangSpec"" metacircular\nschema and its fixpoint test" as W6 #DDD6FE
+
+rectangle "**OUTCOME 1**\ninstallation-pure languages\ninstallable at runtime,\nwith no compiler in the loop" as OUT1 #DCFCE7
+rectangle "**W-4** ★ serializable WPDA parse tables\nwalked by the existing ""WpdaWalker""" as W4 #FEE2E2
+rectangle "**OUTCOME 2**\nparsing a runtime-authored\nlanguage on a compiler-free target" as OUT2 #DCFCE7
+
+W7 -[#BE185D]-> W3 : **must precede** — W-3 is an ABI break\nfor 14 of the 31 shipped languages, and\nunder v1 that break would be **silent**
+W7 -[#BE185D]-> W10 : the tag grammar is\npart of the v2 encoding
+
+W9 --> CORE
+W1 --> CORE
+W2 --> CORE
+W8 --> CORE
+W3 --> CORE
+W3b --> CORE
+W1b .[#334155].> W1 : **A6** //soft ordering only//\n(rename after the\ntuple work lands)
+
+CORE --> TEST
+W5 --> TEST
+W6 --> TEST
+W10 -[#DC2626]-> TEST : until W-7, W-10 **and** W-12 land, no\nspecification whose CALL SITE passed\n""Provenance::NonLocal"" may elaborate
+W12 -[#DC2626]-> TEST
+
+TEST --> OUT1
+OUT1 --> W4
+W4 --> OUT2
+
+note bottom of W7 #F1F5F9
+  **Why W-7 heads the graph.** The declarative NativeEval forms are a **new identity**,
+  not a v1-compatible refactor: ""identity.rs::write_language"" feeds all five <latex>\bigstar</latex> fields into
+  the hashed identity as verbatim token text, so ""(&#34;op&#34;, &#34;add&#34;)"" and ""![a + b]"" //cannot//
+  produce the same fingerprint. Bumping the prefix makes the transition explicit, versioned
+  and diagnosable instead of a silent non-match under one prefix.
+
+  What keeps v1 and v2 tags non-confusable is the **fixed OFFSET of the version digit**, not
+  the fingerprint's length: ""mettail.term."" is 13 characters and ""mettail-langdef-v"" is 17,
+  so the digit sits at tag index **30** in both generations, inside two fixed-width prefixes
+  that no label can reach. A length argument would be invalid here — differing <latex>|\mathcal{F}|</latex> does //not//
+  imply differing concatenations — and would rest version safety on the very property W-7
+  changes.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#FDE68A> | **P1** L0 surface work |
+  |<#FEF3C7> | **P2** Work on the existing Rust frontend |
+  |<#E0E7FF> | **P3** The value-form encoder and decoder |
+  |<#FBCFE8> | **P10** Identity work |
+  |<#DDD6FE> | **P11** Registry / capability work |
+  |<#FDBA74> | **P12** The adversarial dimension — here, the work that closes it |
+  |<#A7F3D0> | **P9** Fail-closed gate — here, the verification gate |
+  |<#DCFCE7> | **P5** Fully declarative — here, an outcome the DATA lane delivers |
+  |<#FEE2E2> | **P6** Work on the Rust-source-emitting lane |
+  |<#F1F5F9> | **P14** Out-of-band note (design rationale) |
+  |= Arrow |= Meaning |
+  |<#334155> solid | **A1** an ordinary dependency |
+  |<#BE185D> solid | **A3** a hard ordering forced by the identity |
+  |<#DC2626> solid | **A2** a gate that refuses until the item lands |
+  |<#334155> dotted | **A6** a soft ordering — preference, not a correctness constraint |
+endlegend
+@enduml

@@ -7,41 +7,60 @@ skinparam defaultFontName SansSerif
 skinparam ArrowColor #334155
 
 package "L0 — authoring surface  [Branch]" #FFFBEB {
-  rectangle "<latex>\texttt{extender N(Base) \{ … \}}</latex>\n<latex>\texttt{language L = N(Arg)}</latex>" as DECL #FDE68A
-  rectangle "<latex>\mathit{ExtenderExpr}</latex>\nunion <latex>\backslash/</latex> · call · <latex>\texttt{empty}</latex>\n<latex>\texttt{semantics}</latex> · <latex>\texttt{context}</latex>\nsix content suffixes" as EE #FDE68A
+  rectangle """extender N(Base) { … }""\n""language L = N(Arg)""" as DECL #FDE68A
+  rectangle "<latex>\mathit{ExtenderExpr}</latex>\nunion <latex>\backslash/</latex> · call · ""empty""\n""semantics"" · ""context""\neight content suffixes" as EE #FDE68A
 }
 
 package "L1 — presentation content" #EEF2FF {
-  rectangle "**DDL text**  [Branch]\n<latex>\texttt{types \{ ![i64] as Int \}}</latex>\nparsed by <latex>\texttt{mettail-ast}</latex>'s own\n<latex>\texttt{*\_fragment}</latex> parsers (needs <latex>\texttt{syn}</latex>)" as DDL #FEF3C7
-  rectangle "**Canonical value**  [Proposed]\n<latex>\texttt{[\{ name : Int , carrier : i64 \}]}</latex>\nmaps · lists · tuples · strings\n(needs no <latex>\texttt{syn}</latex>)" as VAL #E0E7FF
+  rectangle "**DDL text**  [Branch] — //surface sugar//\n""types { ![i64] as Int }""\nread by ""parse_ddl"", which now yields\na **value**, not a second LanguageDef" as DDL #FEF3C7
+  rectangle "**Canonical value**  [Proposed] — //normative//\n""[{ &#34;name&#34;: &#34;Int&#34;, &#34;carrier&#34;: &#34;i64&#34; }]""\nmaps · lists · tuples · strings\n(needs no ""syn"")" as VAL #E0E7FF
 }
 
-rectangle "**L2 — the seam**  [Implemented]\n<latex>\texttt{LanguageDef}</latex>\n<latex>\mathcal{F} = \texttt{language\_definition\_fingerprint}</latex>" as LD #DBEAFE
+rectangle "**L2 — the seam**  [Implemented]\n""LanguageDef""\n<latex>\mathcal{F} = \texttt{language\_definition\_fingerprint}</latex>" as LD #DBEAFE
 
-rectangle "backends\nparser · rho-native · Dovetail · emitters" as BE #DCFCE7
+rectangle "backends\nparser · rho-native · Dovetail · emitters" as BE #F8FAFC
 
 DECL --> EE : body
-EE --> DDL : <latex>\texttt{types \{ … \}}</latex>
-EE --> VAL : <latex>\texttt{types = }v</latex>   ★ this FIPS
-DDL --> LD : <latex>\mathrm{parse\_ddl}</latex>
-VAL --> LD : <latex>\mathcal{E}_{\mathrm{pres}}</latex>
+EE --> DDL : ""types { … }""
+EE --> VAL : ""types = "" <latex>v</latex>   ★ this FIPS
+
+DDL -[#7C3AED,dashed]-> VAL : ""parse_ddl : TokenStream"" <latex>\rightharpoonup</latex> ""Value""\n**desugaring, not a second decoder**\n★ obligation: <latex>\mathcal{E} \circ \mathrm{parse\_ddl} = [\![\,\texttt{DDL} \rightarrow \texttt{LanguageDef}\,]\!]</latex>\n//a stated domain; an ERROR outside it — never a\npartial value// (RT4, §III.2)
+VAL --> LD : <latex>\mathcal{E}</latex> — the **sole** decoder
 LD --> BE
 
-DDL <-[#BE185D,dashed]-> VAL : **encoding parity**\n<latex>\mathcal{E}_{\mathrm{pres}}(\mathsf{enc}(\mathrm{parse\_ddl}(t))) = \mathrm{parse\_ddl}(t)</latex>
-
 note bottom of VAL #ECFDF5
-  Only the value form can be **sent on a channel**,
-  **stored in the tuplespace**, **versioned in the registry**,
-  **transformed by Rholang code**, and **matched with Rholang patterns**.
-  That is why it is normative for identity and interchange.
+  **One decoder FROM A VALUE.** Because ""parse_ddl"" emits a //value// and <latex>\mathcal{E}</latex> is
+  the only function from a value to a ""LanguageDef"", the DDL surface cannot drift
+  against the value surface: there is no second elaborator between them, no second
+  validator, and no second fingerprint. This is the standing //no dual runtime paths//
+  discipline applied to the specification frontend.
+
+  ★ **The qualification is not decorative.** ""language!"" still parses Rust tokens
+  //directly// into a ""LanguageDef"" (figure 1), because routing it through the value
+  form would require every construct to have a v1 value spelling — and gaps G-1 … G-3
+  say **two** shipped languages do not: ""RhoCalc"" (G-1, G-3) and ""CalcLambda"" (G-2).
+  That arrow is **frozen**, not removed, and the residual drift risk is bounded by
+  §VI.3's corpus fingerprint test.
+
+  Only the value form can be **sent on a channel**, **stored in the tuplespace**,
+  **versioned in the registry**, **transformed by Rholang code**, and
+  **matched with Rholang patterns** — which is why it, and not the text,
+  is normative for identity and interchange.
 end note
 
 legend right
-  |= Color |= Layer |
-  |<#FDE68A> | L0 — Stay's extender surface |
-  |<#FEF3C7> | L1 — bootstrap DDL-text encoding |
-  |<#E0E7FF> | L1 — proposed canonical value encoding |
-  |<#DBEAFE> | L2 — the shared specification datatype |
-  |<#DCFCE7> | Backend generators (unchanged) |
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#FDE68A> | **P1** L0 — Stay's extender surface |
+  |<#FEF3C7> | **P2** L1 — DDL-text surface sugar |
+  |<#E0E7FF> | **P3** L1 — the canonical value encoding (normative) |
+  |<#DBEAFE> | **P4** L2 — the shared specification datatype |
+  ——
+  //The backends box carries the neutral GROUPING wash #F8FAFC, not a//
+  //semantic fill: it names four generators collectively and asserts nothing//
+  //about them. Two of the four emit Rust source and two emit data — figures 1//
+  //and 6 draw that split, which is their subject and not this figure's.//
+  |= Arrow |= Meaning |
+  |<#334155> solid | **A1** ordinary dataflow |
+  |<#7C3AED> dashed | **A4** an equality obligation — here, ""parse_ddl"" into the value form |
 endlegend
 @enduml
