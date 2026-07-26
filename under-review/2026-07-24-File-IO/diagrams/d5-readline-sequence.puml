@@ -1,0 +1,40 @@
+@startuml
+title file!readLineInto(buf) — end to end;  status reply = happens-before
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #37474F
+skinparam ParticipantBorderColor #37474F
+skinparam LifeLineBorderColor #90A4AE
+actor Client #4F82C2
+participant "File agent" as File #3C9C9C
+participant "Buffer agent" as Buf #5FA75F
+
+Client -> File : file!readLineInto(buf)
+activate File
+File -> Buf : @buf!beginFill()   (acquire lease)
+activate Buf
+Buf --> File : [true, fillToken]
+deactivate Buf
+loop until line terminator, buffer full, or EOF
+  File -> File : read chunk at current position
+  File -> Buf : @buf!writeBytes(chunk)   (AWAIT ack)
+  activate Buf
+  Buf --> File : [true, k]
+  deactivate Buf
+end
+File -> Buf : @buf!endFill(fillToken)   (release lease)
+activate Buf
+Buf --> File : [true]
+deactivate Buf
+File --> Client : [true, [nRead, flags]]   (flags: eof, truncated)
+deactivate File
+note over Client, Buf
+The File agent SEQUENCES: it awaits each writeBytes ack
+and releases the lease BEFORE replying. The reply is the
+happens-before edge; buf is unchanged and still valid.
+While the lease is held, chunk-touching reads
+(read / view / slice / toByteArray / validUtf8PrefixLen) return
+BUFERR_FILLING for ANY caller. The File agent
+releases the lease on every exit path, errors included.
+end note
+@enduml

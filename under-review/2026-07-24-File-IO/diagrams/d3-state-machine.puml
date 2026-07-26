@@ -1,0 +1,27 @@
+@startuml
+title Buffer lifecycle — states partitioned by fill level
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam StateBackgroundColor #DDF0DD
+skinparam StateBorderColor #37474F
+[*] --> Empty : alloc(n, unit)\n<latex>C = \mathrm{cap}(n,\mathit{unit}) \le L</latex>
+Empty --> Partial : write accepted\n(<latex>0 < \ell < C</latex>)
+Empty --> Full : write fills exactly\n(<latex>\ell = C</latex>)
+Empty --> Empty : read(n) => 0 bytes\nwriteBytes(empty)
+Partial --> Partial : write accepted\nread(n) advances <latex>\rho</latex>
+Partial --> Full : write reaches <latex>\ell = C</latex>
+Full --> Full : writeBytes => [true, 0]\nwriteByte => [false, BUFERR_CAPACITY_EXCEEDED]\nread(n) advances <latex>\rho</latex>
+Empty --> Empty : clear()
+Partial --> Empty : clear()
+Full --> Empty : clear()
+Empty --> Closed : close()
+Partial --> Closed : close()
+Full --> Closed : close()
+Closed --> Closed : any NAMED method => [false, BUFERR_REVOKED]\n(unknown method => BUFERR_UNSUPPORTED)
+Closed --> [*]
+legend bottom
+  Empty: <latex>\ell = 0</latex>    Partial: <latex>0 < \ell < C</latex>    Full: <latex>\ell = C</latex>
+  Closed: metadata token is the REVOKED tombstone
+  read(n) moves <latex>\rho</latex> only, so it never changes state
+endlegend
+@enduml
