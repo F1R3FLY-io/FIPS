@@ -1,0 +1,42 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #334155
+  LifeLineBorderColor #475569
+  LifeLineBackgroundColor #F8FAFC
+  ParticipantBorderColor #334155
+  ParticipantFontColor #0F172A
+}
+
+actor "Deploy client" as Client #D7EAF8
+participant "HTTP / gRPC" as API #BEE5CF
+participant "Queue sender" as Sender #FFF0A8
+participant "Detached proposer\nworker" as Worker #F7C7C7
+participant "NodeRuntime\ncritical wrapper" as Runtime #E3D8F5
+
+== Initially healthy ==
+Client -> API: submit deploy
+API -> Sender: trigger proposal
+Sender -> Worker: queue request
+Worker --> Sender: proposal result
+Sender --> API: accepted
+
+== Invisible critical loss ==
+Worker -[#B91C1C]> Worker: panic, error, or return
+destroy Worker
+Runtime -> Runtime: result stream closes
+note right of Runtime #FFE0B2
+  Wrapper returns Ok(())
+  Runtime warns but keeps APIs alive
+end note
+
+== Zombie validator ==
+Client -> API: status
+API --> Client: HTTP 200, isReady=true
+Client -> API: submit deploy
+API -> Sender: trigger proposal
+Sender -[#B91C1C]> Sender: channel closed
+Sender --> API: internal failure
+API --> Client: deploy cannot finalize
+@enduml

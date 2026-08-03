@@ -1,0 +1,43 @@
+@startuml
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam state {
+  BorderColor #334155
+  FontColor #0F172A
+  ArrowColor #334155
+  BackgroundColor #D7EAF8
+  StartColor #334155
+  EndColor #334155
+}
+
+state Starting #D7EAF8
+state Ready #BEE5CF
+state Stopping #FFF0A8
+state Failed #F7C7C7
+
+[*] --> Starting
+Starting : isReady = false
+Starting : parent owns every critical child
+Starting --> Ready : initialization complete\nand required children ready
+
+Ready : isReady = true
+Ready : validator implies proposer alive\nand request queue open
+
+Ready --> Stopping : operator / signal shutdown
+Stopping : publish planned cancellation
+Stopping : isReady = false
+Stopping --> [*] : bounded clean shutdown
+
+Starting --> Failed : critical child completes unexpectedly
+Ready --> Failed : critical child returns, errors,\npanics, or loses owned channel
+Failed : atomically set isReady = false
+Failed : record bounded diagnostic + metric
+Failed : cancel sibling tasks
+Failed --> [*] : nonzero process exit
+
+note right of Failed #E3D8F5
+  The service manager restarts the
+  complete process from durable state.
+  No in-process proposer epoch split.
+end note
+@enduml
