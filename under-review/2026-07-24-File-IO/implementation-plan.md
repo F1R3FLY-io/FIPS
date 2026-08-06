@@ -838,6 +838,24 @@ Phases 3, 4, and 7 (coding-only) can run in parallel on the same tier if two imp
 - **Test scaffolding**: `casper/tests/util/rholang/runtime_manager_test.rs:49-74` for the standard "deploy a `.rho` and verify replies" harness.
 - **CLI**: `node/` binary crate for the config-loader + CLI-flag parser (Phase 7).
 
+## Phase 8 design direction — range-lock architecture (X-1 resolution)
+
+Recorded 2026-08-06 following Phase 7 whole-review's X-1 cross-phase tension.  Slice 27's fresh-mint (one kernel fd per cap; two `Fs.openFile(same-name)` calls yield distinct caps with independent cursors) was the correct Phase 7 decision, but it means Phase 8's range-lock protocol needs shared state that **cuts across cap boundaries** — otherwise Alice's `bytesAt(0, 1024)` on one cap wouldn't conflict with Bob's overlapping `writeBytesAt(500, 1024)` on a fresh cap of the same file, defeating the "cross-cap coordination via the range-lock protocol on the underlying path" guarantee in §Race-window notes.
+
+Agreed Phase 8 requirements:
+
+1. **Per-path lock table** — separate from `FileHandleTable`; keyed on **canonicalized** identifier so two provisioning paths that resolve to the same on-disk file (via `.` / `..` / trailing slash / bind mount / symlink chain) collapse to the same lock entry.  Concretely, prefer keying on `(dev, inode)` (the H-5 `RootIdentityRegistry` pattern) over `PathBuf` — inode-keying naturally handles symlinks, bind mounts, and hard-linked aliases without requiring an eager `canonicalize`-on-lock-acquire syscall.  Lexical-canon `PathBuf` keying is the fallback if the identity table isn't yet plumbed into the syscall path where locks acquire.
+
+2. **Lock acquisition** — separate from OS fd open.  Because fresh-mint means the OS fd is per-cap and short-lived, we can't piggyback on `fcntl(F_OFD_SETLK)` (locks would vanish when the last fd closed).  Instead, the lock lives in the per-runtime (or per-manager) lock table and is checked at each byte-level syscall's dispatch time.
+
+3. **Lifecycle coupling** — per-deploy scope on top of the per-path key.  Alice's lock survives to Bob's deploy per §Explicit locks ("Held until `release`" + "Implementations MAY auto-release on deploy-end").  Table entries carry a `(canon_id, deploy_epoch, holder_cap_id)` composite.  The `WalDeployScope` machinery (H-2 fix, casper/rholang/runtime.rs) is the natural place to hang auto-release-on-deploy-end.
+
+4. **WAL journaling** — new `WalOp::LockAcquire { range, mode }` + `WalOp::LockRelease` variants; hard-fork bump of `SNAPSHOT_FORMAT_VERSION`.  Combines with X-2's `wait: true` concern: blocked lock acquisitions can't journal at reply-time because the reply hasn't produced yet — Phase 8 will need pre-syscall lock journaling with a `WalOutcome::Failure` finalize path (H-6 pattern) if the wait times out or the caller cancels.
+
+Placement decision: **`RuntimeManager`-shared Arc<RwLock<...>>**, mirroring the existing sharing pattern (`fs_snapshot_writer` / `pending_wal_slices` / `root_id_registry`).  Rationale: Phase 8 needs same-path locks visible across every runtime spawned from a single node, and the `share_*` broadcast pattern is already the established mechanism.  Alternative "per-runtime table" fails when two runtimes on the same manager attempt overlapping I/O; alternative "OS `fcntl` locks" fails the fresh-mint lifetime constraint.
+
+Deferred to Phase 8 slice: exact schema of the lock-table row, whether the H-5 `RootIdentityRegistry` should be extended into a general `(dev, inode) → LockState` map, and how the WAL replay ordering treats blocked-then-cancelled acquires.
+
 ## Definition of done
 
 - All 10 phases complete; `cargo test` and the casper integration suite pass.
