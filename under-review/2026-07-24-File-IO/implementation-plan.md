@@ -856,6 +856,22 @@ Placement decision: **`RuntimeManager`-shared Arc<RwLock<...>>**, mirroring the 
 
 Deferred to Phase 8 slice: exact schema of the lock-table row, whether the H-5 `RootIdentityRegistry` should be extended into a general `(dev, inode) → LockState` map, and how the WAL replay ordering treats blocked-then-cancelled acquires.
 
+### X-2 supplement — `wait: true` acquisition ordering
+
+The H-R3 log-order-drain fix (Phase 7 slice 30c) re-orders WAL entries by matching each entry's ack-channel-hash against `deploy_log`'s Produce events.  Every current Phase-7 WAL entry corresponds to a syscall that eventually produces its reply within the same deploy — so every entry finds a matching Produce in log order.  Under Phase 8's `lockRange(..., {"wait": true})`, a blocked acquire may (a) unblock within the deploy (normal drain works), (b) block past deploy-end and get auto-released on cleanup with no Produce ever firing, or (c) block, be cancelled, and produce an error reply — with the WAL entry's ordering relative to concurrent Produces determined by scheduler nondeterminism.
+
+Cases (b) and (c) break the H-R3 determinism guarantee because there's no `deploy_log` Produce to match the WAL entry's sidecar hash against.  H-R3's orphan-tail fallback then falls back to insertion order, which is scheduler-dependent — the exact class H-R3 was designed to prevent.
+
+Agreed Phase 8 rollout:
+
+1. **§MVP (fail-fast only).**  Deliver `lockRange` + implicit range locks in `wait: false` mode only.  Conflict returns `FSERR_BUSY` immediately; every acquire produces its reply within the same tokio dispatch.  WAL journaling matches `fs_read`'s post-decision pattern: `LockAcquire { range, mode, outcome: Success | Failure(FSERR_BUSY) }` appended after the acquire attempt resolves.  Preserves the Phase-7 determinism invariants exactly — every WAL entry has a matching Produce; drain is unchanged.
+
+2. **§follow-up (`wait: true`).**  Adds blocking acquisition.  Requires either:
+   - **Rig-protocol coordination** — the leader records "acquire cancelled at deploy-log position N" and followers replay that decision verbatim rather than re-attempting the block.  Leverages the existing Rig machinery (`ReplayRSpace` +  `check_replay_data`).
+   - **Deploy-scope deterministic timeout** — lock-wait timeout defined as a function of `(deploy_hash, acquire_index)` not wall-clock, so two validators reach the same "give up" moment.  Changes lock semantics from wall-time to logical-time.
+
+    Follow-up will pick one; MVP is unblocked either way.
+
 ## Definition of done
 
 - All 10 phases complete; `cargo test` and the casper integration suite pass.
