@@ -1,0 +1,120 @@
+@startuml
+title LanguageDef Anatomy — Where Rust Actually Leaks In
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam classAttributeIconSize 0
+skinparam ArrowColor #334155
+
+class LanguageDef #DBEAFE {
+  + **name : syn::Ident**   — a Rust-identifier coupling (W-3b)
+  + options : HashMap<String, AttributeValue>
+  + extends_names / include_names / mixin_names : Vec<Ident>
+  + types : Vec<LangType>
+  + refinement_types : Vec<RefinementTypeDef>
+  + token_defs : Vec<TokenDef>
+  + mode_defs : Vec<ModeDef>
+  + sync_constraints : Vec<SyncConstraint>
+  + tree_invariants : Vec<TreeInvariant>
+  + terms : Vec<GrammarRule>
+  + equations : Vec<Equation>
+  + rewrites : Vec<RewriteRule>
+  + logic : Option<LogicBlock>
+  + guard_config : Option<GuardConfig>
+}
+
+class LangType #FEE2E2 {
+  + name : Ident
+  + **native_type : Option<syn::Type>**  <latex>\;\bigstar_1</latex>   model.rs:918
+  + collection_kind : Option<CollectionCategory>
+}
+
+class GrammarRule #FEE2E2 {
+  + label : Ident
+  + category : Ident
+  + term_context : Option<Vec<TermParam>>
+  + syntax_pattern : Option<Vec<SyntaxExpr>>
+  + **rust_code : Option<RustCodeBlock>**  <latex>\;\bigstar_2</latex>   grammar.rs:247
+  + eval_mode : Option<EvalMode>
+  + is_right_assoc : bool
+  + prefix_bp : Option<u8>
+}
+
+class RustCodeBlock #FEE2E2 {
+  + **code : syn::Expr**   types.rs:192 — the payload of <latex>\bigstar_2</latex>
+}
+
+class TokenDef #FEE2E2 {
+  + name : Ident
+  + pattern : String
+  + category : Option<Ident>
+  + **rust_code : Option<TokenStream>**  <latex>\;\bigstar_3</latex>   model.rs:1689
+  + priority / push_mode / is_pop / stream
+}
+
+class LogicBlock #FEE2E2 {
+  + relations : Vec<RelationDecl>
+  + **content : TokenStream**  <latex>\;\bigstar_4</latex>   model.rs:68
+}
+
+class TheoryRegistration #FEE2E2 {
+  + name : Ident
+  + **theory_type : syn::Type**  <latex>\;\bigstar_5</latex>   model.rs:637
+  + handled_types : Option<Vec<Ident>>
+}
+
+class Equation #DCFCE7 {
+  + name, type_context, premises
+  + left : Pattern
+  + right : Pattern
+}
+class RewriteRule #DCFCE7 {
+  + name, type_context, premises
+  + left : Pattern
+  + right : Pattern
+}
+class GuardConfig #FEF3C7 {
+  + builtin_predicates
+  + connectives
+  + channels
+  .. declarative in itself, but it ..
+  .. //composes// a Rust-bearing member ..
+}
+
+LanguageDef *-- LangType
+LanguageDef *-- GrammarRule
+LanguageDef *-- TokenDef
+LanguageDef *-- LogicBlock
+LanguageDef *-- Equation
+LanguageDef *-- RewriteRule
+LanguageDef *-- GuardConfig
+GrammarRule *-- RustCodeBlock
+GuardConfig *-- TheoryRegistration
+
+note as N #F1F5F9
+  **Five specification fields carry Rust — measured, not asserted.**
+  Reproduce from the mettail-rust worktree root with
+
+  ""rg -n '^\s*pub [a-z_0-9]+\s*:\s*(Option<)?(Vec<)?(syn::)?(Type|Expr|TokenStream|RustCodeBlock)\b' ast/src --glob '*.rs'""
+
+  which returns **ten** field declarations. Five are specification content
+  (<latex>\bigstar_1</latex> through <latex>\bigstar_5</latex>); one is <latex>\bigstar_2</latex>'s payload (RustCodeBlock::code);
+  three are //codegen output// in pattern.rs (VariableBinding::expression :484,
+  AscentClauses::clauses :492 and ::equational_checks :495); one is a
+  //codegen-analysis field// (grammar_shapes.rs:453 channel_expr). Two further
+  ""syn"" couplings escape any type predicate and are listed separately in §I.4:
+  ""LanguageDef::name : syn::Ident"" and ""LanguageRef::module_path : syn::Path""
+  (compose.rs:38).
+
+  <latex>\bigstar_1</latex> and <latex>\bigstar_5</latex> are type **NAMES**; <latex>\bigstar_2</latex>, <latex>\bigstar_3</latex> and <latex>\bigstar_4</latex> are executable Rust **CODE**.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#DBEAFE> | **P4** The shared specification datatype — here, the root record |
+  |<#FEE2E2> | **P6** Carries a Rust type or Rust code |
+  |<#DCFCE7> | **P5** Fully declarative — no Rust anywhere |
+  |<#FEF3C7> | **P2** Declarative itself, but composes a Rust-bearing member |
+  |<#F1F5F9> | **P14** Out-of-band note (measurement) |
+endlegend
+@enduml
