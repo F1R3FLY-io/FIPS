@@ -1,0 +1,25 @@
+@startuml
+title Method dispatch — @buf!writeBytes(chunk) — meta token as mutex, one appended chunk
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ArrowColor #37474F
+skinparam ParticipantBorderColor #37474F
+skinparam LifeLineBorderColor #90A4AE
+actor Client #4F82C2
+participant "Buffer agent\ndispatch loop on this" as Agent #5FA75F
+entity "meta token @(this, metaP)\n<latex>(\ell, \rho, C, \mathit{unit}, \mathit{lease}, \mathit{lo}, \mathit{hi})</latex>  or  REVOKED" as Meta #E08A3C
+entity "append-only byte chunks\n@(this, chunkP, j)" as Chunks #F4C99A
+
+Client -> Agent : @buf!writeBytes(chunk)  =  this!(ret, "writeBytes", chunk)
+activate Agent
+Agent -> Meta : consume @(this, metaP)  — LOCK
+activate Meta
+note right of Meta : free-variable receive, then match:\nREVOKED => re-park + BUFERR_REVOKED
+Agent -> Agent : <latex>k = \min(|\mathrm{chunk}|,\; C - \ell)</latex>
+Agent -> Chunks : if <latex>k \ge 1</latex>: park accepted prefix at <latex>j = \mathit{hi}</latex>\none produce — <latex>O(k)</latex>\n(one slice only on a short write; <latex>k = 0</latex> parks nothing)
+activate Chunks
+Agent -> Meta : re-send <latex>(\ell + k,\ \rho,\ C,\ \mathit{unit},\ \mathit{lease},\ \mathit{lo},\ \mathit{hi}')</latex>  — UNLOCK\n(<latex>\mathit{hi}' = \mathit{hi} + 1</latex> if <latex>k \ge 1</latex>, else <latex>\mathit{hi}</latex>)
+deactivate Meta
+Agent -> Client : ret!([true, <latex>k</latex>])
+deactivate Agent
+@enduml

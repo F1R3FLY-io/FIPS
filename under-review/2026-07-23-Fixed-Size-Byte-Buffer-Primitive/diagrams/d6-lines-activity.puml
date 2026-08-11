@@ -1,0 +1,35 @@
+@startuml
+title file!readLinesInto(rows) — fill each inner buffer, drop overflow to the line terminator
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam ActivityBackgroundColor #DDF0DD
+skinparam ActivityBorderColor #37474F
+skinparam ActivityDiamondBackgroundColor #FBE7D2
+skinparam ActivityDiamondBorderColor #E08A3C
+start
+:i := 0;
+:nLines := 0;
+:truncatedAny := false;
+while (i < m  and  not EOF ?) is (yes)
+  :inner := rows.getAt(i);
+  :inner.clear();
+  while (byteAvailable  and  hasRoom(inner)  and  not atTerminator() ?) is (yes)
+    :append next() to inner;
+  endwhile (no)
+  if (atTerminator() ?) then (yes)
+    :skipTerminator()  — consume the terminator;
+  elseif (byteAvailable  and  not hasRoom(inner) ?) then (yes)
+    while (byteAvailable  and  not atTerminator() ?) is (yes)
+      :next()  — drop byte (line exceeds inner capacity);
+    endwhile (no)
+    :if atTerminator(): skipTerminator()  — consume terminator if present;
+    :truncatedAny := true;
+  else (EOF, partial line)
+    :partial line stands (not truncated);
+  endif
+  :nLines := nLines + 1;
+  :i := i + 1;
+endwhile (no)
+:return [true, [nLines, flags]];
+stop
+@enduml

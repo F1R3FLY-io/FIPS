@@ -1,0 +1,27 @@
+@startuml
+title Fixed-Size Byte Buffer — Layered Architecture
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam componentStyle rectangle
+skinparam ArrowColor #37474F
+
+package "Rholang user space" #EAF2FB {
+  component "Client process\nholds bundle+ handle" as Client #D6E4F0
+  component "File agent\nrho:io:fs:1.*" as File #D2ECEC
+}
+package "Agent API  (sole client surface)" #DDF0DD {
+  component "Buffer factory  (rho:lang:buffer)  mints\nper-instance Buffer agents — reachable ONLY\nvia their bundle+ handle, never by name\nmethod => [true, ...] or [false, code, msg]" as Agent #BFE3BF
+}
+package "Runtime substrate  (f1r3node)" #ECECEC {
+  database "RSpace (tuplespace) — replay-safe state\nmeta @(this, metaP) = <latex>(\ell, \rho, C, \mathit{unit}, \mathit{lease}, \mathit{lo}, \mathit{hi})</latex>  or  REVOKED\nappend-only chunks @(this, chunkP, j),  <latex>\mathit{lo} \le j < \mathit{hi}</latex>  (indices never reused)" as RSpace #E7DEF2
+  component "Cost engine (phlogiston)\nstorage per byte + per chunk header,\nrefunded on clear / close" as Cost #F2DEDE
+  component "Native helpers (stateless, deterministic;\ntotal on their documented domains)\nvalidUtf8PrefixLen, decodeUtf8\nconcatBytes (linear-charged gather)" as Decode #F4C99A
+}
+
+Client -down-> Agent : @buf!method(args)  (send-return)
+File -down-> Agent : fills via  @buf!writeBytes(chunk)
+Agent -down-> RSpace : consume / produce meta\n(token mutex serializes all access)
+Agent -right-> Decode : view() decodes bytes;\nthe 5 chunk-touching reads (read, slice,\ntoByteArray, validUtf8PrefixLen, view)\ngather by pairwise merge + concatBytes
+RSpace -right-> Cost : charge / refund\non produce / consume
+@enduml
