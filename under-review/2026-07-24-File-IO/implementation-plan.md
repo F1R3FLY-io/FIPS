@@ -1003,6 +1003,51 @@ Phase 9's deliverables list should be rewritten to: (i) enumerate per-native `Bi
 - **Spec refresh** — the FIP §Cost accounting section (line 1416+ of `2026-07-24-File-IO.md`) uses "CostManager::charge() (or the equivalent)" future-proofed language, so a minimal edit suffices; §Buffers > Reuse-is-refunded needs the D3 shift described above.
 - **No re-plan of delivered phases** — the code goes through whatever cost frame the interpreter presents.  Port is mechanical.
 
+## Phase 8 slice 8a — implementation progress (2026-08-12)
+
+Live progress tracker for slice 8a (`LockRegistry` MVP, `wait: false` only).
+Commits on `fileio-phase-1-2` branch of `f1r3node-rust`:
+
+**Completed:**
+
+| Step | Commit | Description |
+|---|---|---|
+| Foundation | `9360fd58` | `LockRegistry` module (`rholang/src/rust/interpreter/io/lock.rs`, 46 unit tests) + `RuntimeManager` broadcast wiring mirroring `RootIdentityRegistry` pattern.  Consensus-committed constants (`MAX_RANGES_PER_FILE = 1024`, `LOCK_ID_CEILING = u64::MAX - 2¹⁶`) added to hard-fork catalog item #12 in `snapshot.rs`.  Zero call sites yet.  See `lock.rs` module docstring for full architecture (mode-differentiated semantics, consensus-committed constants, cross-cap forgery safety, wait:true deferral). |
+| Step 3 | `1efeefd5` → `d0343158` → `a03acf80` | Three natives (`fs_lock_range`, `fs_lock_sequential`, `fs_release_lock`) + URN registration + genesis wiring.  Composed-source golden hex rolled from `c7d8d818…` to `cfddec75…`.  Three review rounds: initial commit + fd-based lock keying (post-review-2 fix — deleted `stat_leaf_dev_inode` + 5 tests, added `dev_inode_from_fd` helper) + defensive comments/sentinel guard (post-review-3). |
+
+**Fresh session pickup for step 4 needs to know:**
+
+1. **Native shapes are fd-based, not path-based** (review-round-2 correction).  Signatures:
+    - `fsLockRange(fd, offset, length, mode, holder, cmode, ack)` — arity 7
+    - `fsLockSequential(fd, holder, cmode, ack)` — arity 4
+    - `fsReleaseLock(lockId, ack)` — arity 2
+    - `mode`: `"r"` or `"w"` string
+    - `holder`: opaque Par hashed to 32-byte HolderId (typically `*stateP` GPrivate)
+    - `cmode`: `"oracular"` / `"consensus"` string
+2. **`DeployScope::default() = [0; 32]` placeholder in natives.**  Step 3 passes this to `try_acquire_range` / `try_acquire_sequential` because step 5 (auto-release hook) hasn't wired real per-deploy identities.  **A defensive `debug_assert!` guards `LockRegistry::release_all_for_deploy(&[0; 32])`** — step 5 MUST replace the placeholder before enabling the sweep, or the guard panics.
+3. **URN-filter drift discipline.**  `FS_NATIVE_URN_SUFFIXES` (in `fs_genesis.rs`) has a docstring enumerating 5 places any new fs-native URN must land; the fs_native_urn_filter_spec.rs iteration list is hardcoded (not auto-iterated) so any future URN needs manual add there too.
+4. **`WAL journaling for locks SKIPPED for slice 8a MVP** (X-1 §4 refinement, 2026-08-12).  Consensus safety comes from `is_replay`-cached replies alone; skipping saves the schema extension + version bump + golden-hex churn.  If future analysis surfaces a load-bearing case, add as hard-fork amendment.
+
+**Remaining steps (numbered post-X-1 §4 SKIP):**
+
+- **Step 4** (was 5) — `File.rho` surgery.  ~4-6 hours: (a) inline `LockToken` agent block (single-method `release` + default arm, idempotent second-release returns `FSERR_CLOSED`, `stateP` holds LockId); (b) add `File.lockRange(offset, length, mode) → [true, lockToken] | [false, code, msg]` method; (c) wrap 6 positional methods (`bytesAt`, `writeBytesAt`, `readInto`, `readAtInto`, `writeFrom`, `writeFromAt`) with `fsLockRange!(fd, ...)` acquire + `fsReleaseLock!(lockId)` on completion; (d) wrap 10 sequential-stream constructors (`chars`, `bytes`, `lines`, `readLine`, `writeChars`, `writeBytes`, `writeLine`, `writeLines`, `writeString`, `writeByteArray`) with `fsLockSequential!(fd, ...)` acquire + release on stream close; (e) `File.close` needs to release all locks for its holder — cleanest: add a new native `fs_release_all_for_holder(holder, ack)` calling `LockRegistry::release_all_for_holder`, or extend `fs_close` to sweep the holder as a side-effect.  Update mock syscalls in `rholang/tests/file_dir_check.rs` (~4000-line test file, ~30 existing tests may need adjustment for new FSERR_BUSY paths).  Composed-source golden hex will re-roll again.
+- **Step 5** (was 6) — Auto-release hook at `WalDeployScope::end` (or equivalent).  Cross-crate: casper's `WalDeployScope::end` (`casper/src/rust/rholang/runtime.rs`) invokes `LockRegistry::release_all_for_deploy(scope)` where `scope` is the per-deploy identity.  Both natives in step 3 must be updated to pass the real scope instead of `DeployScope::default()` — otherwise the sentinel guard in `release_all_for_deploy` panics.  DeployScope identity: recommend hash-of-deploy-sig or whatever WalDeployScope already uses internally.
+- **Step 6** (was 7) — Mode-differentiated unlink gate.  Modify `fs_remove_file` and `fs_remove_dir` handlers: when cmode = Consensus, call `lock_registry.is_locked(dev_inode, (0, u64::MAX))` after `stat_leaf_dev_inode`-equivalent resolves the target; if true, return `FSERR_BUSY` without touching the filesystem.  Under Oracular: no gate, but log-warn on locked-file delete per §Mode-differentiated invariants.
+- **Step 7** (was 8) — Integration tests + H-R3 concurrent-ack regression.  In `rholang/tests/file_dir_check.rs`: two disjoint bytesAt reads coexist; reader-vs-writer conflict → FSERR_BUSY; sequential + positional conflict; explicit `lockRange` held across positional calls then release.  In a new test crate or `fs_wal_spec.rs`: N-branch Par workload with distinct ack channels, 100 randomized tokio schedule shuffles, assert H-R3 drain matches 1:1 (see X-3 for the design).
+
+**Key files touched by slice 8a so far:**
+
+- `rholang/src/rust/interpreter/io/lock.rs` — NEW module (~900 lines with tests).
+- `rholang/src/rust/interpreter/io/handle_table.rs` — `+lock_registry` field + `share_lock_registry` method.
+- `rholang/src/rust/interpreter/io/handlers.rs` — 3 natives + 3 helpers + docstring block explaining slice 8a semantics.
+- `rholang/src/rust/interpreter/io/path.rs` — `fstat_dev_inode` promoted to `pub`; used by `dev_inode_from_fd` in handlers.rs.
+- `rholang/src/rust/interpreter/io/snapshot.rs` — hard-fork catalog item #12 added.
+- `rholang/src/rust/interpreter/system_processes.rs` — 3 `FixedChannels` + 3 `BodyRefs` + 3 `non_deterministic_ops` entries.
+- `rholang/src/rust/interpreter/rho_runtime.rs` — 3 `fs_native_def` entries.
+- `rholang/tests/fs_native_urn_filter_spec.rs` — 3 new suffixes in the hardcoded iteration list.
+- `casper/src/rust/util/rholang/runtime_manager.rs` — `+lock_registry` field + broadcast in both spawn paths + init.
+- `casper/src/rust/genesis/contracts/fs_genesis.rs` — 3 URN suffixes in `FS_NATIVE_URN_SUFFIXES` (with 5-place drift-discipline docstring) + 3 URN bindings in composed source + 3 arity table entries + golden hex bump.
+
 ## Definition of done
 
 - All 10 phases complete; `cargo test` and the casper integration suite pass.
