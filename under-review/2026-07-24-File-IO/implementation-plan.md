@@ -704,12 +704,12 @@ If any of these are missing, stop and coordinate with the prerequisite-FIP owner
 
 ### Phase 9 — Cost accounting scaffolding
 
-**Scope**: wire `CostManager::charge()` into every native and every library-method entry, with placeholder constants.
+**Scope**: wire consensus-critical per-native cost accounting through whatever charging surface the interpreter presents.  Under D3 (`feature/cost-accounted-rho`) this is `BillableTokenEvent::Primitive` descriptors committed via `RuntimeBudget::reserve_canonical_with_cost`; pre-D3 it's `CostManager::charge()` at handler entry.  Same design intent; different mechanism.  See X-4 supplement below for the D3 migration story.
 
 **Deliverables**:
 
-- Per-native cost: `CostManager::charge()` at handler entry, proportional to work.
-  - `open`/`close`/`stat`/`exists`/`chmod`/`chown`/`seek`/`tell`/`size`/`truncate`/`flush`/`quarantine`: constant ~100 (calibrated against `equality_check_cost`).
+- **Per-native cost emission at handler entry.**  Each native handler emits one `BillableTokenEvent::Primitive` with a deterministic weight (or, pre-D3, calls `CostManager::charge()` with the same numeric weight).  Weights consensus-critical from day one under D3 — a change is a hard-fork.
+  - `open`/`close`/`stat`/`exists`/`chmod`/`chown`/`seek`/`tell`/`size`/`truncate`/`flush`/`quarantine`/`lockRange`/`lockSequential`/`releaseLock`: constant ~100 (calibrated against `equality_check_cost`; matches the fs_open class).
   - `read`/`readAt`: `c_open + bytes_read`.
   - `write`/`writeAt`: `c_open + 2 * bytes_written`.
   - `entries`: `50 + 32 * n_entries`.
@@ -717,24 +717,31 @@ If any of these are missing, stop and coordinate with the prerequisite-FIP owner
   - `removeDir` recursive: `200 + per-entry cost across the tree`.
   - UTF-8 primitives: proportional to byte length.
   - `concatBytes`: linear in total byte length.
-- Per-stream-method cost: per-element / per-chunk / per-byte transferred.
-- Per-buffer-method cost: per §Cost accounting > Buffers.
-- Materialization caps as stopgap: `toString(cap)`, `toByteArray(cap)`, `toList(cap)` with a `"FSERR_QUOTA_EXCEEDED"` reply above the cap.
-- Reply-payload cap on `EntryStream.chunk(n)` (records) and `ByteStream.chunk(n)` (bytes) to bound reply payload size.  (`LineStream` doesn't support `chunk` at all per spec §chunk method, so no cap needed there.)
-- **`readInto` vs. `read` cost differ.**  `readInto` is roughly 2× naive `read`: it charges the native `read` cost (bytes transferred from disk) *plus* the `writeBytes` substitution charge per parked chunk (spec §Cost accounting > Buffers: "every send additionally pays an unrefunded substitution charge proportional to its payload").  Document both formulas and expose the split so operators / users can predict per-fill cost.
-- Constants calibrated against `equality_check_cost` and `sum_cost` in `accounting/costs.rs` — meaningfully more expensive than arithmetic but not prohibitive.
+- **Per-stream-method cost** (Rholang library layer): per-element / per-chunk / per-byte transferred.  Under D3 these are NOT explicit `charge` calls — the recursive metering kernel authorizes source-token consumption at every rule-1..5 boundary; library-agent method dispatch is not a separate metering surface.  Pre-D3 they were explicit `CostManager::charge()` calls.
+- **Per-buffer-method cost** per §Cost accounting > Buffers.  Under D3, per-instance dispatcher cost is the recursive-metering cost at agent-block instantiation, not `storage_cost_consume`.
+- **Materialization caps** as stopgap defense-in-depth (unchanged by D3): `toString(cap)`, `toByteArray(cap)`, `toList(cap)` with a `FSERR_QUOTA_EXCEEDED` reply above the cap.
+- **Reply-payload cap** on `EntryStream.chunk(n)` (records) and `ByteStream.chunk(n)` (bytes) to bound reply payload size.  (`LineStream` doesn't support `chunk` at all per spec §chunk method, so no cap needed there.)
 
 **Design constraints**:
 
-- Additive to existing accounting; no repricing of prior operations.
-- Constants land as tunable parameters; full calibration is the follow-up Cost FIP.
+- **Under D3**: weights are consensus-critical from day one — every validator must agree.  Weight change = hard fork.  Coordinate activation with the eventual cost-accounted-rho merge's hard-fork block-height trigger (`docs/theory/cost-accounting-migration.md` §6 step 22).
+- **Pre-D3**: constants are additive to existing accounting; no repricing of prior operations.  Full calibration is the follow-up Cost FIP.
+- **Migration posture**: implement the D3 weights first (they're stricter — hard-fork discipline).  Pre-D3 fallback uses the same numbers but goes through `CostManager::charge()`.  Same weights, two dispatch paths.
+
+**Deferred to Cost FIP**:
+
+- `readInto` vs. `read` cost decomposition (documented in spec §Cost accounting > Buffers).  Under D3 the `storage_cost_produce` refund path is retired; `readInto` cost becomes the sum of the native `read` event weight and the byte-throughput weight of the `writeBytes` calls that follow, with no refund to reason about.  Document both in the Cost FIP so callers can predict per-fill cost.
+- Full weight calibration.
 
 **Tests**:
 
 - Cost regression: sample workloads (open + read + close) with expected phlogiston consumption within tolerance.
 - **Buffer read cost — pairwise-merge growth.**  Measure read cost at `ν = 8`, `ν = 64`, `ν = 512` with the buffer library's balanced pairwise merge; assert the growth follows `Θ(ℓ log ν)`, NOT `Θ(ℓ ν)`.  A `ν = 1` test cannot catch a fold-vs-merge regression (nothing to merge at ν=1), so this is the actual regression guard: a future well-meaning refactor to `List.fold(concatBytes)` would silently quadruple cost between `ν = 64` and `ν = 512`, and this test would catch it.
+- **Weight-drift pin**: golden-value test asserting each native's weight constant — matches the slice-34 pattern for consensus-committed constants.  Under D3, drift here is a hard-fork.
 
-**Effort**: 2–3 days.
+**Effort**: 2–3 days pre-D3.  Under D3 the port through `BillableTokenEvent::Primitive` is roughly the same effort — the emission call site pattern is uniform.
+
+**D3-migration reference**: X-4 supplement below has the reframing rationale.  When the cost-accounted-rho merge lands, the three inline references to `CostManager::charge()` (Phase 1 §51, §Reference points, §Buffer library size on-chain) should be updated to name both mechanisms.
 
 ### Phase 10 — Ocap examples + end-to-end tests
 
@@ -940,6 +947,19 @@ Agreed Phase 8 rollout:
 
     MVP (§1 above) remains unblocked; this commitment closes the "does replay path need new machinery" question so the follow-up slice can start on lockRange handler work directly.
 
+    **Slice 8b concrete implementation steps** (fresh-session pickup, 2026-08-12):
+
+    1. **Extend `LockRegistry` with waiter queue**: add `waiters: VecDeque<Waiter>` field per `FileLockState` (or per-`RangeEntry`; see comment above).  `Waiter` carries `(request_range, request_mode, holder, deploy, ack_channel_par)`.  Adjust `try_acquire_range` / `try_acquire_sequential` to accept a `wait_mode: WaitPolicy` param; on conflict under `WaitPolicy::Wait`, enqueue instead of returning `Err(Busy)`.
+    2. **Modify `release` and sweep methods** to wake waiters: after removing entries, scan `waiters` for any whose range now fits; move them to admitted state and prepare an ack Produce (see step 4).
+    3. **Add cancellation entry point**: `LockRegistry::cancel_wait(lock_id) -> Option<Waiter>` for the deploy-end sweep to abandon parked waiters + emit failure acks (see step 5).
+    4. **Modify `fs_lock_range` / `fs_lock_sequential` natives** to accept a `wait: Bool` arg (arity 8/5, up from 7/4).  On `wait: true` conflict: register the waiter; DO NOT produce a reply yet.  When the waiter admits (via release-triggered wake), the native's parked task sends the success reply on the ack channel; when the waiter cancels (deploy-end), send a synthesized error Produce via `Produce::with_error()` + `update_produce` (mirroring `reduce.rs:369`).  Composed-source arity table + genesis golden hex re-roll.
+    5. **Wire deploy-end cancellation into slice-8a step-5 auto-release hook**: in addition to `release_all_for_deploy(scope)`, iterate parked waiters for that deploy and cancel each (synthesized error acks).
+    6. **Add File.rho / LockToken plumbing** for the `wait: true` option: route `{"wait": true}` from Rholang caller down to the native's `wait` arg.  Positional methods (`bytesAt`, `writeBytesAt`, etc.) inherit via the same options-map argument (spec §1172).
+    7. **Tests**: `wait: true` blocks until holder releases; multiple waiters admit FIFO; cancel-on-deploy-end synthesizes `FSERR_CANCELLED` reply visible to caller; H-R3 log-order drain matches the synthesized Produce (belt-and-suspenders with the concurrent-ack regression from X-3).
+
+    **Effort**: 2-3 days.
+
+
 ### X-3 supplement — cost-accounted-rho impact on X-1 / X-2 (2026-08-08)
 
 Recorded after investigating `origin/feature/cost-accounted-rho` (D3 / DR-9, `runtime.rs::play_deploy_with_cost_accounting_cosigned`), which is the in-flight branch that will merge into `dev` and eventually meet Phase 7 / Phase 8 File I/O.  The model shift is:
@@ -1047,6 +1067,110 @@ Commits on `fileio-phase-1-2` branch of `f1r3node-rust`:
 - `rholang/tests/fs_native_urn_filter_spec.rs` — 3 new suffixes in the hardcoded iteration list.
 - `casper/src/rust/util/rholang/runtime_manager.rs` — `+lock_registry` field + broadcast in both spawn paths + init.
 - `casper/src/rust/genesis/contracts/fs_genesis.rs` — 3 URN suffixes in `FS_NATIVE_URN_SUFFIXES` (with 5-place drift-discipline docstring) + 3 URN bindings in composed source + 3 arity table entries + golden hex bump.
+
+## Deferred items catalog (fresh-session pickup, 2026-08-12)
+
+Consolidated list of tracked open items across all phases.  Each is either delivered-with-notes, scoped as future work, or deferred with a specific dependency.  A fresh session picking up this project should skim this catalog first — most "what's next?" questions resolve here.
+
+**Phase 7 delivered-with-open-items**:
+
+- **Task #15 — PB-B-3 `insertVersion` for `rho:io:fs:1.0.0`** (Phase 6-7 crossover).  FsGenesis publishes at `rho:id:<hash>` via `insertSigned` (delivered slice 25); the follow-up `insertVersion` call binding `rho:io:fs:1.0.0` / `rho:io:fs:1.*` as normalization-time aliases has not landed.  Own slice, not blocked by anything.  See plan §325.
+- **Task #122 — Two-validator PB-M-14 end-to-end test**.  `TestNode::create_network` harness exists in casper (`casper/tests/multi_node/`).  Blocked on: (a) confirming `TestNode` + `GenesisBuilder` thread per-node consensus-static HOCON, (b) verifying `TestNode::propagate_block` triggers `replay_deploys` → WAL apply on receiver.  If both wired: ~200-300 lines of test.  If harness extension needed: separate small prerequisite.  Deferred by user until Phase 8 lock work matures.
+- **Phase 7b — byte-payload distribution protocol** (plan §372, decomposed 2026-08-11):
+    - **7b-1**: snapshot chunk-fetch via 4 MiB Merkle-tree chunks; extends Casper block-fetch machinery with `get_snapshot_chunk(snapshot_root, chunk_index)` opcode.  Reuses peer discovery + DoS defenses + hash verification.
+    - **7b-2**: between-snapshot on-demand `get_wal_payload(payload_hash)` opcode.  Same fetch/verify/store shape.
+    - **Demand-reducer**: write-payload determinism (consensus writes SHOULD trace to on-chain sources: deploy data + deterministic Rholang + operator-provisioned static content).  Not a hard invariant.
+    - Rejected: push-in-gossip (defeats hash-only WAL), full DHT (overkill), strict determinism (too restrictive for operator-added content).
+- **Powerbox stub** (plan §345).  Interim per-`deployerId` Powerbox listed as Phase-6 deliverable; not built — Phase 6 shipped shared-Fs MVP.  Dedicated future slice.  Blocking on: (a) NormalizerEnv plumbing decision (Option A/B/C in `powerbox-requirements.md` §5), (b) Phase 7's config → bundle handoff (delivered slice 25).  When landed, revisit Phase 10 `fileio_cross_fs_isolation.rho` + `fileio_membrane.rho` examples for full end-to-end coverage.
+- **F-30b-1 retention key promotion** (plan §PB-M-15).  Design landed (§PB-M-15 amended); implementation deferred.  Small: change `NodeConfig.storage.consensus_fs_snapshot_retain` from `Option<usize>` to `usize`, remove `#[serde(default)]`, remove the `cadence * 2` fallback in `build_snapshot_writer`, add boot validation.  ~30 lines + test updates.  Standalone; unblocked.
+
+**Phase 8 remaining** (see §Phase 8 slice 8a — implementation progress above for the concrete step list):
+- Slice 8a steps 4-7: File.rho + LockToken (step 4, biggest), WalDeployScope::end auto-release hook (step 5), mode-differentiated unlink gate (step 6), integration tests (step 7).
+- Slice 8b: wait:true Rig-protocol (see X-2 supplement §Slice 8b concrete implementation steps).
+
+**Phase 7 whole-review deferrals** (from L-cleanup / slice-27 review notes — Cost-FIP territory, not blocking Phase 8):
+- H-27-1, H-27-F1 (per-runtime fd cap DoS aggravated by fresh-mint; no per-deploy sub-cap).
+- M-27-F1 (mint-path `fsStat` runs on every fresh open; Consensus operators must freeze `consensus-static-*` paths for the full deploy lifetime).
+- M-27-F2 (deploy-cost blowup: legacy code paying O(1) for repeat opens now pays O(N)).
+- M-27-1, I-27-F3 (handle equality is consensus-observable and always false for repeat opens).
+- L-27-1 (tuplespace state cells grow per-mint).
+- H-26-F2 (mutable-file `size` under Consensus — operator-invariant issue).
+- M-26-F1 (signature scope — documentation-only note).
+- M-26-F3 (NSS PII leakage under Oracular — operator hygiene).
+- M-26-F4 (project_bundle HashMap iteration — defense-in-depth; already pinned by determinism test).
+- H-28-F3 (play/replay runtimes have separate `fs_handles` — low likelihood).
+- H-28-1 (mid-block reset ordering fragility — consensus-safe today).
+- L-28-1 (32 bits of state-hash prefix exposed via fd values — no confidentiality issue).
+- H-R2 (hard checkpoint WAL snapshot — if a future slice introduces `revert_to_hard_checkpoint`, must snapshot/restore WAL alongside fd table).
+- H-R4 / M-29-3 (partial-write divergence — RESOLVED via `finalize_write_journal`).
+- M-R1 (block-wide WAL cap DoS — per-deploy cost accounting is a Cost FIP concern).
+- M-R4 (fs_open `is_replay` skips cmode validation — inherent to is_replay pattern; not a bug today).
+- M-14 (dedup `lib_body`) — RESOLVED commit 2353fd9a.
+- M-16 (docs: directory ≠ file distinction on `oracle-static-files`) — RESOLVED preempted by KindMismatch check in boot_validation.rs.
+
+## Cost-accounted-rho merge integration playbook (fresh-session pickup, 2026-08-12)
+
+`origin/feature/cost-accounted-rho` (branch of `f1r3node-rust`) is the D3 migration — internalized cost accounting via `RuntimeBudget` + `BillableTokenEvent` + `MeteredMachine`, replacing `CostManager` + `ChargingRSpace`.  Not yet merged to `dev`; work is underway.  When it merges, the File I/O `fileio-phase-1-2` branch needs a coordinated update.  See X-3 and X-4 supplements above for the design analysis; this section is the concrete integration checklist.
+
+**Pre-merge posture**:
+
+- `fileio-phase-1-2` and `origin/feature/cost-accounted-rho` are disjoint on file surface — cost-accounting doesn't touch `rholang/src/rust/interpreter/io/`, and File I/O doesn't touch `accounting/mod.rs` or `metering.rs` or `reduce.rs`'s eval loop.
+- No merge conflicts expected.  Behavioral integration is the risk.
+
+**At-merge checklist**:
+
+1. **Cross-branch dry-run**: check out `feature/cost-accounted-rho`, cherry-pick `fileio-phase-1-2`'s commits (or merge), run `cargo check -p rholang -p casper`.  Expected clean.
+2. **Run `fileio_native_spec.rs` + `file_dir_check.rs`** — verify all fs-native paths work under the new eval loop.
+3. **Run `fs_wal_spec.rs`** — critical: WAL determinism under `FuturesUnordered` (Par branches now truly interleave; H-R3 log-order drain must still produce byte-identical WAL across schedules).  Add the X-3 concurrent-ack regression test (N Par-branches, distinct ack channels, 100 randomized tokio schedule shuffles, assert 1:1 drain).
+4. **Verify replay under the new is_replay path**: slice 29 round-2's fs_open shadow-handle machinery (C-R1 fix) sits in the replay path; confirm it still works when `evaluate_cosigned` installs `Cost::unsafe_max()` (D3 accepts all deploys; no OOP abort).
+5. **Native weight ports**: Phase 9's `CostManager::charge()` becomes `BillableTokenEvent::Primitive` emission via `RuntimeBudget::reserve_canonical_with_cost`.  Same numeric weights, different dispatch.  Uniform per-native port pattern — expect 3-5 hours of mechanical translation.  Coordinate weight activation with the cost-accounted-rho hard-fork block-height trigger.
+6. **Phase 1 §51 + §Reference points + §Buffer library size on-chain**: language updates flagged in X-4 supplement.  Word-only; no code change.
+7. **Spec §Cost accounting**: FIP language already uses "CostManager::charge() (or the equivalent)" future-proofing; minimal edit needed.  §Buffers > Reuse-is-refunded needs the D3 storage-cost shift described in X-4.
+
+**Post-merge validation**:
+
+- Full test suite green (`cargo test -p rholang -p casper --lib`).
+- Slice-8a lock tests still 47/47 (LockRegistry semantics unchanged by D3).
+- No new consensus divergence in `fileio_replay_spec.rs`.
+- Hard-fork surface catalog (slice 34) updated if any new consensus-committed constants land.
+
+**Rollback posture**: if merge exposes a P1 issue, revert the cost-accounted-rho merge on `dev`; `fileio-phase-1-2` returns to functional under pre-D3 CostManager path.
+
+## Development conventions (fresh-session pickup, 2026-08-12)
+
+Local conventions this session used repeatedly.  Written down so next-me doesn't have to re-discover them.
+
+**Commits on `fileio-phase-1-2`**:
+
+- Subject line: `<type>(fileio): <finding-id or slice-tag> <summary>` — e.g., `feat(fileio): Phase 8 slice 8a step 3 — range-lock natives + URN registration`.  Match style of `git log --oneline -20`.
+- Body: prose paragraphs, not bullet-hell.  Reference finding IDs (M-x, H-x, F-x) or slice tags in-body where relevant.
+- Trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
+
+**Pre-commit hooks**:
+
+- `[fmt]` `[clippy]` `[deny]` run automatically.
+- `[deny]` currently fails on pre-existing `bitmaps` unmaintained warning (not caused by any slice-8a work; my commits add no crate dependencies).  Use `SKIP_DENY=1 git commit -F <msgfile>` to bypass just that check.  Do NOT use `--no-verify` — user policy is explicit hook check + selective skip.
+- `[fmt]` failures: `cargo fmt --all`, then re-add + re-commit.  The workspace's `rustfmt.toml` sets `fn_call_width` / `attr_fn_like_width` / `array_width` that print `.expect too high` warnings — cosmetic, ignore.
+
+**Testing during slice work**:
+
+- `cargo check -p rholang` — fast compile check.
+- `cargo test -p rholang --lib io::` — all File I/O unit tests (~200 in slice 8a era).
+- `cargo test -p rholang --lib io::lock` — just LockRegistry (47 in slice 8a era).
+- `cargo test -p casper --lib fs_genesis` — golden hex + drift checks (37 in slice 8a era).
+- `cargo test -p rholang --test file_dir_check with_libs_composes` — quick compile check that composed source parses through the Rholang lexer.
+- Full `cargo test -p rholang --lib` takes ~2.5 min; use for pre-commit sanity.
+
+**Commit-message file workflow** (avoids bash heredoc quoting issues with the accented em-dashes we use):
+
+```
+# Write msg to /tmp/<name>.txt via Write tool, then:
+SKIP_DENY=1 git commit -F /tmp/<name>.txt
+```
+
+**Two-repo state**: `fileio-phase-1-2` is on `f1r3node-rust` at `/Users/stay/greg/f1r3fly/f1r3node-rust`; the FIP spec + implementation plan live in FIPS repo at `/Users/stay/greg/f1r3fly/FIPS/fileio/` on `main`.  Keep them synchronized manually — design memos land in FIPS, code lands in f1r3node-rust.
+
+**Untracked local scripts**: `startnode`, `startrepl` appear in `git status` — user's local test helpers, don't touch.
 
 ## Definition of done
 
