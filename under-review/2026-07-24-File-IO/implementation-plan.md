@@ -1072,6 +1072,108 @@ Commits on `fileio-phase-1-2` branch of `f1r3node-rust`:
 - `casper/src/rust/util/rholang/runtime_manager.rs` — `+lock_registry` field + broadcast in both spawn paths + init.
 - `casper/src/rust/genesis/contracts/fs_genesis.rs` — 3 URN suffixes in `FS_NATIVE_URN_SUFFIXES` (with 5-place drift-discipline docstring) + 3 URN bindings in composed source + 3 arity table entries + golden hex bump.
 
+## Phase 8 slices 8b / 8c / 8d — implementation progress (2026-08-13)
+
+Live progress tracker for post-slice-8a work.  Branch: `fileio-phase-1-2` on `f1r3node-rust` (up-to-date with `origin/fileio-phase-1-2`).
+
+### Delivered
+
+**Slice 8a full delivery** (see prior tracker section for step-by-step SHAs): `LockRegistry` MVP with `wait: false` only, `WalDeployScope`-hooked auto-release, mode-differentiated unlink gate, 4 gap fixes from step-6 review.
+
+**Slice 8b — `wait: true` Rig-protocol coordination** (7 commits):
+
+| Sub | SHA | Description |
+|---|---|---|
+| 8b-1 | `a099321a` | LockRegistry waiter-queue infrastructure: `WaitPolicy` enum, `AcquireOutcome::{Immediate, Parked}`, `LockError::Cancelled`, `FSERR_CANCELLED` string + code 12 appended to hard-fork table, `waiters: VecDeque<Waiter>` on `FileLockState`, `try_acquire_range_wait` / `try_acquire_sequential_wait` methods, `cancel_wait` / `cancel_all_waiters_for_deploy`, strict head-of-line FIFO wake with rollback on dropped receiver.  19 tokio async tests. |
+| 8b-2 | `ffe521c2` | Native handlers accept `wait: true` with backward-compat arity: fs_lock_range arity 7 (legacy shim) OR 8 (with wait), fs_lock_sequential arity 4 or 5. On Parked, awaits admit oneshot; on cancel maps Err(Cancelled) via lock_err_reply to FSERR_CANCELLED. Native uses is_replay short-circuit unchanged. 4 source-scan pins. |
+| 8b-3 | `f672886c` | WalDeployScope::drop cancels parked waiters for its deploy scope via cancel_all_waiters_for_deploy. Symmetrical with the step-5 release_all_for_deploy sweep. 3 tests + source-scan pin. |
+| 8b-4 | `bed43865` | File.rho arity-4 `method lockRange(@offset, @length, @mode, @options)` alongside existing arity-3 method (coexistence pattern); extracts wait from options, calls fsLockRange arity-8. Genesis hex `30535c12…` → `c7da25dc…`. |
+| 8b-5 | `d693215f` | Integration smoke-checks for arity-4 lockRange (7 tests: empty options, wait:false explicit, wait:true dispatches arity-8 native, wait non-Bool rejects, coexistence, negative offset, write-on-readonly). |
+| 8b-6 | `30ae3b2d` | Whole-slice review fixes: **B1** WalDeployScope::drop cancel-first-release-second (release-first admitted same-deploy waiters into leaked ranges); **B2** LockRegistry::cancel_all_waiters_for_holder + wire into fs_release_all_for_holder for File.close cleanup; **B3** arity-4 lockRange releases stateP early so concurrent close doesn't block. Genesis hex `c7da25dc…` → `c5d5be35…`. |
+| 8b-6-round-2 | `91ddf704` | Second-pass review fix: **BL-1** fs_release_all_for_holder also reversed to cancel-first-release-second (same as B1 pattern). 3 regression tests (source-scan pin + positive + negative bug-shape). |
+
+**Slice 8c — options-map plumbing for 3 bounded producer methods** (1 commit):
+
+| Sub | SHA | Description |
+|---|---|---|
+| 8c | `62057105` | Helper contracts `withSequentialLock` / `withRangeLock` (encapsulate acquire → inner-action → release dance).  Arity-N+1 variants for `writeByteArray` (arity-2), `writeBytes` (arity-2), `writeBytesAt` (arity-4).  Coexistence pattern.  stateP released early on wait:true paths.  Genesis hex `c5d5be35…` → `dcf1f4cb…`.  9 integration tests. |
+
+**Slice 8c/8d-1 review follow-up**: F-1 (`1e1c1f6f`) added writeBytes arity-1/arity-2 coexistence test.
+
+**Slice 8d — options-map plumbing for stream-lifetime + remaining bounded methods** (4 commits, partial):
+
+| Sub | SHA | Description |
+|---|---|---|
+| 8d-1 | `fe727143` | Hand-off helper contracts `acquireRangeForStream` / `acquireSequentialForStream` per design decision option A (chosen 2026-08-13 over B duplication, C refactor, D partial spec).  Bound in outer new-scope (fs_genesis.rs + all 8 test preambles).  Genesis hex `dcf1f4cb…` → `5a5f6fd0…`.  2 direct-invocation tests. |
+| 8d-2 | `6009e7a7` | Arity-N+1 variants for 4 bounded-scope sequential producers: `writeString(@s, @options)` (delegates to writeByteArray arity-2), `writeChars(@charStream, @options)`, `writeLine(@charStream, @options)`, `writeLines(@lineStream, @options)`.  NEW helper contract `writeLinesLoopWithOptions` (arity 5) for writeLines' per-line delegation.  Genesis hex `5a5f6fd0…` → `7eb81b02…`.  8 integration tests. |
+| 8d-3-bounded | `26e9e10d` | Arity-N+1 variants for 4 buffer-based methods: `readInto(@buf, @options)`, `readAtInto(@offset, @buf, @options)`, `writeFrom(@buf, @options)`, `writeFromAt(@offset, @buf, @options)`.  All use `withRangeLock`.  Genesis hex `7eb81b02…` → `02552344…`.  4 smoke tests. |
+| 8d-3-stream (partial) | `904f5b9a` | Arity-1 `bytes(@options)` variant using `acquireSequentialForStream` hand-off — proves option A works end-to-end for a stream-lifetime method.  Genesis hex `02552344…` → `ba1daa55…`.  1 test. |
+
+### Test totals
+
+- `cargo test -p rholang --lib io::lock::` — 79 pass
+- `cargo test -p rholang --lib io::` — 244 pass (+ 5 new since 8a end)
+- `cargo test -p casper --lib rholang::runtime::` — 29 pass (+ 5 new)
+- `cargo test -p casper --lib genesis::contracts::fs_genesis::` — 37 pass (7 hex rolls verified across 8b/8c/8d)
+- `cargo test -p rholang --test file_dir_check` — 483 pass, 3 ignored (+ 21 new since 8a end)
+
+### Design decision resolved (2026-08-13)
+
+**Option A** was chosen from the four-way analysis (see plan §X-2 supplement follow-up notes for the reasoning): use a hand-off helper that acquires the lock and hands the LockId to the caller via a `lockOut` channel; the caller's stream constructor stores it in the existing lockCell so release fires from stream termination as today.  Trade-off accepted: per-method body duplication for the stream-lifetime methods (~200-400 lines each) is the honest cost of option A vs. the ~800 line cost of option B (full duplication with acquire replaced only), and neither option C (refactor working code) nor option D (spec amendment) was preferred.
+
+### Remaining work — slice 8d-3-stream-2 (4 stream-lifetime methods)
+
+**Scope**: 4 methods that use stream-lifetime locks (release fires from the stream's producer function via lockCell guard, not from a bounded inner-action).  Each needs an arity-N+1 variant using the sub-1 hand-off helpers.
+
+| Method | Arity | Helper | LOC (approx) | Notes |
+|---|---|---|---|---|
+| `bytesAt(@offset, @length, @options)` | arity-3 | acquireRangeForStream | ~300 | Positional; only method exercising the range hand-off helper end-to-end.  Length can be Int (bounded) or Nil (to-EOF; uses 2^62 sentinel).  Zero-length short-circuits without lock.  3 termination paths (length exhausted, EOF, fsReadAt error). |
+| `chars(@options)` | arity-1 | acquireSequentialForStream | ~350 | Sequential CharStream via UTF-8 codepoint iteration.  Codepoint-length helper + boundary handling.  Similar bytes-arity-1 shape modulo the codepoint machinery. |
+| `lines(@options)` | arity-1 | acquireSequentialForStream | ~400 | Sequential LineStream via `drainToNextLF` machinery.  Line-boundary detection + per-line CharStream mint.  Longest of the four. |
+| `readLine(@options)` | arity-1 | acquireSequentialForStream | ~300 | Sequential single-line CharStream.  9 termination paths per existing arity-0 docstring (2 EOS variants, LF-consumption EOS, 5 error variants).  Post-LF re-poll guarded via lockCell. |
+
+**Total mechanical duplication**: ~1350 lines of Rholang across the 4 methods.
+
+**Established pattern** (proven by `bytes` arity-1 in commit `904f5b9a`):
+
+1. Match `options.get("wait")` → normalize wOpt to Bool `w` via a waitCh helper (Nil→false, Bool→itself, other→FSERR_BAD_ARG).
+2. Take stateP → check "open" → release stateP EARLY (sub-6 B3 pattern for concurrent-close safety during wait).
+3. Get fd, cmode from fdP / cmodeP peek.
+4. Call `acquireRangeForStream` or `acquireSequentialForStream` with `(fd, [range args,] *this, cmode, w, *lockOut, *acqRet)`.
+5. On acqRet=[true]: read lid from lockOut, construct the stream (populate `lockCell!((lid, false))` in the producer's scope, define patProducer + patBuilder contracts, `Stream!?(*patProducer, *patBuilder)` for the handle), return `[true, streamHandle]`.
+6. On acqRet=[false, ...]: return the lock-error reply (no stream, no leak).
+
+Post-acquire body (steps 5-6) is per-method-specific — that's the ~200-400 lines per method.  The pattern above (steps 1-4 and the wrap around 5-6) is identical across all four.
+
+**Per-method smoke test** — one wait:true dispatch pin per method to verify the arity-N+1 dispatch + hand-off wiring:
+
+```rholang
+for (@f <- File!?(1, "/root", "test.txt", "rw", "oracular")) {
+  // (setup: write content or similar as needed)
+  for (@r <- @f!?("<method>", ...args, {"wait": true})) {
+    match r {
+      [true, _] => @"out"!([true])
+      _ => @"out"!(r)
+    }
+  }
+}
+```
+
+Existing tests for the arity-N form remain valid (unchanged bodies) — no need to add coexistence tests separately since the coexistence mechanism is already pinned for other methods.
+
+**Genesis hex roll** — one roll for all 4 methods (batch commit recommended).
+
+**Sub-4 (whole-slice review + push)** to follow once 8d-3-stream-2 lands.
+
+### Deferred (not blocking any capability)
+
+- **Native arity tightening** — sub-2's legacy arity-7/arity-4 fsLockRange/fsLockSequential shim currently accepted alongside arity-8/arity-5.  Removing the shim requires all ~300 test callers to migrate to the wait-taking form.  Standalone slice; not needed until we want to stop shipping the shim.
+- **MAX_WAITERS_PER_FILE cap** (reviewer NB-3 during 8b-6): hostile deploy could cause large transient parked-waiter allocation.  Bounded by deploy-end sweep so not exploitable to leak past deploy end; but a cap analogous to MAX_RANGES_PER_FILE would tighten defense-in-depth.
+- **Produce::with_error() for cancellation replies** (reviewer NB-4 during 8b-6): current path uses the ordinary reply produce + is_replay short-circuit.  Correct for caller-observable semantics; matters only for reporting-rspace observability.  Not needed until reporting-rspace ships.
+- **Cross-deploy mutual-wait deadlock** (reviewer NB-7 during 8b-6): two deploys each `wait: true` on the other's held lock never release.  Requires detection or per-deploy timeout — beyond Phase 8 scope.
+- **LockRegistry Drop test** (reviewer N4 during 8b-6): behaviorally correct via oneshot RecvError → Cancelled; test would pin the path.
+- **Source-scan pin for helper-binding drift** (reviewer F-2 during 8c/8d-1): golden hex catches any change and integration tests catch behavior via timeout; pin is defense-in-depth.
+
 ## Deferred items catalog (fresh-session pickup, 2026-08-12)
 
 Consolidated list of tracked open items across all phases.  Each is either delivered-with-notes, scoped as future work, or deferred with a specific dependency.  A fresh session picking up this project should skim this catalog first — most "what's next?" questions resolve here.
@@ -1088,9 +1190,10 @@ Consolidated list of tracked open items across all phases.  Each is either deliv
 - **Powerbox stub** (plan §345).  Interim per-`deployerId` Powerbox listed as Phase-6 deliverable; not built — Phase 6 shipped shared-Fs MVP.  Dedicated future slice.  Blocking on: (a) NormalizerEnv plumbing decision (Option A/B/C in `powerbox-requirements.md` §5), (b) Phase 7's config → bundle handoff (delivered slice 25).  When landed, revisit Phase 10 `fileio_cross_fs_isolation.rho` + `fileio_membrane.rho` examples for full end-to-end coverage.
 - **F-30b-1 retention key promotion** (plan §PB-M-15).  Design landed (§PB-M-15 amended); implementation deferred.  Small: change `NodeConfig.storage.consensus_fs_snapshot_retain` from `Option<usize>` to `usize`, remove `#[serde(default)]`, remove the `cadence * 2` fallback in `build_snapshot_writer`, add boot validation.  ~30 lines + test updates.  Standalone; unblocked.
 
-**Phase 8 remaining** (see §Phase 8 slice 8a — implementation progress above for the concrete step list):
-- Slice 8a steps 4-7: File.rho + LockToken (step 4, biggest), WalDeployScope::end auto-release hook (step 5), mode-differentiated unlink gate (step 6), integration tests (step 7).
-- Slice 8b: wait:true Rig-protocol (see X-2 supplement §Slice 8b concrete implementation steps).
+**Phase 8 remaining** (see §Phase 8 slices 8b / 8c / 8d — implementation progress above for the full commit history and remaining scope):
+- **Slice 8d-3-stream-2**: 4 stream-lifetime method arity-N+1 variants (bytesAt, chars, lines, readLine) using the sub-1 hand-off helpers.  ~1350 lines mechanical duplication + hex roll + smoke tests.  Pattern proven by `bytes` arity-1 (commit `904f5b9a`).
+- **Slice 8d-4**: whole-slice 8d review + push after 8d-3-stream-2 lands.
+- Slice 8a/8b/8c and 8d-1/8d-2/8d-3-bounded/8d-3-stream partial are DONE (see subsection above).
 
 **Phase 7 whole-review deferrals** (from L-cleanup / slice-27 review notes — Cost-FIP territory, not blocking Phase 8):
 - H-27-1, H-27-F1 (per-runtime fd cap DoS aggravated by fresh-mint; no per-deploy sub-cap).
