@@ -1074,6 +1074,13 @@ Commits on `fileio-phase-1-2` branch of `f1r3node-rust`:
 
 ## Phase 8 slices 8b / 8c / 8d — implementation progress (2026-08-13)
 
+**STATUS: Phase 8 COMPLETE and pushed to `origin/fileio-phase-1-2` at tip `1d38f829` (2026-08-13).**
+
+Whole-Phase-8 review (2026-08-13, three parallel agents):
+- **FIP spec compliance — COMPLIANT** across all 9 spec sections (§Range locks, §Explicit locks, §Auto-release, §Wait vs. fail, §Buffer-taking, §Sequential producers, §Standard error codes, in-flight refinements, known deferrals).
+- **Security — no blocking issues.** One initially-flagged BLOCKING (sequential same-holder skip violation) was verified as a **false positive**: `lock.rs:899-905` correctly blocks sequential acquires when *any* range exists, and pinning tests `same_holder_sequential_still_conflicts_with_own_range` (line 1188) + `sequential_after_same_holder_range_still_conflicts` (line 1203) confirm the intended behavior.  Three real FOLLOW-UPs are all in the Deferred list (NB-3 waiter cap, NB-7 cross-deploy mutual-wait deadlock, cursor-relative TOCTOU docstring clarification).
+- **Test coverage — comprehensive.** 81 lock unit tests + 33 native handler tests + 491/3-ignored integration + 29 WalDeployScope + 37 fs_genesis; positive, negative, and race coverage all present.  Three follow-ups (readLineInto wait-variants scope question, randomized tokio-schedule stress, explicit Drop test) are non-blocking.
+
 Live progress tracker for post-slice-8a work.  Branch: `fileio-phase-1-2` on `f1r3node-rust` (up-to-date with `origin/fileio-phase-1-2`).
 
 ### Delivered
@@ -1100,7 +1107,7 @@ Live progress tracker for post-slice-8a work.  Branch: `fileio-phase-1-2` on `f1
 
 **Slice 8c/8d-1 review follow-up**: F-1 (`1e1c1f6f`) added writeBytes arity-1/arity-2 coexistence test.
 
-**Slice 8d — options-map plumbing for stream-lifetime + remaining bounded methods** (4 commits, partial):
+**Slice 8d — options-map plumbing for stream-lifetime + remaining bounded methods** (5 commits, complete):
 
 | Sub | SHA | Description |
 |---|---|---|
@@ -1108,20 +1115,24 @@ Live progress tracker for post-slice-8a work.  Branch: `fileio-phase-1-2` on `f1
 | 8d-2 | `6009e7a7` | Arity-N+1 variants for 4 bounded-scope sequential producers: `writeString(@s, @options)` (delegates to writeByteArray arity-2), `writeChars(@charStream, @options)`, `writeLine(@charStream, @options)`, `writeLines(@lineStream, @options)`.  NEW helper contract `writeLinesLoopWithOptions` (arity 5) for writeLines' per-line delegation.  Genesis hex `5a5f6fd0…` → `7eb81b02…`.  8 integration tests. |
 | 8d-3-bounded | `26e9e10d` | Arity-N+1 variants for 4 buffer-based methods: `readInto(@buf, @options)`, `readAtInto(@offset, @buf, @options)`, `writeFrom(@buf, @options)`, `writeFromAt(@offset, @buf, @options)`.  All use `withRangeLock`.  Genesis hex `7eb81b02…` → `02552344…`.  4 smoke tests. |
 | 8d-3-stream (partial) | `904f5b9a` | Arity-1 `bytes(@options)` variant using `acquireSequentialForStream` hand-off — proves option A works end-to-end for a stream-lifetime method.  Genesis hex `02552344…` → `ba1daa55…`.  1 test. |
+| 8d-3-stream-2 | `1d38f829` | Arity-N+1 variants for the remaining 4 stream-lifetime methods: `bytesAt(@offset, @length, @options)` (acquireRangeForStream + zero-length short-circuit preserved), `chars(@options)`, `readLine(@options)`, `lines(@options)` (all three use acquireSequentialForStream).  Full per-method body duplication (~1350 lines Rholang) with acquire dispatch swapped and stateP released early (sub-6 B3 pattern); all termination-path lockCell guards preserved verbatim from arity-N.  Genesis hex `ba1daa55…` → `c243b4db…`.  4 smoke tests.  Slice 8d-4 whole-slice review completed pre-push (8 categories checked clean — stateP ordering, lockCell double-release protection, holder identity, error-path leak, content preservation, bytesAt zero-length short-circuit, lines outer/inner protocol, codepoint machinery). |
 
 ### Test totals
 
-- `cargo test -p rholang --lib io::lock::` — 79 pass
+- `cargo test -p rholang --lib io::lock::` — 81 pass
 - `cargo test -p rholang --lib io::` — 244 pass (+ 5 new since 8a end)
 - `cargo test -p casper --lib rholang::runtime::` — 29 pass (+ 5 new)
-- `cargo test -p casper --lib genesis::contracts::fs_genesis::` — 37 pass (7 hex rolls verified across 8b/8c/8d)
-- `cargo test -p rholang --test file_dir_check` — 483 pass, 3 ignored (+ 21 new since 8a end)
+- `cargo test -p casper --lib genesis::contracts::fs_genesis::` — 37 pass (8 hex rolls verified across 8b/8c/8d)
+- `cargo test -p rholang --test file_dir_check` — 491 pass, 3 ignored (+ 29 new since 8a end)
 
 ### Design decision resolved (2026-08-13)
 
 **Option A** was chosen from the four-way analysis (see plan §X-2 supplement follow-up notes for the reasoning): use a hand-off helper that acquires the lock and hands the LockId to the caller via a `lockOut` channel; the caller's stream constructor stores it in the existing lockCell so release fires from stream termination as today.  Trade-off accepted: per-method body duplication for the stream-lifetime methods (~200-400 lines each) is the honest cost of option A vs. the ~800 line cost of option B (full duplication with acquire replaced only), and neither option C (refactor working code) nor option D (spec amendment) was preferred.
 
-### Remaining work — slice 8d-3-stream-2 (4 stream-lifetime methods)
+### Remaining work — slice 8d-3-stream-2 (4 stream-lifetime methods) — DELIVERED 2026-08-13 (commit `1d38f829`)
+
+**Original scope preserved below for the record; work is complete.**
+
 
 **Scope**: 4 methods that use stream-lifetime locks (release fires from the stream's producer function via lockCell guard, not from a bounded inner-action).  Each needs an arity-N+1 variant using the sub-1 hand-off helpers.
 
@@ -1174,6 +1185,180 @@ Existing tests for the arity-N form remain valid (unchanged bodies) — no need 
 - **LockRegistry Drop test** (reviewer N4 during 8b-6): behaviorally correct via oneshot RecvError → Cancelled; test would pin the path.
 - **Source-scan pin for helper-binding drift** (reviewer F-2 during 8c/8d-1): golden hex catches any change and integration tests catch behavior via timeout; pin is defense-in-depth.
 
+## Phase 9 fresh-session pickup notes (2026-08-13)
+
+**Status at hand-off**: Phase 8 complete and pushed (tip `1d38f829`).  Ready to begin Phase 9 — cost accounting scaffolding.  See plan §Phase 9 (line ~705) for the deliverables list.
+
+### Phase 9 scope one-liner
+
+Per-native cost emission at handler entry with **consensus-critical weights**.  Two dispatch mechanisms depending on branch:
+- **Pre-D3** (current `fileio-phase-1-2` on `dev`): `CostManager::charge(cost_of(...))` at handler entry.
+- **Post-D3** (once `origin/feature/cost-accounted-rho` merges to `dev`): `BillableTokenEvent::Primitive` descriptors committed via `RuntimeBudget::reserve_canonical_with_cost` at the same call sites.
+
+Same numeric weights, two dispatch paths.  See plan §X-4 supplement (search for "D3 migration") for the mechanical translation table.
+
+### First decision to make (blocking design question)
+
+**Which branch does Phase 9 target?**  Two paths:
+
+1. **Path A — Land Phase 9 on `fileio-phase-1-2` pre-D3 first.**  Uses `CostManager::charge()`.  Ships now.  Then when cost-accounted-rho merges, port each `charge()` call to `BillableTokenEvent::Primitive` in a follow-up slice.  Mechanical translation, ~3-5h effort per plan §X-4.
+2. **Path B — Wait for cost-accounted-rho to merge, then land Phase 9 on the merged branch.**  Single implementation using `BillableTokenEvent::Primitive` from day one.  No port work.  Blocked on cost-accounted-rho merge timeline.
+
+**Recommendation**: Path A.  Rationale — decouples File I/O timeline from D3 timeline; port cost is small and uniform; ships weight-drift regression pins earlier which is the highest-value part of Phase 9 (weights become hard-fork the moment D3 lands).
+
+### Phase 9 concrete deliverable checklist
+
+Per plan §Phase 9 (line 705+):
+
+- [ ] Per-native cost emission at handler entry with weights:
+    - open/close/stat/exists/chmod/chown/seek/tell/size/truncate/flush/quarantine/lockRange/lockSequential/releaseLock: **~100** (calibrated against `equality_check_cost`)
+    - read/readAt: **`c_open + bytes_read`**
+    - write/writeAt: **`c_open + 2 * bytes_written`**
+    - entries: **`50 + 32 * n_entries`**
+    - rename/copyFile/removeFile: **~200**
+    - removeDir recursive: **`200 + per-entry across tree`**
+    - UTF-8 primitives: proportional to byte length
+    - concatBytes: linear in total byte length
+- [ ] Per-stream-method cost (Rholang library layer): per-element / per-chunk / per-byte transferred.  Under D3 these are NOT explicit charges (kernel authorizes at rule-1..5 boundaries); pre-D3 they are explicit `CostManager::charge()`.
+- [ ] Per-buffer-method cost per §Cost accounting > Buffers.  Under D3, per-instance dispatcher cost is recursive-metering cost at agent-block instantiation.
+- [ ] Materialization caps as stopgap defense-in-depth (unchanged by D3): `toString(cap)`, `toByteArray(cap)`, `toList(cap)` → `FSERR_QUOTA_EXCEEDED` above cap.
+- [ ] Reply-payload cap on `EntryStream.chunk(n)` and `ByteStream.chunk(n)`.  (LineStream doesn't support `chunk` — no cap needed.)
+- [ ] Tests:
+    - Cost regression: sample workloads (open + read + close) within tolerance.
+    - **Buffer read cost — pairwise-merge growth**: measure at ν=8/64/512, assert Θ(ℓ log ν) NOT Θ(ℓ ν) (a fold-vs-merge refactor regression guard).
+    - **Weight-drift pin**: golden-value test per-native weight (slice-34 pattern).  Under D3 drift is a hard-fork.
+
+### Test file targets
+
+Cost regression suite lives at `rholang/tests/fileio_cost_spec.rs` per plan §Test infrastructure (line 767+).  Doesn't exist yet — Phase 9 creates it.
+
+### Deferred to Cost FIP (out of Phase 9 scope, per plan)
+
+- `readInto` vs. `read` cost decomposition (documented in spec §Cost accounting > Buffers).
+- Full weight calibration.
+
+### Development conventions (unchanged from Phase 8)
+
+Same conventions apply — see §Development conventions section below.  Summary:
+- Commit subject `<type>(fileio): <slice-tag> <summary>`; body is prose paragraphs.
+- Trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
+- `SKIP_DENY=1 git commit -F <msgfile>` for pre-commit (bitmaps warning is pre-existing).
+- `SKIP_TESTS=1 git push origin fileio-phase-1-2` after local tests verified green.
+- `/tmp/*.txt` commit-message file workflow (avoids heredoc quoting issues with em-dashes).
+
+### Phase 8 residuals for reference (all deferred, none block Phase 9)
+
+Consolidated in the plan's Deferred sections above:
+- NB-3 MAX_WAITERS_PER_FILE cap
+- NB-7 cross-deploy mutual-wait deadlock detection
+- Cursor-relative TOCTOU docstring clarification
+- readLineInto / readLinesInto arity-N+1 wait variants (spec ambiguity)
+- Randomized tokio-schedule stress test
+- Explicit LockRegistry Drop-trait test (N4)
+- Native arity tightening (retire arity-7/4 legacy shim; needs ~300 test-caller migration)
+- Produce::with_error for cancellation replies (NB-4; needs reporting-rspace to ship first)
+- Source-scan pin for helper-binding drift (F-2)
+
+None of these block Phase 9.  Phase 9 can proceed in parallel with any of them.
+
+## Phase 10 progress — examples + review-pass E2E tests (2026-08-13)
+
+**Status at hand-off**: 14 commits landed on `fileio-phase-1-2` since Phase 8 tip (`1d38f829`).  Local branch tip: **`6ca9ed2f`**.  **Not yet pushed to `origin`** — standing convention is push at slice 10f (whole-Phase-10 review).
+
+Session covered two work streams: (a) Phase 10 canonical examples (slices 10a-1 through 10a-9), (b) a review-pass adding four missing E2E spec files from the plan's §Test-infrastructure list (slices 10g/10h/10i/10j).  Also fixed a longstanding consensus-observable-fd bug in the Phase 8 lock natives (34b8f1d1) discovered while investigating perceived test flakiness.
+
+### Commit history (Phase 8 tip → HEAD)
+
+| # | SHA | Slice | Deliverable |
+|---|---|---|---|
+| 1 | `6fd3462f` | 10a-1 | `fileio_chown_consensus.rho` + `fileio_examples_spec.rs` bootstrap (1 test) |
+| 2 | `5ce22ba6` | 10a-2 | `fileio_lockrange.rho` — cross-cap fresh-mint + Phase 8 range lock (1 test) |
+| 3 | `333bfd23` | 10a-3 | `fileio_static.rho` — file-to-file line copy, on-disk byte-identity (1 test) |
+| 4 | `6118556a` | 10a-4 | `fileio_membrane.rho` — revocable-forwarder membrane (1 test) |
+| 5 | `cb45f366` | 10a-5 | `fileio_readonly_forwarder.rho` — attenuation via forwarder (1 test) |
+| 6 | `3f50463e` | 10a-6 | `fileio_buffer_loop.rho` + ignored spec (blocked on PB-B-5 Allocator) |
+| 7 | `201190d7` | 10a-7 | `fileio_rows.rho` + ignored spec (blocked on PB-B-5) |
+| 8 | `cf65f5c7` | 10a-8 | `fileio_stdio.rho` + caps-only sanity spec (echo-loop deferred to slice 10c) |
+| 9 | `a42f878f` | 10a-9 | `fileio_parallel.rho` + sequential-fold byte-sum spec + ignored foldConcurrent |
+| 10 | `34b8f1d1` | fix | fs_lock_range / fs_lock_sequential drop stale `fd >= 0` gate (Slice 28 CRIT-2 backport) |
+| 11 | `eccf7ab3` | 10g | `fileio_stream_spec.rs` — LineStream negative-path matrix (4 tests) |
+| 12 | `17cc77df` | 10h | `fileio_file_spec.rs` — File-agent method E2E (4 tests) |
+| 13 | `e13f6256` | 10i | `fileio_consensus_replay_spec.rs` — stat host-transient field omission (2 tests) |
+| 14 | `6ca9ed2f` | 10j | `fileio_dir_spec.rs` — Dir-agent method E2E (3 tests) |
+
+### E2E test file inventory (post-session)
+
+New under `casper/tests/genesis/contracts/`:
+- `fileio_examples_spec.rs` (10 tests, 3 ignored) — canonical-example regressions.
+- `fileio_stream_spec.rs` (4 tests) — plan §778 mandate; LineStream chunk/foldChunks/foldConcurrent/mapReduce all → FSERR_UNSUPPORTED, plus fold on closed stream → FSERR_CLOSED.
+- `fileio_file_spec.rs` (4 tests) — cursor semantics (seek/tell), size, readN edge cases, truncate roundtrip + on-disk verify, close gates.
+- `fileio_consensus_replay_spec.rs` (2 tests) — Consensus vs Oracular stat field omission (layer 1; layer 2 replay round-trip deferred pending leader/follower harness).
+- `fileio_dir_spec.rs` (3 tests) — Dir.exists present/absent, openFile mode attenuation, openFile→readN roundtrip.
+
+Combined `fileio_*` + `fs_generator_spec` parallel run: **24 non-ignored + 3 ignored, all green** (~6 min).
+
+### fs_lock CRIT-2 backport (commit `34b8f1d1`)
+
+**Bug**: `fs_lock_range` and `fs_lock_sequential` in `rholang/src/rust/interpreter/io/handlers.rs` had stale `if fd >= 0` guards on the fd argument (lines 2461 and 2589 pre-fix).  Slice 28's `seed_next_fd_from_state_hash` produces hash-derived `u64` fds; ~50% have the high bit set → `RhoNumber::unapply` decodes to negative `i64` → guard fails → `FSERR_BAD_ARG "expected (u64, u64, u64>0, ...)"`.
+
+**Why latent**: `fs_close` was fixed for exactly this on 2026-08-06 (Slice 28 CRIT-2, comment at `handlers.rs:600`).  Every other fd-consuming native uses `fd as u64` directly.  The Phase 8 lock natives landed in the same window but never got the same treatment.  Mocked-syscall tests in `file_dir_check.rs` used small fd values (no high bit set), so the bug never surfaced.  Only real bundle openFile + lockRange or bundle openFile + implicit sequential lock (chars/bytes/lines/writeByteArray/etc.) hit it.
+
+**Fix**: Drop the `fd >= 0` guard; reinterpret via `fd as u64`.  Symmetric to fs_close and every other Slice-28-era native.
+
+**Blast radius pre-fix**: ~50% flake rate on every `File.lockRange` and every stream producer + cursor-relative writer through the bundle path.  Post-fix: 5/5 isolated + 4/4 parallel of the lockrange test, plus stable file_dir_check (491/491+3 ignored).
+
+**Regression pin**: `fileio_examples_spec::fileio_lockrange_cross_cap_busy_then_release` exercises the exact code path.
+
+### Rholang / harness gotchas discovered
+
+Documented for pickup because they cost real debugging time:
+
+- **`...` splat in send position is illegal.**  Rholang grammar (`rholang_mercury.cf` — `ProcRemainderVar` line 185) only accepts `...` inside collection destructures (list / set / map), NOT as splats in send positions.  The FIP's §Ocap-patterns pseudocode `underlyingFile!(returnCh, method, ...args)` cannot land verbatim.  Membrane / readonly-forwarder examples specialize per-method-arity as workaround.  Recorded in `fileio_membrane.rho` and `fileio_readonly_forwarder.rho` docstrings.
+- **`Fs.openFile("name", {})` defaults `requestedMode` to `"r"`.**  Empty options ≠ "inherit provisioned mode".  Write-capable bundles need explicit `{"mode": "rw"}`.  See Fs.rho line 247.
+- **`File.bytes()` emits 1-byte `ByteArray`s, not integer bytes.**  Spec §225 pseudocode `returnCh!(acc + byte)` is wrong; user code needs `byte.nth(0)` to extract the Int.  See fileio_parallel.rho.
+- **`seek` whence values are `"set"` / `"cur"` / `"end"`** (per `handlers.rs::fs_seek` line 1027-1030), not `"start"` as some FIP prose uses.
+- **Rholang requires `|` between adjacent processes** inside a `for` body.  A `stdout!(...)` immediately followed by a nested `for(...)` without a separator is rejected by tree-sitter with a `(ERROR (send ...))` sexp.  See fileio_lockrange.rho commit message for the concrete symptom.
+- **Sequential-lock intra-testSuite serialization**: two testSuite entries that each `openFile("target")` + `lines()` on the same bundled path RACE for a same-path sequential lock with distinct holders — first-in acquires, second BLOCKS forever unless the first explicitly `close()`s the stream.  If a test's assertion fires from a non-close-taking path (e.g., a default-arm error branch), the lock leaks and blocks the next testSuite entry.  **Fix pattern**: combine related dispatches into ONE contract using ONE lineStream, not two testSuite entries.  See `fileio_stream_spec::line_stream_parallel_combinators_return_fserr_unsupported` for the pattern.
+- **RhoSpec anti-vacuity error `"missing genesis/registry state"`** with `has_finished=false` typically indicates a hung deploy inside RhoSpec's tokio timeout window.  Under investigation this was the lock-leak symptom above, not actual missing state.
+
+### Deferred but implementable next (no Phase 9 or Powerbox dependency)
+
+Prioritized for the next session.  All Phase-9-independent (won't need rewriting when cost accounting lands).
+
+1. **Slice 10b — per-error-code integration test.**  Provoke each reachable `FSERR_*` / `BUFERR_*` / `EOS` code and verify the catch arm fires with the right code.  All base error codes are generated by Phase 1-8 code; Phase 9's only new code is `FSERR_QUOTA_EXCEEDED` on materialization caps (separate code path).  Medium size — ~10-12 focused tests.  New file `casper/tests/genesis/contracts/fileio_error_codes_spec.rs` or extension of `fileio_examples_spec.rs`.
+2. **Dir mutations coverage** — extend `fileio_dir_spec.rs`.  removeFile / removeDir(recursive) / rename / copyFile round-trips on rw-mode Dir bundles with on-disk `std::fs` verification (mirrors the `fileio_file_spec::file_truncate_write_mode_roundtrip` pattern).  Medium size.
+3. **Range-lock stress: 3-way contention** — extend `fileio_examples_spec.rs` or `fileio_stream_spec.rs`.  cap1 holds, cap2 waits, cap3 also waits; cap1 releases → cap2 admitted → cap2 releases → cap3 admitted.  Verifies head-of-line FIFO wake and no wake-starvation.  Small.
+4. **`fileio_lifecycle_spec.rs`** — fd-table rollback on deploy error (production path, not mocks).  Medium.  Guards deploy-level fd isolation.
+5. **`fileio_fs_spec.rs`** — systematic Fs surface coverage beyond canonical examples: default arm on Fs / Stdin / Stdout, openFile with all mode strings, openFile with invalid options shapes.  Medium.
+6. **`fileio_native_spec.rs`** — direct RhoSpec-harness dispatch of each native URN (bypassing the library).  Large but low priority since natives are unit-tested and reached transitively by the library tests above.  Would need genesis-scope URN-filter toggle in the test source.
+
+### Deferred by external blockers (do not attempt)
+
+- **`fileio_buffer_spec.rs`** (Buffer library E2E, monotonic-index invariant): blocked on **PB-B-5** — Allocator not published to user deploys.  `rholang/examples/fileio_buffer_loop.rho` and `fileio_rows.rho` are documentation artifacts; companion regressions are `#[ignore]`-d in `fileio_examples_spec.rs`.
+- **`fileio_cross_fs_isolation.rho`** + per-`deployerId` isolation tests: blocked on **Powerbox stub** (plan §345 / line 1277).
+- **`foldConcurrent` / `mapReduce` positive-path tests**: blocked on those methods landing in Stream.rho (currently line 23 says "Deferred to follow-up commits").  Negative-path FSERR_UNSUPPORTED covered in `fileio_stream_spec`.
+- **Layer 2 of consensus replay** (leader-captures / follower-replays byte-identity): blocked on two-runtime harness.  Layer 1 (field omission) covered in `fileio_consensus_replay_spec`.
+- **`fileio_replay_spec.rs`** (oracular play/mutate-disk/replay): blocked on the same replay harness.
+- **Stdio replay wiring** (slice 10c): stdin.fsRead capture path not wired into deploy log per plan line 332.  Requires Rust changes to Stdin native.  Doesn't block the example's parse-only ship (slice 10a-8 already landed).
+
+### Deferred by Phase 9 (do not attempt pre-cost-accounting)
+
+Would need rewriting when Phase 9 lands:
+- Materialization-cap tests (`toString(cap)` / `toByteArray(cap)` / `toList(cap)` → FSERR_QUOTA_EXCEEDED above cap).
+- Reply-payload cap on `EntryStream.chunk(n)` / `ByteStream.chunk(n)`.
+- Per-native weight-drift golden values.
+- Buffer read pairwise-merge growth `Θ(ℓ log ν)` at ν=8/64/512.
+- Any test asserting on cost / phlo consumption.
+
+### Phase 10 remaining slice-level checklist
+
+- [x] 10a-1 through 10a-9 — canonical examples
+- [ ] 10b — per-error-code integration test (see "Deferred but implementable" #1 above)
+- [ ] 10c — stdio replay wiring (Rust native change, deferred)
+- [ ] 10d — oracular replay E2E for examples (needs replay harness)
+- [ ] 10e — `fileio_cross_fs_isolation.rho` (Powerbox blocked)
+- [ ] 10f — whole-Phase-10 review + push to origin
+
 ## Deferred items catalog (fresh-session pickup, 2026-08-12)
 
 Consolidated list of tracked open items across all phases.  Each is either delivered-with-notes, scoped as future work, or deferred with a specific dependency.  A fresh session picking up this project should skim this catalog first — most "what's next?" questions resolve here.
@@ -1190,10 +1375,10 @@ Consolidated list of tracked open items across all phases.  Each is either deliv
 - **Powerbox stub** (plan §345).  Interim per-`deployerId` Powerbox listed as Phase-6 deliverable; not built — Phase 6 shipped shared-Fs MVP.  Dedicated future slice.  Blocking on: (a) NormalizerEnv plumbing decision (Option A/B/C in `powerbox-requirements.md` §5), (b) Phase 7's config → bundle handoff (delivered slice 25).  When landed, revisit Phase 10 `fileio_cross_fs_isolation.rho` + `fileio_membrane.rho` examples for full end-to-end coverage.
 - **F-30b-1 retention key promotion** (plan §PB-M-15).  Design landed (§PB-M-15 amended); implementation deferred.  Small: change `NodeConfig.storage.consensus_fs_snapshot_retain` from `Option<usize>` to `usize`, remove `#[serde(default)]`, remove the `cadence * 2` fallback in `build_snapshot_writer`, add boot validation.  ~30 lines + test updates.  Standalone; unblocked.
 
-**Phase 8 remaining** (see §Phase 8 slices 8b / 8c / 8d — implementation progress above for the full commit history and remaining scope):
-- **Slice 8d-3-stream-2**: 4 stream-lifetime method arity-N+1 variants (bytesAt, chars, lines, readLine) using the sub-1 hand-off helpers.  ~1350 lines mechanical duplication + hex roll + smoke tests.  Pattern proven by `bytes` arity-1 (commit `904f5b9a`).
-- **Slice 8d-4**: whole-slice 8d review + push after 8d-3-stream-2 lands.
-- Slice 8a/8b/8c and 8d-1/8d-2/8d-3-bounded/8d-3-stream partial are DONE (see subsection above).
+**Phase 8 remaining** (see §Phase 8 slices 8b / 8c / 8d — implementation progress above for the full commit history):
+- **Phase 8 COMPLETE.**  Slice 8a/8b/8c/8d all shipped as of commit `1d38f829` (slice 8d-3-stream-2, 2026-08-13).  Whole-Phase-8 review pass (2026-08-13, three parallel agents on FIP-spec compliance / security / test coverage) found zero blocking issues.  Next up: **Phase 9 (cost accounting scaffolding)** — see the Phase 9 fresh-session pickup notes above.
+
+**Phase 9 pickup**: see §Phase 9 fresh-session pickup notes (2026-08-13) above.  First decision: Path A (pre-D3, land now) vs. Path B (wait for cost-accounted-rho merge).  Recommendation Path A.
 
 **Phase 7 whole-review deferrals** (from L-cleanup / slice-27 review notes — Cost-FIP territory, not blocking Phase 8):
 - H-27-1, H-27-F1 (per-runtime fd cap DoS aggravated by fresh-mint; no per-deploy sub-cap).
