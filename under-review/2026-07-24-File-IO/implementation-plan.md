@@ -1185,7 +1185,140 @@ Existing tests for the arity-N form remain valid (unchanged bodies) — no need 
 - **LockRegistry Drop test** (reviewer N4 during 8b-6): behaviorally correct via oneshot RecvError → Cancelled; test would pin the path.
 - **Source-scan pin for helper-binding drift** (reviewer F-2 during 8c/8d-1): golden hex catches any change and integration tests catch behavior via timeout; pin is defense-in-depth.
 
-## Phase 9 fresh-session pickup notes (2026-08-13)
+## Phase 9 completion notes (2026-08-23) — 9a + 9b + 9c-i landed
+
+**Status**: **Phase 9 largely complete.**  12 commits landed on
+`fileio-phase-1-2` (local; **not yet pushed to origin**).  Local branch
+tip: **`4b6668e7f`**.  Previous origin state (before this session):
+`2dc106efe` from the cost-accounted-rho merge session (2026-08-21).
+
+### What actually landed (Phase 9 body of work)
+
+**Path B chosen** (post-D3, using `BillableTokenEvent::Primitive` from
+day one).  Path A was originally recommended because Path B was blocked
+on cost-accounted-rho landing; that block cleared 2026-08-21 with the
+merge to `fileio-phase-1-2` (see `merge-cost-accounting-plan.md` and
+merge commits `018549c12` / `f2e9e109b` / `37422f95e` / `a2cd425f9` /
+`2dc106efe`).  With D3 canonical dispatch available natively, no port
+work needed.
+
+**Slice 9a — Weight table + golden pins**
+- New module `rholang/src/rust/interpreter/io/costs.rs`.  26 per-handler
+  cost helpers + 4 weight-class constants.  All weights match plan
+  §Phase 9 line 1213-1221:
+    - `FS_SYSCALL_CONST = 100` (16 constant-work handlers)
+    - `FS_PATH_MUTATION_CONST = 200` (rename/copy_file/remove_file; 2×
+      FS_SYSCALL_CONST for two-endpoint work)
+    - `FS_ENTRIES_SETUP = 50`, `FS_ENTRIES_PER_ENTRY = 32`
+    - read/read_at: `100 + bytes_read`
+    - write/write_at: `100 + 2 * bytes_written` (2× reflects WAL-append)
+- Length-parameterized helpers use `saturate_linear` (saturating
+  arithmetic).  Adversarial `u64` input clamps to `i64::MAX` rather
+  than wrapping to negative and tripping `reserve_primitive`'s
+  BugFoundError gate.  Post-review-fix.
+- Golden-value pin file `rholang/tests/fileio_cost_spec.rs`: 53 pins
+  covering all 26 helpers + 4 constants + boundary cases + `u64::MAX`
+  saturation + monotonicity/linearity sweeps + ratio pin
+  (`FS_PATH_MUTATION_CONST == 2 * FS_SYSCALL_CONST`).  Plus a meta-pin
+  `every_cost_helper_has_a_golden_pin` catching new helpers that ship
+  without their pin.
+- Commits: `3877f0bde` `8f6618cc8` `a0988cfb4`.
+
+**Slice 9b — Handler wiring across all 26 fs natives**
+- **9b-i (plumbing)**: threaded `MeteredMachine` through
+  `dispatch_table_creator → ProcessContext::create →
+  SystemProcesses::create → FsProcesses::new`.  Reordered
+  `setup_reducer` to construct `MeteredMachine::new(cost.clone())`
+  BEFORE `dispatch_table_creator` so a clone can be passed down.
+  `MeteredMachine` clones share the same underlying `RuntimeBudget`
+  via Arc internals — a handler-side charge decrements the same budget
+  the reducer observes.  Verified.
+- **9b-ii (16 constant-cost handlers)**:
+  open/close/stat/exists/chmod/chown/seek/tell/size/truncate/flush/
+  quarantine/lock_range/lock_sequential/release_lock/
+  release_all_for_holder.  Charge placed BEFORE the argument-shape
+  check so leader and replay produce byte-identical primitive event
+  logs regardless of arg validity.  Full docstring on fs_open;
+  subsequent handlers reference it.
+- **9b-iii (3 path-mutation handlers)**: rename, copy_file, remove_file
+  at FS_PATH_MUTATION_CONST.  Same placement pattern as 9b-ii.
+- **9b-iv (7 length-parameterized handlers)**:
+    - **Fully wired** (4/7): read/read_at/write/write_at.  Byte count
+      from user-supplied contract args; charge is a pure function of
+      those args, so leader/replay parity holds.  Requested-byte
+      accounting (not returned-byte) to close the pre-seek-past-EOF
+      cost-amplification vector.
+    - **Setup-only** (3/7): entries/entries_stream/remove_dir.  Charge
+      only the base term (`_cost(0)`); per-entry component
+      (`FS_ENTRIES_PER_ENTRY * n_entries`) requires two-branch
+      post-syscall counting (leader counts from syscall result;
+      replay counts from `previous`).  Documented as follow-up.
+- **Review pins** (`45e0ca026`): three source-scan tests
+  (`every_fs_handler_charges_its_cost_helper`,
+  `setup_reducer_shares_one_metered_machine`,
+  `entries_family_charges_setup_only_pending_two_branch_impl`).  Each
+  verified against a simulated regression scenario.
+- Commits: `535fb55e5` `246059975` `a2e188474` `d451b89e9` `45e0ca026`.
+
+**Slice 9c — Materialization caps + payload caps + growth test**
+- **9c-i landed**: reply-payload cap on `Stream.rho::method chunk(@n)`.
+  `MAX_CHUNK_ITEMS = 65536` (matches `MAX_ENTRIES` in handlers.rs).
+  n above cap returns `FSERR_QUOTA_EXCEEDED` before any gathering
+  starts.  Composed-source hash rolled `5f41dafe → 126a35ab`.
+- **9c-i review pins**: runtime boundary matrix
+  (`stream_chunk_max_items_cap_boundary` in
+  `fileio_stream_argvalidation_spec.rs`, tests chunk(65536)/65537/1M),
+  plus deferral-preservation pin
+  (`buffer_to_byte_array_deferral_still_holds` — enforces
+  `Buffer.toByteArray()` stays no-arg + retains the "Known deferral"
+  docstring).  Both verified against simulated regressions.
+- Commits: `c44a787b1` `4b6668e7f`.
+
+### What was deferred (still open at end of session)
+
+**9c-ii — Buffer materialization caps** (plan doc line 1224).  Requires
+API change: `Buffer.rho::method toByteArray()` → `toByteArray(@cap)`
+plus updates to 4+ caller sites in `File.rho`.  Buffer.rho already
+documents this as a "Known deferral" at line 641.  Fits better as an
+independent Rholang-API slice.
+
+**9c-iii — Buffer pairwise-merge growth test** (plan doc line 1228).
+Blocked on the pairwise-merge refactor itself.  Buffer.rho line 16
+documents the current implementation as Θ(ℓν) linear-fold; the growth
+test asserting Θ(ℓ log ν) is a **regression guard for after** that
+refactor and would fail against today's code.  Neither the refactor
+nor the test belong in Phase 9 scope.
+
+**Per-entry two-branch charges** for
+entries/entries_stream/remove_dir (slice 9b-iv deferral).  The
+setup-only charges landed but the per-entry component still needs
+implementation.  Two-branch pattern: leader counts entries from
+syscall result and charges `FS_ENTRIES_PER_ENTRY * n`; replay extracts
+`n` from `previous` (the leader's cached reply) and charges the same.
+Both branches must emit matching primitive events for
+authority_cost_witness parity.  Held in place by the source-scan pin
+`entries_family_charges_setup_only_pending_two_branch_impl` in
+`fileio_cost_spec.rs`.
+
+**Cost-regression sample-workload test** (plan doc line 1227).
+Requires a Rust harness that runs Rholang exercising fs handlers and
+inspects the resulting realized cost.  Deferred because the harness
+setup is significant.
+
+### Test-suite state (post-Phase-9)
+
+Runs local against `4b6668e7f`, nightly-2026-02-09:
+- `fileio_cost_spec`: 58 passed / 0 failed / 0 ignored.
+- `fs_wal_spec`: 29 passed / 0 failed.
+- `fileio_stream_argvalidation_spec`: 6 passed (+1 new
+  `stream_chunk_max_items_cap_boundary`).
+- `compose_fs_genesis_source_golden_hex`: 1 passed with rolled anchor
+  `126a35ab`.
+- `cargo check --workspace --tests`: clean.
+- `cargo fmt --all -- --check`: PASS.  `cargo clippy --workspace
+  --all-targets`: PASS.
+
+### Preserved for reference — original Phase 9 pickup notes (2026-08-13)
 
 **Status at hand-off**: Phase 8 complete and pushed (tip `1d38f829`).  Ready to begin Phase 9 — cost accounting scaffolding.  See plan §Phase 9 (line ~705) for the deliverables list.
 
@@ -1260,6 +1393,160 @@ Consolidated in the plan's Deferred sections above:
 - Source-scan pin for helper-binding drift (F-2)
 
 None of these block Phase 9.  Phase 9 can proceed in parallel with any of them.
+
+## Phase 10 fresh-session pickup notes (2026-08-23)
+
+**Status at hand-off**: Phase 9 landed (9a + 9b + 9c-i).  Phase 10
+partially complete — see §Phase 10 progress (below) for the 14 slices
+that shipped in the 2026-08-13 session (10a-1..9 + 10g/10h/10i/10j +
+CRIT-2 backport).  **Local branch tip: `4b6668e7f`, 12 commits ahead
+of `origin/fileio-phase-1-2`.  Neither Phase 9 nor Phase 10-partial
+have been pushed yet.**  Standing convention: push at slice 10f
+(whole-Phase-10 review).
+
+### Where to start (recommended order)
+
+Priority ordered by size, blast radius, and downstream unblocking:
+
+1. **Slice 10b — per-error-code integration test** (small).  Provoke
+   every reachable `FSERR_*` / `BUFERR_*` / `EOS` code from Rholang
+   and verify the catch arm fires with the exact code.  Phase-9 added
+   only one new code (`FSERR_QUOTA_EXCEEDED` on
+   `Stream.chunk(n > 65536)`) — the boundary matrix in slice 9c-i
+   review already covers it.  New file
+   `casper/tests/genesis/contracts/fileio_error_codes_spec.rs` (or
+   extension of `fileio_examples_spec.rs`).  ~10-12 focused tests.
+   Same RhoSpec harness pattern as
+   `fileio_stream_argvalidation_spec.rs`.
+
+2. **Slice 9b-iv-follow-up — entries/entries_stream/remove_dir
+   per-entry two-branch charges** (medium).  Currently held by the
+   `entries_family_charges_setup_only_pending_two_branch_impl` pin
+   in `fileio_cost_spec.rs` at `_cost(0)`.  Implementation shape:
+     - fs_entries leader path: after reply built with n rows, extract
+       n and charge `FS_ENTRIES_PER_ENTRY * n` as a second
+       `metering.reserve_primitive` call (single-branch charge would
+       break replay parity).
+     - fs_entries replay path: extract n from `previous` (leader's
+       cached [true, [row1, row2, ...]] reply); charge same amount.
+     - Same pattern for fs_entries_stream and fs_remove_dir.
+   Then replace the deferral pin with a real golden per-entry pin
+   (test cost of `entries` on a small directory equals
+   `50 + 32 * actual_count`).  Cost-regression harness needed —
+   see #7 below.
+
+3. **Slice 10 additional coverage (all Phase-9-independent, per plan
+   line 1324)**:
+     - **Dir mutations coverage** — extend `fileio_dir_spec.rs`.
+       `removeFile` / `removeDir(recursive)` / `rename` / `copyFile`
+       round-trips on rw-mode Dir bundles with on-disk `std::fs`
+       verification (mirrors `fileio_file_spec::
+       file_truncate_write_mode_roundtrip`).
+     - **Range-lock stress: 3-way contention** — extend
+       `fileio_examples_spec.rs` or `fileio_stream_spec.rs`.  cap1
+       holds, cap2 waits, cap3 also waits; cap1 releases → cap2
+       admitted → cap2 releases → cap3 admitted.  Verifies
+       head-of-line FIFO wake and no wake-starvation.  Small.
+     - **`fileio_lifecycle_spec.rs`** — fd-table rollback on deploy
+       error (production path, not mocks).  Medium.  Guards
+       deploy-level fd isolation.
+     - **`fileio_fs_spec.rs`** — systematic Fs surface coverage
+       beyond canonical examples: default arm on Fs / Stdin /
+       Stdout, openFile with all mode strings, openFile with invalid
+       options shapes.  Medium.
+     - **`fileio_native_spec.rs`** — direct RhoSpec-harness dispatch
+       of each native URN (bypassing the library).  Large but low
+       priority since natives are unit-tested and reached
+       transitively.  Needs genesis-scope URN-filter toggle in the
+       test source.
+
+4. **Slice 9c-ii — Buffer materialization caps** (medium, standalone
+   Rholang-API slice).  Change `Buffer.rho::method toByteArray()` to
+   `toByteArray(@cap)`, add caller updates in File.rho (4 sites,
+   grep for `@buf!?("toByteArray")`), return `FSERR_QUOTA_EXCEEDED`
+   when `ell > cap`.  Buffer.rho line 641 has the "Known deferral"
+   docstring ready to be removed.  Replace the
+   `buffer_to_byte_array_deferral_still_holds` source-scan pin with
+   a golden test on the new API.  Composed-source hash roll expected.
+
+5. **Slice 10f — whole-Phase-10 review + push to origin**.  Gates on
+   the above.  Push convention (from `merge-cost-accounting-plan.md`):
+     ```
+     PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 \
+       SKIP_TESTS=1 git push origin fileio-phase-1-2
+     ```
+   `SKIP_TESTS=1` because the workspace-wide pre-push hook enforces
+   a 600s per-crate timeout that's unrealistic for this workspace;
+   local test-suite verification is sufficient (see slice 10f push
+   discipline in prior session's merge doc).
+
+6. **Blocked (do not attempt this session)**:
+     - Slice 10c — stdio replay wiring.  Requires Rust changes to
+       Stdin native's fsRead capture path.  Own multi-slice effort.
+     - Slice 10d — oracular replay E2E for canonical examples.
+       Blocked on two-runtime harness.
+     - Slice 10e — `fileio_cross_fs_isolation.rho`.  Blocked on
+       Powerbox stub.
+     - `fileio_buffer_spec.rs` (Buffer library E2E).  Blocked on
+       PB-B-5 (Allocator not published to user deploys).
+     - `foldConcurrent`/`mapReduce` positive-path tests.  Blocked on
+       those methods landing in Stream.rho (currently deferred per
+       Stream.rho line 23).
+     - Layer-2 consensus-replay tests (leader-captures/
+       follower-replays byte-identity).  Blocked on two-runtime
+       harness.
+
+7. **Deferred by absence of cost-regression harness** (needed for #2
+   and any test asserting on realized cost):
+     - Rust test infrastructure to construct a full runtime, run
+       Rholang exercising fs handlers, and inspect
+       `MeteredMachine::budget().total_cost()` after.  See
+       `rholang/tests/accounting/cost_accounting_spec.rs` for the
+       primitive-layer harness pattern; a Rholang-level harness on
+       top of that pattern is what's missing.  Standalone slice
+       preferable — many downstream tests unblock once it lands.
+
+### Session-crossing context (read to catch up)
+
+- **Cost-accounted-rho merge** landed 2026-08-21 on
+  `fileio-phase-1-2`.  See `merge-cost-accounting-plan.md` in this
+  same directory for details.  Runtime.rs shape changed: WAL boundary
+  now lives inside
+  `process_deploy_cosigned_with_budget_and_authority_mode`; return
+  chain uses `Vec<WalEntry>` 4-tuples; every handler charge feeds
+  the D3-canonical `authority_cost_witness.realized`.  Post-merge
+  tests: fs_wal_spec 29/29, casper fileio+fs_generator 39/2,
+  file_dir_check 491/3.
+- **Phase 9 landed 2026-08-23** (this session).  See §Phase 9
+  completion notes above.  12 commits from `535fb55e5` through
+  `4b6668e7f` on top of the merge session's `2dc106efe`.
+- **Neither Phase 9 nor the merge's own new commits since the
+  origin state** have been pushed yet.  Origin `fileio-phase-1-2`
+  is at `2dc106efe`; local is at `4b6668e7f`.
+
+### Development conventions (unchanged)
+
+- Commit subject `<type>(fileio): <slice-tag> <summary>`; body is
+  prose paragraphs.  Trailer:
+  `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
+- `SKIP_DENY=1 git commit -F /tmp/<msg>.txt` for pre-commit (the h2
+  RUSTSEC-2026-0258 advisory is pre-existing).
+- Toolchain: workspace pins nightly-2026-02-09 via
+  `rust-toolchain.toml`; MacPorts stable cargo ignores that file.
+  **Prefix EVERY cargo command**:
+  ```
+  PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 \
+    cargo <cmd>
+  ```
+  This applies to `git commit` too (pre-commit hook runs cargo fmt
+  + clippy).  See `.claude/memory/f1r3node_toolchain.md`.
+- **Two-commit pattern for slices adding new files**: `git commit -a`
+  does NOT stage untracked files.  Either explicitly `git add` new
+  files before commit, or expect a follow-up commit picking them up
+  (Phase 9 slice 9a shipped this way — `3877f0bde` + `8f6618cc8`).
+- `/tmp/<slice>_commit_msg.txt` heredoc-file pattern for commit
+  messages avoids apostrophe / em-dash / backtick issues that break
+  `git commit -m "$(cat <<'EOF'...)"`.
 
 ## Phase 10 progress — examples + review-pass E2E tests (2026-08-13)
 
