@@ -1,28 +1,34 @@
 @startuml
-title FLT Parse Pipeline
+title Staged FLT Parse Pipeline
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "Host parser" as Host #DBEAFE
-rectangle "Optional tag\nL or L:Cat" as Tag #FEF3C7
-rectangle "Author delimiter" as Delim #FEF3C7
-rectangle "Guest parser(s)" as Guest #DCFCE7
-rectangle "Typed guest AST\nwith holes" as AST #DCFCE7
-rectangle "Host process AST" as HostAST #DBEAFE
+rectangle "Nouveau Rholang parser" as Host #DBEAFE
+rectangle "Structural FltTemplate\nchunks · HoleIds · provenance" as Template #FEF3C7
+rectangle "Lexical installed-handle\ncapability" as Handle #FBCFE8
+rectangle "Bounded token lattice\nholes are typed terminals" as Lattice #DCFCE7
+rectangle "Installed WPDA\nall readings · exact weights" as Guest #A7F3D0
+rectangle "Witness-coupled SPPF" as Forest #BFDBFE
+rectangle "Scoped FLT\nhandle · category · telescope" as AST #E0E7FF
 
-Host --> Tag : reads
-Tag --> Delim : selects grammar\nor defers inference
-Delim --> Guest : bounds guest body
-Guest --> AST : parses body
-AST --> HostAST : embeds term
+Host --> Template : capture only
+Template --> Lattice : evaluation-time staging
+Handle --> Lattice : Parse + Construct/Match
+Lattice --> Guest : bounded input
+Guest --> Forest : preserve alternatives
+Forest --> AST : complete unambiguous result
 
 legend right
   |= Color |= Concept |
-  |<#DBEAFE> | Host parser / host AST |
-  |<#FEF3C7> | FLT surface syntax |
-  |<#DCFCE7> | Guest parser / guest AST |
+  |<#DBEAFE> | Existing Rholang host parser |
+  |<#FEF3C7> | Structural surface template |
+  |<#FBCFE8> | Unforgeable installed handle |
+  |<#DCFCE7> | Structural token boundary |
+  |<#A7F3D0> | Fail-closed WPDA gate |
+  |<#BFDBFE> | Shared packed parse forest |
+  |<#E0E7FF> | Scoped FLT value |
 endlegend
 @enduml

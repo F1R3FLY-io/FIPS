@@ -1,33 +1,33 @@
 @startuml
-title Contextual Semantics and Minimal Context
+title Three Context Roles and Admissible Observation
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "Guest subterm\np" as P #DCFCE7
-rectangle "Context\nC[-]" as C #FEF3C7
-rectangle "Filled term\nC[p]" as CP #DBEAFE
-rectangle "Active\nrewrite?" as Active #FDE68A
-rectangle "Transition label\nminimal C[-]" as Label #EDE9FE
-rectangle "Result\np'" as Result #DCFCE7
-rectangle "Inert embedding\nno guest step" as Inert #FEE2E2
+rectangle "Scoped guest term\np" as P #DCFCE7
+rectangle "FLT template hole\npositive fill / negative capture" as Template #FEF3C7
+rectangle "Hypercube displayed site\nindex · rely · ambient" as Site #E0E7FF
+rectangle "Observer context\nc in D_handle" as Observer #EDE9FE
+rectangle "Observation-profile gate" as Gate #A7F3D0
+rectangle "Behavioral observation" as Result #DCFCE7
+rectangle "Raw AST reflection" as Reflect #FEE2E2
 
-P --> CP : fill hole
-C --> CP : surrounds subterm
-CP --> Active : evaluate redex
-Active --> Label : yes
-Label --> Result : witness rewrite
-Active -[#DC2626,dashed]-> Inert : no
+P --> Template : substitution role
+P --> Site : operational-profile role
+P --> Observer : contextual experiment
+Observer --> Gate : requires Observe/Match
+Gate --> Result : admissible whole context
+Observer -[#DC2626,dashed]-> Reflect : requires separate ReflectAst
 
 legend right
   |= Color |= Concept |
-  |<#DCFCE7> | Guest term/result |
-  |<#FEF3C7> | Context C[-] |
-  |<#DBEAFE> | Filled process |
-  |<#FDE68A> | Active/inert decision |
-  |<#EDE9FE> | Minimal context label |
-  |<#FEE2E2> | No semantic step |
+  |<#DCFCE7> | Guest term / behavioral result |
+  |<#FEF3C7> | FLT template role |
+  |<#E0E7FF> | Hypercube displayed-site role |
+  |<#EDE9FE> | Observer-context role |
+  |<#A7F3D0> | Admissibility and authority gate |
+  |<#FEE2E2> | Raw reflection is not implied |
 endlegend
 @enduml

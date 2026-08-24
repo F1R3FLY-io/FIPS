@@ -1,5 +1,5 @@
 @startuml
-title Interlanguage Communication over One Reflected ABI
+title Interlanguage Communication through Verified Morphisms
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
@@ -11,35 +11,40 @@ rectangle "Language B term\n<latex>\llbracket t_B \rrbracket</latex> tagged <lat
 rectangle "Host Rholang\nsends / receives / guards" as Host #FEF3C7
 
 frame "One RSpace : reflected tagged-Par ABI" as ABI #F8FAFC {
-  rectangle "Tag-identity dispatch\n<latex>\mathrm{pat\_tagged}(\mathit{fp}_A)</latex> matches only <latex>\mathit{fp}_A</latex> heads" as Match #FDE68A
-  rectangle "Opaque graft at slot <latex>\pi</latex>\nforced when <latex>\mathit{fp}_B \neq \mathit{fp}_A</latex>" as Graft #E0F2FE
+  rectangle "Tag-identity separation\nA patterns match only A heads" as Match #FDE68A
+  rectangle "Verified morphism (F, Phi)\nscope · transition · observation" as Morphism #A7F3D0
+  rectangle "Typed graft at slot <latex>\pi</latex>\nafter translation" as Graft #E0F2FE
   rectangle "<latex>\mathit{fp}_A</latex> driver\ndrives A subterms" as DriveA #DBEAFE
   rectangle "<latex>\mathit{fp}_B</latex> driver\ndrives B subterms" as DriveB #DCFCE7
 }
 
 rectangle "Composite <latex>A[B]</latex>\nnormal-form set" as Comp #EDE9FE
 rectangle "Foreign tag cannot forge a host pattern\nnon-firing, never mis-firing" as NoForge #FEE2E2
-rectangle "[Proposed] R2 re-dispatch\ntoday: fail-closes (safe, stuck)" as R2 #FEE2E2
+rectangle "R2 per-child handle dispatch\ncapability + shared fuel" as R2 #FBCFE8
 
 TA --> Match : reflect
 TB --> Match : reflect
 Host --> Match : host pattern
-Match --> Graft : shapes agree (tag identity)
+Match --> Morphism : distinct handles require proof
+Morphism --> Graft : translated scoped term
 Match -[#DC2626,dashed]-> NoForge : <latex>\mathit{fp}_B</latex> head vs <latex>\mathit{fp}_A</latex> pattern
-Graft --> DriveA : A subterms
-Graft --> DriveB : opaque B child
+Graft --> R2 : active children
 DriveA --> Comp : A rewrites
 DriveB --> Comp : B rewrites (R2)
-DriveA -[#DC2626,dashed]-> R2 : foreign child today
+R2 --> DriveA : A child
+R2 --> DriveB : B child
+Match -[#DC2626,dashed]-> Graft : no shape-only cross-language graft
 
 legend right
   |= Color |= Concept |
   |<#DBEAFE> | Language A / host process |
   |<#DCFCE7> | Language B / guest term |
   |<#FEF3C7> | Host Rholang contract |
-  |<#FDE68A> | Tag-identity matching |
-  |<#E0F2FE> | Opaque interpolation graft |
+  |<#FDE68A> | Tag-identity separation |
+  |<#A7F3D0> | Verified translation gate |
+  |<#E0F2FE> | Typed translated graft |
   |<#EDE9FE> | Composite / shared substrate |
-  |<#FEE2E2> | Rejected or [Proposed] stuck |
+  |<#FBCFE8> | Per-child installed-handle dispatch |
+  |<#FEE2E2> | Rejected wrong-handle path |
 endlegend
 @enduml

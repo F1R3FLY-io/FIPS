@@ -6,28 +6,30 @@ skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "Guest source\ntemplate" as Source #FEF3C7
-rectangle "Parse once" as Parse #DBEAFE
-rectangle "Typed hole\nnode" as Hole #DCFCE7
-rectangle "Host value\nas AST" as Value #DCFCE7
-rectangle "Category check" as Check #DBEAFE
-rectangle "AST graft" as Graft #DCFCE7
-rectangle "Final guest\nAST" as Result #DCFCE7
+rectangle "Guest chunks + structural holes" as Source #FEF3C7
+rectangle "Token lattice\nHoleId is a terminal" as Parse #DBEAFE
+rectangle "Scoped template" as Hole #DCFCE7
+rectangle "Host binding\nas scoped FLT value" as Value #E0E7FF
+rectangle "Handle · category · telescope\ncapability check" as Check #A7F3D0
+rectangle "Capture-avoiding substitution" as Graft #DCFCE7
+rectangle "Final scoped guest term" as Result #DCFCE7
 rectangle "Rendered text attack\nclosing delimiter / separator" as Attack #FEE2E2
 
-Source --> Parse : before values are known
-Parse --> Hole : creates structural slot
-Value --> Check : value is already AST
-Check --> Graft : type-compatible only
-Hole --> Graft : replace this node only
-Graft --> Result : preserve outer tree
-Attack -[#DC2626,dashed]-> Graft : rejected\nnever parsed as source
+Source --> Parse : never concatenate
+Parse --> Hole : WPDA result
+Value --> Check : structured value only
+Check --> Graft : same handle or verified morphism
+Hole --> Graft : exact HoleId occurrence
+Graft --> Result : preserve outer structure
+Attack -[#DC2626,dashed]-> Parse : rejected · never tokenized as a fill
 
 legend right
   |= Color |= Concept |
   |<#FEF3C7> | Guest source template |
-  |<#DBEAFE> | Parser / typecheck step |
-  |<#DCFCE7> | Typed AST boundary |
+  |<#DBEAFE> | Structural token boundary |
+  |<#DCFCE7> | Scoped guest syntax |
+  |<#E0E7FF> | Structured host binding |
+  |<#A7F3D0> | Fail-closed type/capability gate |
   |<#FEE2E2> | Rejected text attack |
 endlegend
 @enduml

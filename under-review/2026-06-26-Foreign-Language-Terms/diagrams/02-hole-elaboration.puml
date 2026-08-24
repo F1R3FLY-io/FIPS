@@ -1,27 +1,31 @@
 @startuml
-title Hole Elaboration: Fill and Capture
+title Scoped FLT Holes: Positive Fill and Negative Capture
 left to right direction
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 
-rectangle "FLT template\nperl{ print(${x}) }" as Template #FEF3C7
-rectangle "Construction context\nfill ${x} from environment" as Fill #DBEAFE
-rectangle "Pattern context\ncapture ${x} from match" as Capture #EDE9FE
-rectangle "Bound AST value\nnot source text" as Bound #DCFCE7
-rectangle "Captured AST value\navailable to guards" as Matched #DCFCE7
+rectangle "Hole declaration\nh : (Delta_h |- Sort)\nstable HoleId" as Hole #FEF3C7
+rectangle "Occurrence h[sigma]\nexplicit reindexing" as Occ #E0E7FF
+rectangle "Construction right\npositive substitution" as Fill #DBEAFE
+rectangle "Match right\nnegative capture" as Capture #EDE9FE
+rectangle "Same-handle scoped value\nor verified morphism" as Bound #DCFCE7
+rectangle "Typed capture environment\ncommitted atomically" as Matched #A7F3D0
 
-Template --> Fill : term position
-Template --> Capture : pattern position
-Fill --> Bound : AST graft
-Capture --> Matched : typed subtree binding
+Hole --> Occ : scope occurrence
+Occ --> Fill : term position
+Occ --> Capture : pattern position
+Fill --> Bound : capture-avoiding Kleisli fill
+Capture --> Matched : Miller/nominal fragment
 
 legend right
   |= Color |= Concept |
-  |<#FEF3C7> | FLT template |
-  |<#DBEAFE> | Construction-side fill |
-  |<#EDE9FE> | Pattern-side capture |
-  |<#DCFCE7> | Typed AST values |
+  |<#FEF3C7> | Declared structural hole |
+  |<#E0E7FF> | Scoped occurrence |
+  |<#DBEAFE> | Construction-side operation |
+  |<#EDE9FE> | Pattern-side operation |
+  |<#DCFCE7> | Scoped FLT value |
+  |<#A7F3D0> | Atomic capture gate |
 endlegend
 @enduml
