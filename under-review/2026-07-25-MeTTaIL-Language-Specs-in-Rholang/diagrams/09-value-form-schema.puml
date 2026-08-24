@@ -18,6 +18,7 @@ class "Spec  — Map" as Spec #E0E7FF {
   + **""&#34;mettail&#34;""** : ""&#34;language/2&#34;""   //required//; the notation version
   + **""&#34;name&#34;""** : Str   //a reserved-label-disjoint identifier//
   + ""&#34;options&#34;""? : Map<Str, Scalar>   //the ten keys of §IV.2//
+  + ""&#34;rights&#34;""? : [LanguageRight, …]   //canonical request set; never authority//
   + ""&#34;semantics&#34;""? : Str | ["path", [Str, …]]
   --  ordered content (Lists — order is load-bearing)  --
   + ""&#34;types&#34;""? : [TypeDecl, …]
@@ -122,9 +123,9 @@ note as N #F1F5F9
   Tuples are deliberately not used: their support in Rholang was never completed, and their
   removal from the language is the stated direction (§III.4.1).
 
-  **Sets are deliberately absent.** Nothing in a presentation is a mathematical set, and
-  encoding an ordered sequence as one would destroy information the fingerprint must preserve.
-  ""options"" is the sole genuinely unordered member — and it is a Map already.
+  **Rholang Sets are deliberately absent.** Encoding a declaration sequence as one would
+  destroy information the fingerprint must preserve. The sole finite set, ""rights"", uses a
+  List normalized to its closed enumeration order; ""options"" is unordered and already a Map.
 end note
 
 legend right

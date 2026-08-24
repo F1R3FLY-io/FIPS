@@ -1097,21 +1097,22 @@ position, never by guessing.
 | Rholang form | Role | Why this form |
 | --- | --- | --- |
 | Map `{"k": v, …}` | **Record** — a declaration with named, optional, extensible fields | Named keys survive schema growth; an absent key is the natural encoding of `Option<…>` |
-| List `[a, b, c]` | **Ordered sequence** — where order is semantically load-bearing | Every sequence in `LanguageDef` is a `Vec`, and declaration order fixes binding power |
+| List `[a, b, c]` | **Ordered sequence**, or the canonically ordered finite rights request at `Spec["rights"]` | Every declaration sequence in `LanguageDef` is a `Vec`; the one set-valued field has a closed alphabet and a unique normative order |
 | List `[tag, x, …]`, head-tagged | **Tagged node** — a variant of a sum type | The head is a tag string from a closed alphabet; one component count per `(tag, arity)` pair; schema-directed and `match`-friendly |
 | String `"…"` | **Name or terminal** — label, category, parameter, grammar terminal, regex | All `Ident` or `String` in the model |
 | Integer / Boolean / `Nil` | **Scalar** — binding power, priority, flag, explicit absence | Direct correspondence |
 
 Two choices deserve their reasons stated.
 
-**Sets are deliberately not used.** Nothing in a presentation is a mathematical
-set: `types`, `terms`, `equations`, `rewrites`, `token_defs`, `mode_defs`, and
-every syntax pattern are `Vec`s whose order is consulted. Declaration order
-fixes infix binding power, the prefix binding-power fallback
-(`max_infix_bp + 2`), lexer maximal-munch tie-breaking, and the carrier a
-numeral binds to. Encoding an ordered sequence as a set would destroy
-information the fingerprint must preserve. `options` is the sole genuinely
-unordered member, and it is a map already.
+**Rholang sets are deliberately not used.** `types`, `terms`, `equations`,
+`rewrites`, `token_defs`, `mode_defs`, and every syntax pattern are `Vec`s whose
+order is consulted. Declaration order fixes infix binding power, the prefix
+binding-power fallback (`max_infix_bp + 2`), lexer maximal-munch tie-breaking,
+and the carrier a numeral binds to. Encoding any of those sequences as a set
+would destroy information the fingerprint must preserve. The sole finite-set
+field, `rights`, is represented as a list because it has a closed alphabet and
+canonical enumeration order; `options` is the other unordered member, and it
+is a map already.
 
 **Tuples are deliberately not used.** The canonical value needs one uniform
 zero-or-more-arity tagged-node representation and remainder patterns for schema
@@ -1180,6 +1181,7 @@ does not join those lines falsely reports `BehavioralPred`, `RefinementPred` and
 Spec ::= { "mettail"  : "language/2"       -- notation version, required
          , "name"     : Str                -- an identifier, gated by III.6
          , "options"? : { Str : Scalar, … }
+         , "rights"?  : [ LanguageRight, … ] -- request, never authority
          , "semantics"?: Str | ["path", [Str, …]]   -- §V; default "Rust"
          , "types"?   : [ TypeDecl, … ]
          , "literals"?: [ LiteralDecl, … ]
@@ -1200,7 +1202,22 @@ Spec ::= { "mettail"  : "language/2"       -- notation version, required
                                            --   excluded from the fingerprint
          , "doc"?     : Str                -- excluded from the fingerprint
          }
+
+LanguageRight ::= "Parse" | "Construct" | "Match" | "Observe"
+                | "ReflectAst" | "Reduce" | "Bridge" | "Publish"
+                | "Introspect"
 ```
+
+`rights` is a declarative request profile, not a grant. Its default is
+`["Parse", "Construct", "Match", "Observe", "ReflectAst", "Reduce"]`;
+`Bridge`, `Publish`, and `Introspect` therefore require explicit opt-in. An
+explicit empty list requests no operations, whereas an absent key requests the
+default profile. A duplicate or unknown name is an error. Canonical order is
+the `LanguageRight` production order above, and composition takes set union.
+The installer still intersects the result with authority injected by the host,
+so adding a name can never create authority. L0 needs no additional keyword:
+surface authors use the existing Greg/Mike `Data({"rights": [...]})` content
+form when they need a nondefault request.
 
 A **presentation fragment** — the value form of one `Content` block — is the
 same map restricted to the block's own key, so `types = [ … ]` and
@@ -1639,7 +1656,9 @@ when:
 1. every map's keys are sorted by Unicode code point;
 2. no key is present with a value equal to the model default;
 3. every base type expression is a bare `Str`, never a redundant tag;
-4. `"doc"` and `"context"` appear only where the model records them.
+4. `Spec["rights"]`, when present, is in the closed enumeration order of
+   §III.4.2, with no duplicate;
+5. `"doc"` and `"context"` appear only where the model records them.
 
 #### III.5.1 The algorithm
 
@@ -1649,7 +1668,7 @@ than an assertion. It is a **schema-directed** fold: at every node it knows,
 from the position, which production it is normalizing.
 
 ```text
--- `absent` is NOT a Value: it is the marker rule 4 returns for a node the
+-- `absent` is NOT a Value: it is the marker rule 5 returns for a node the
 -- model does not record, and the ONLY consumer that may observe it is
 -- ⟨canon a record⟩, which drops the key. The return type says so.
 ⟨canon(v, schema) : Value ⊎ {absent}⟩ ≡
@@ -1664,14 +1683,14 @@ from the position, which production it is normalizing.
 ⟨canon a record⟩ ≡                                    -- schema is a Map production
   entries ← [ (k, canon(v[k], schema.field(k)))
             | k ∈ keys(v) ]
-  entries ← [ (k, x) ∈ entries | x ≠ absent ]              -- rule 4, DISCHARGED HERE
+  entries ← [ (k, x) ∈ entries | x ≠ absent ]              -- rule 5, DISCHARGED HERE
   entries ← [ (k, x) ∈ entries | x ≠ schema.default(k) ]   -- rule 2
   entries ← sort entries by the UTF-8 code-point sequence of k   -- rule 1
   return Map(entries)
 ```
 
 The `absent` filter is placed before the default filter and is not optional. Rule
-4 — "`"doc"` and `"context"` appear only where the model records them" — is the
+5 — "`"doc"` and `"context"` appear only where the model records them" — is the
 only rule that *removes a node rather than rewriting one*, and a record is the
 only shape from which a node can be removed without changing the meaning of its
 siblings. Hence the three obligations that make the marker safe, all discharged
@@ -1680,7 +1699,7 @@ by inspection of the fragments:
 1. **`absent` never escapes.** ⟨canon a record⟩ is the sole caller that can
    receive it, and it filters it out, so `canon` at the top level returns a
    `Value`.
-2. **A list element can never be `absent`.** Rule 4 fires only on the `"doc"` and
+2. **A list element can never be `absent`.** Rule 5 fires only on the `"doc"` and
    `"context"` keys, and no production makes either a list element — so
    ⟨canon an ordered sequence⟩ cannot silently shorten a `Vec` whose length is
    load-bearing.
@@ -1696,12 +1715,17 @@ which is why there is exactly one place for a default to be recorded.
 
 ```text
 ⟨canon an ordered sequence⟩ ≡                          -- schema is a List production
-  return List([ canon(x, schema.element) | x ∈ v ])    -- ORDER IS PRESERVED
+  if this is Spec["rights"] then
+    require every item is a distinct LanguageRight
+    return List(items in the §III.4.2 LanguageRight order) -- finite-set normal form
+  return List([ canon(x, schema.element) | x ∈ v ])    -- DECLARATION ORDER IS PRESERVED
 ```
 
-The absence of a sort here is the point. §III.4.1 argues that every list in the
-notation is order-load-bearing; canonicalization must not touch that order, and
-this fragment is where that commitment is discharged.
+The absence of a sort for declaration sequences is the point. §III.4.1 argues
+that every declaration list is order-load-bearing; canonicalization must not
+touch that order. `Spec["rights"]` is the one schema-directed exception: it is
+a finite request set, and its fixed order makes permutations denote the same
+request and produce the same fingerprint.
 
 ```text
 ⟨canon a tagged node⟩ ≡                            -- schema is a variant production
@@ -1995,6 +2019,7 @@ here at the same point and produce the same diagnostics.
 ```text
 ⟨Decode the declaration blocks in model order⟩ ≡
   options    ← decode_options(v["options"])            -- closed key set, §IV.2
+  rights     ← decode_rights(v["rights"])              -- closed set; default in §III.4.2
   extends, includes, mixins ← decode_name_lists(v)
   semantics  ← decode_semantics(v["semantics"])        -- §V; default "Rust"
   types, refinements        ← decode_types(v["types"])
@@ -2250,6 +2275,8 @@ it.
 ```text
 ⟨enc the unordered members⟩ ≡
   if d.options    non-empty then emit "options" ↦ Map(d.options)
+  if d.requested_rights ≠ default then
+    emit "rights" ↦ List(d.requested_rights in LanguageRight order)
   if d.guard_config present  then emit "guards"  ↦ enc_guard_config(d.guard_config)
   for key ∈ ["extends", "includes", "mixins"] :
     if d.<key>_names non-empty then emit key ↦ List(map to_string d.<key>_names)
