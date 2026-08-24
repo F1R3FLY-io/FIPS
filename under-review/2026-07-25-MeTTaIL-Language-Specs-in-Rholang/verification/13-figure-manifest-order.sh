@@ -5,7 +5,7 @@
 # CHECKS      that PALETTE's '# in document' column is the reading order
 # FIPS CLAIM  figure 10 = 11-debugging-stations (§XII.2); figure 11 = 10-work-item-dag (§XIII.4)
 # RUN FROM    anywhere (resolves the document relative to this script)
-# LAST RUN    2026-07-25 against the working .md
+# LAST RUN    2026-08-02 against the working .md
 # EXPECTED    22 lines — 11 figures, each an embed plus its PlantUML-source link
 # TEETH TEST  swap two figure embeds in the .md and the printed order stops matching the
 #             manifest table. The file-number suffix and the reading order genuinely

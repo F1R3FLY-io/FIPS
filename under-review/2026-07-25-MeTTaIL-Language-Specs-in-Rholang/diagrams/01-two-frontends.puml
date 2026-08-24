@@ -1,5 +1,5 @@
 @startuml
-title Two Frontends, One Specification Seam
+title Module / Theory and Values, One Specification Seam
 skinparam backgroundColor #FFFFFF
 skinparam shadowing false
 skinparam roundcorner 8
@@ -8,8 +8,8 @@ skinparam ArrowColor #334155
 
 package "Frontends (authoring)" #F8FAFC {
   rectangle "**""language!"" macro**\nRust token stream\n""parse_macro_input!(input as LanguageDef)""\nmacros/src/lib.rs:44" as Macro #FEF3C7
-  rectangle "**DDL text** [Branch]\n""types { ![i64] as Int }""\n**surface sugar**: ""parse_ddl"" produces a\n//value//, never a second LanguageDef" as Ddl #FEF3C7
-  rectangle "**Rholang spec value** [Proposed]\nnested Map / List / Tuple / String\nelaborated by <latex>\mathcal{E}</latex>\n(this FIPS)" as RhoSpec #E0E7FF
+  rectangle "**Module / Theory** [Branch]\n""Theory Ints() { Types { Int; } }""\n**surface sugar**: ""desugar_module"" produces a\n//value//, never a second LanguageDef" as Ddl #FDE68A
+  rectangle "**Rholang spec value** [Proposed]\nnested Map / List / String\nelaborated by <latex>\mathcal{E}</latex>\n(this FIPS)" as RhoSpec #E0E7FF
 }
 
 rectangle "**""LanguageDef""**\nthe sole backend input\nast/src/language/model.rs" as LD #DBEAFE
@@ -24,7 +24,7 @@ package "Backends (generation)" #F8FAFC {
 rectangle "AST types, freshness fns,\nmetadata, ""Language"" impl\n<latex>\rightarrow</latex> Rust source" as Rust #FEE2E2
 
 Macro --> LD : parses Rust tokens\n<b><color:#B91C1C>a SECOND arrow into LanguageDef</color></b>\n(frozen, not extended — §III.2)
-Ddl -[#7C3AED,dashed]-> RhoSpec : ""parse_ddl"" desugars a block body\nto a **value**, never to a LanguageDef
+Ddl -[#7C3AED,dashed]-> RhoSpec : ""desugar_module"" normalizes a theory\nto a **value**, never to a LanguageDef
 RhoSpec --> LD : <latex>\mathcal{E}</latex> — the **sole decoder FROM A VALUE**\nfail-closed
 LD --> Pratt
 LD --> RhoGen
@@ -49,7 +49,7 @@ note bottom of LD #F1F5F9
   ""RhoCalc"" (G-1 and G-3) and ""CalcLambda"" (G-2). The
   boundary is narrower than "everything with Rust in it":
   ""Calculator"" and ""LedTest"" carry native bodies and
-  would route through the value form as ""(&#34;src&#34;, &#34;Rust&#34;, …)"".
+  would route through the value form as ""[&#34;src&#34;, &#34;Rust&#34;, …]"".
   The macro parser is therefore **frozen**, and the
   residual drift risk is bounded by §VI.3's corpus
   fingerprint test rather than declared impossible.
@@ -57,7 +57,8 @@ end note
 
 legend right
   |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
-  |<#FEF3C7> | **P2** Existing Rust frontend and its DDL-text sugar |
+  |<#FDE68A> | **P1** Module / Theory authoring surface |
+  |<#FEF3C7> | **P2** Existing Rust frontend |
   |<#E0E7FF> | **P3** Proposed Rholang value path |
   |<#DBEAFE> | **P4** The shared specification datatype |
   |<#DCFCE7> | **P5** Generator emitting installable DATA |

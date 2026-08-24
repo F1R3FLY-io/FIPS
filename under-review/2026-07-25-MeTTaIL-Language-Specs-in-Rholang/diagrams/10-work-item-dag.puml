@@ -6,8 +6,7 @@ skinparam roundcorner 8
 skinparam defaultFontName SansSerif
 skinparam ArrowColor #334155
 
-rectangle "**W-9** land ""mettail-spec""\nfrom the ""modules"" branch, rebased\nonto the current ""ast/"" layout\n//not a leaf: a fork reconciliation//" as W9 #FDE68A
-rectangle "**W-1** add a tuple category\nto ""languages/src/rhocalc.rs""" as W1 #FEF3C7
+rectangle "**W-9** land ""mettail-grammar-core""\nand ""mettail-elab"": Module / Theory\n<latex>\rightarrow</latex> canonical value <latex>\rightarrow</latex> GrammarCore" as W9 #FDE68A
 rectangle "**W-1b** rename ""rhocalc.rs"" <latex>\rightarrow</latex> ""rholang.rs""\nand ""RhoCalc"" <latex>\rightarrow</latex> ""Rholang""" as W1b #FEF3C7
 rectangle "**W-2** generalize ""ValidationError""\nover ""Location ::= RustSpan | ValuePath | Inherited""\n//17 variants, not purely additive//" as W2 #FEF3C7
 rectangle "**W-8** rename ""logic"" <latex>\rightarrow</latex> ""relations""\n(""logic"" kept as a deprecated alias)" as W8 #FEF3C7
@@ -19,25 +18,23 @@ rectangle "**W-3b** replace ""LanguageDef::name : syn::Ident""\nwith a validated
 rectangle "**W-10** ★ the four §IX.5 requirements:\nreserved-label fence — //LANDED (39e523cb)//,\ntag grammar, fingerprint-scoped native channels,\ncanonical reflected-collection encoding\n//3 legs remain//" as W10 #FDBA74
 rectangle "**W-12** ★ INVARIANT: every FIRING-VISIBLE and\nevery CARRIER channel name contains <latex>\mathcal{F}</latex>\n""sa:pattern/{F}/lhs:{H}"" · ""sa:scalar/{F}/{label}""\n""ac:{F}/{op}"" · ""ac:{F}/{loc}/{op}""\n//20 emitters by SWEEP, not 2 by enumeration//\n//closes the §IX.6.1 cross-fingerprint WRONG FIRING//" as W12 #FDBA74
 
-rectangle "**L1 value encoder** ""enc""\n+ **the sole decoder FROM A VALUE** <latex>\mathcal{E}</latex>\n+ ""parse_ddl : TokenStream"" <latex>\rightarrow</latex> ""Value""" as CORE #E0E7FF
+rectangle "**L1 value encoder** ""enc""\n+ **the sole decoder FROM A VALUE** <latex>\mathcal{E}</latex>\n+ ""desugar_module : Module"" <latex>\rightarrow</latex> ""Value""" as CORE #E0E7FF
 rectangle "parity, round-trip,\nand corpus tests" as TEST #A7F3D0
-rectangle "**W-5** carry <latex>\mathcal{F}</latex> on the NTIR\nalongside ""content_hash""" as W5 #DDD6FE
+rectangle "**W-5** use the GrammarCore BLAKE3\nfingerprint for FLT identity\nand parser-image verification" as W5 #DDD6FE
 rectangle "**W-6** the ""LangSpec"" metacircular\nschema and its fixpoint test" as W6 #DDD6FE
 
 rectangle "**OUTCOME 1**\ninstallation-pure languages\ninstallable at runtime,\nwith no compiler in the loop" as OUT1 #DCFCE7
-rectangle "**W-4** ★ serializable WPDA parse tables\nwalked by the existing ""WpdaWalker""" as W4 #FEE2E2
+rectangle "**W-4** ★ deterministic lexer tables\n+ PraTTaIL WPDA adapter + verified image VM\n+ typed-vs-image parity" as W4 #FEE2E2
 rectangle "**OUTCOME 2**\nparsing a runtime-authored\nlanguage on a compiler-free target" as OUT2 #DCFCE7
 
 W7 -[#BE185D]-> W3 : **must precede** — W-3 is an ABI break\nfor 14 of the 31 shipped languages, and\nunder v1 that break would be **silent**
 W7 -[#BE185D]-> W10 : the tag grammar is\npart of the v2 encoding
 
 W9 --> CORE
-W1 --> CORE
 W2 --> CORE
 W8 --> CORE
 W3 --> CORE
 W3b --> CORE
-W1b .[#334155].> W1 : **A6** //soft ordering only//\n(rename after the\ntuple work lands)
 
 CORE --> TEST
 W5 --> TEST
@@ -52,7 +49,7 @@ W4 --> OUT2
 note bottom of W7 #F1F5F9
   **Why W-7 heads the graph.** The declarative NativeEval forms are a **new identity**,
   not a v1-compatible refactor: ""identity.rs::write_language"" feeds all five <latex>\bigstar</latex> fields into
-  the hashed identity as verbatim token text, so ""(&#34;op&#34;, &#34;add&#34;)"" and ""![a + b]"" //cannot//
+  the hashed identity as verbatim token text, so ""[&#34;op&#34;, &#34;add&#34;]"" and ""![a + b]"" //cannot//
   produce the same fingerprint. Bumping the prefix makes the transition explicit, versioned
   and diagnosable instead of a silent non-match under one prefix.
 

@@ -47,12 +47,13 @@ Three properties follow, and they are the point of the change.
    channel, stored in the tuplespace, versioned in the registry, transformed by
    Rholang code, and matched with Rholang patterns. None of that is possible
    for a macro invocation.
-2. **Rholang can specify the languages it embeds.** Rholang is itself a MeTTaIL
-   language, defined in `languages/src/rhocalc.rs` under the language identifier
-   `RhoCalc`. Renaming that file and identifier to `rholang.rs` / `Rholang` is
-   work item **W-1b**. A Rholang program can therefore define a guest language
-   and immediately reach it through the **Foreign Language Term (FLT)** surface —
-   a tagged, delimiter-bounded guest-language term embedded in a host process.
+2. **Rholang can specify the languages it embeds.** Nouveau Rholang is already
+   the MeTTaIL language defined by `languages/src/rholang.rs`. This FIPS extends
+   that existing `language!` specification with `Module` and `Theory` process
+   forms; it does not define a second Rholang, a standalone module language, or
+   a tree-sitter grammar. Any Rholang process can construct one or more guest
+   language specifications, install them, and use the resulting opaque handles
+   through the **Foreign Language Term (FLT)** surface.
 3. **The Rust compiler leaves the specification-authoring critical path.** This
    is a necessary — though, as §VIII establishes honestly, not sufficient —
    precondition for a non-Rust target such as a bare-metal RISC-V (Reduced
@@ -61,15 +62,14 @@ Three properties follow, and they are the point of the change.
    reducer.
 
 The proposal rests on one premise, which §I **verifies rather than assumes**:
-that `LanguageDef` is already the sole input to every backend generator. It
-also builds on, rather than beside, two existing bodies of work: Michael Stay's
-extender/presentation design, and its partial implementation on the
-`mettail-rust` `modules` branch (Serhii and George), which this FIPS reads,
-credits, and refines in §III.1.
+that `LanguageDef` is already the sole input to every backend generator. It also builds on the exhaustive MeTTaIL grammar, Greg Meredith's and
+Michael Stay's `Module` / `Theory` notation, and the data-faithful Rholang DDL.
+The surface and value forms converge on one normalized specification before
+validation or backend generation (§III).
 
 The problem of native `![{ … }]` blocks — the one place a specification embeds
-Rust — is resolved by the **`semantics` clause** of that design, and §V reports
-that resolution rather than re-deriving it.
+Rust — is resolved by a declarative semantic-target field, and §V specifies
+that boundary.
 
 The acknowledged design inspiration for making specifications ordinary values
 is Clojure's **code-is-data** tradition [Hickey 2020], itself descended from
@@ -87,99 +87,37 @@ representation.
 
 ## Status and Evidence
 
-| Badge | Meaning |
-| --- | --- |
-| [Implemented] | Confirmed by reading the **verification base** defined below, with file and symbol cited. |
-| [Branch] | Implemented on the `mettail-rust` `modules` branch; **not** in the verification base. Landing it is work item W-9. |
-| [Approved] | Defined by another approved FIPS and reused here. |
-| [Proposed] | New behavior introduced by this FIPS. |
+This FIPS is normative design under review. It intentionally contains no
+revision diary; review history belongs in Git. Claims about the current branch
+are confined to [Implementation Evidence](#implementation-evidence), where each
+claim names a symbol or a reproducible verification command.
 
-> **★ The verification base, stated exactly.** Every `[Implemented]` claim, every
-> line number, and every count in this document was measured against
-> **`mettail-rust` branch `feature/rho-native-set-automata` at commit
-> `a72b57e0`** (2026-07-25), which is the development tree the work items land
-> on. It is **not** `main`. Naming `main` would be wrong rather than
-> conservative: `main` is `a95726aa` (2026-05-20), **1,399 commits behind**, and
-> most of the paths cited here do not exist on it — `rholang-codegen/`,
-> `ast/src/validation/`, `ast/src/identity.rs`, `repl/src/rho_backends.rs`,
-> `repl/src/bin/`, and `prattail/src/pipeline/` are all absent, while
-> `languages/build.rs` exists on `main` and not at the verification base. (The
-> `repl/` **directory** does exist on `main`; the two files this document cites
-> inside it do not, which is why they are named individually rather than by
-> their parent.) A reviewer re-running any command in §I.4, §V.2, or the
-> Implementation Evidence table must check out that commit first; against `main`
-> the commands return nothing and the reader would reasonably conclude the FIPS
-> had invented its evidence.
+The implementation is conforming only when all of these layers are present and
+their equivalence obligations pass:
 
-> **★ Measure a revision with `git show`, never a checkout with `grep`.** Every
-> count in this document was taken from `git show <rev>:<path>`, and a reviewer
-> re-running any of them must do the same. The development branch is worked on
-> continuously and its checkout is routinely dirty, so a plain `grep` over
-> `mettail-rust/` reads **uncommitted edits** and can report a constant value, a
-> function's arity, or a variant count that exists in nobody's history. That is
-> not a hypothetical failure mode — it is how the §IX.5.1 row below was once
-> recorded as landed while the rename existed only as working-tree edits.
->
-> The base is a **pin**, not a claim that the tree has stopped moving. "Branch
-> head" names a different revision each time it is written and is never a citable
-> fact; a *checked revision* is. One change since the pin touches this document,
-> and it is tabulated rather than folded silently into the badges:
->
-> | Constant | `a72b57e0` (pin) | `39e523cb` (+8) | Consequence |
-> | --- | --- | --- | --- |
-> | `PEANO_ZERO_REFLECT_LABEL` | `"Z"` | **`"^Z"`** | §IX.5.1's rename requirement is **[Implemented]** |
-> | `PEANO_SUCC_REFLECT_LABEL` | `"S"` | **`"^S"`** | — as above; the reserved namespace is now closed under its own prefix rule |
-> | `reserved_labels_outside_the_namespace()` | `[…; 2]` | **`[…; 0]`** | the list of known violators is empty |
-> | `reserved_subst_trs_labels()` | `[…; 19]` | `[…; 19]` | **unchanged** — see §IX.5.1 on why this set is a switch and not a census |
->
-> `39e523cb` is *"#36 S3 — the Peano tags join the `^` namespace; the C2 set is a
-> switch, not a census"*. A further commit has landed since, which is the rule
-> working rather than a reason to re-pin: every other `[Implemented]` badge, line
-> number and count in this document is measured at `a72b57e0`, and the one
-> divergence is the four rows above. Re-check with
-> [`verification/08-revision-matrix.sh`](verification/08-revision-matrix.sh).
-
-The layers carry different badges, and the distinction matters.
-
-- The **specification seam** — `LanguageDef` as the sole backend input, and
-  `reconstruct_language_def` as a runtime path from a stored string to a
-  fingerprint-identical `LanguageDef` — is **[Implemented]**. §I.
-- The **extender surface** — `module` / `extender` / `language` / `space`,
-  `ExtenderExpr` with `semantics`, `context`, union, and the **eight** content
-  suffixes (`types`, `literals`, `terms`, `equations`, `relations`, `rewrites`,
-  `exports`, `replacements` — `SuffixKind` on the branch), plus assembly into a
-  Neutral Theory Intermediate Representation (NTIR) and projection back to
-  `language!` — is **[Branch]** (`mettail-spec/`). §III.1.
-- The **capability seam** for native evaluation — a fingerprint-keyed Uniform
-  Resource Name (URN) naming a registered evaluator, injected as a
-  system-process `Definition` — is **[Implemented]**
-  (`rholang-codegen/src/native_handler.rs`). §V.4.
-- The **canonical value form**, its elaborator, its identity discipline, and
-  the round-trip and parity obligations are **[Proposed]**. §III.3–III.8.
-- The **serializable parse-table artifact** needed to obtain a *parser* for a
-  runtime-authored language without invoking `rustc` is **[Proposed]** and is
-  named as work item **W-4**. §VIII.
+- the `Module` / `Theory` surface in the existing nouveau Rholang grammar;
+- the ordinary Rholang `language/2` value and its one schema decoder;
+- validation, canonicalization, GrammarCore lowering, parser-image generation,
+  image verification, and atomic installation;
+- opaque installed-language handles and scoped registry publication;
+- structural FLT construction, matching, reflection, and reduction; and
+- the consensus, capability, resource, and observational-security gates in
+  Parts IX and XVII.
 
 ## Scope
 
-**In scope.** The language-specification language itself: how `types`,
-`literals`, `terms`, `equations`, `relations`, and `rewrites` — and the
-extender algebra that combines them — are expressed without Rust, together
-with identity, validation, FLT integration, security, and the backend
-consequences.
+**In scope.** The language-specification language itself: how `Module`,
+`Theory`, `Types`, `Exports`, `Replacements`, `Terms`, `Equations`, and
+`Rewrites` express a grammar without Rust; how theory join, meet, difference,
+application, and local binding compose presentations; and how the result maps
+to the exhaustive `language/2` value. Identity, validation, FLT integration,
+security, registry loading, and runtime backend generation are also in scope.
 
-**Specified but not implemented in version 1.** The module system —
-`module`, `import`, `export`, and `space` — gets its **syntax specified
-normatively** in §X and its **implementation deferred** to a separate feature
-branch (work item **W-13**, deliberately absent from §XIII.4's v1 sequencing
-graph). The distinction is the point: §X.1 establishes that these constructs
-belong to the **Rust macro DDL** — `import` reads a compilation unit from the
-filesystem, and a deployed Rholang process has none — so the in-Rho form gets
-the composition algebra and reaches other specifications through §VI.2's
-registry instead. Specifying the spine is what makes that boundary explicit
-rather than accidental. The extender algebra is *in* v1 scope for the reason it
-always was: an extender is a function on presentations, and presentations are
-the thing being specified.
+Registry modules are resolved now through an injected Versioned Registry
+capability. Filesystem references are recognized but remain unavailable until
+the Rholang File I/O FIPS defines and implements the capability they require.
+This proposal specifies that adapter boundary and does not implement direct
+filesystem access.
 
 ## Motivation
 
@@ -199,18 +137,18 @@ all three objectives above.
   are `syn::Type`, evaluation blocks are `syn::Expr` — even where nothing
   Rust-specific is meant.
 
-### Why Rholang's existing data structures
+### Why retain the data-faithful form
 
 Rholang already has the literal forms a structured specification needs: maps
-with arbitrary keys, lists, tuples, sets, strings, integers, and `Nil`. Reusing
+with arbitrary keys, lists, strings, integers, and `Nil`. Reusing
 them buys three things at once.
 
-- **No second parser.** A specification value parses with the Rholang parser
-  that already exists. A bespoke grammar for the *content* of a specification
-  would be a second thing to write, test, version, and keep synchronized with
-  the model it encodes.
-- **Programmatic manipulation.** Rholang's `match` works on maps, lists, and
-  tuples, so a contract can take a specification, add a rewrite rule, and hand
+- **One semantic decoder.** The ergonomic DDL is new Rholang syntax, but it
+  elaborates to the same ordinary value that a process can construct directly.
+  It therefore adds no second schema decoder, validator, identity function, or
+  backend path.
+- **Programmatic manipulation.** Rholang's `match` works on maps and lists,
+  so a contract can take a specification, add a rewrite rule, and hand
   back a new specification without a serialization round trip.
 - **Composition with everything else.** Sends, receives, joins, guards,
   lookahead, and the registry already work on values.
@@ -244,7 +182,7 @@ silently as a document grows. Its scope and its check are both explicit.
   list and so runs anywhere: **an acronym is an all-caps prose token that never
   occurs lower-cased anywhere in the prose.** All-caps *emphasis* — this
   document uses it — always does occur lower-cased elsewhere, and an acronym
-  essentially never does, which separates the two exactly. It reports **42**
+  essentially never does, which separates the two exactly. It reports **48**
   acronyms and none undefined.
 
 > **★ Two properties of that instrument are load-bearing, and a naive version
@@ -278,18 +216,25 @@ $`\uplus`$ and $`\setminus`$.
 | **FIPS** | F1R3FLY Improvement Proposal Specification — the normative change-proposal format of this repository. A FIPS moves through `under-review/` and then `approved/`. |
 | **MeTTaIL** | The codename of **Rholang 1.4** and the name of its language-definition framework. Named for SingularityNET's *MeTTa*, an experimental artificial-intelligence language whose requirements drive the new features. |
 | **Rholang** | The reflective, higher-order concurrent process calculus f1r3fly nodes execute [Meredith & Radestock 2005]. |
-| **DDL** | Data Definition Language — used here for the **text** form of a presentation block, i.e. what is written between the braces of `types { … }`. It is a *surface syntax*, not a second data model; see §III.2. |
+| **DDL** | Data Definition Language — the `Module` / `Theory` authoring notation and its canonical `language/2` value representation. They are two surfaces over one data model; see §III.2. |
 | **BNF** | Backus–Naur Form — the classical production notation `Label . Category ::= Item Item ;`. `language!`'s original term syntax is a BNF variant, and the value form keeps it under the `"items"` key (§IV.7). |
+| **BNFC** | BNF Converter — the grammar toolkit and labelled-production notation used by `metta_venus.cf`. |
 | **EBNF** | Extended BNF — BNF plus the repetition, option, and grouping metasyntax `{ … }`, `[ … ]`, `( … )`. §III.3's L0 surface grammar is written in EBNF. |
-| **MUS** | MeTTaIL Unified Specification — the name the `modules` branch gives its `.rho` module-file compiler, `mettail-spec`. |
+| **DFA** | Deterministic finite automaton — the bounded table form used for admitted regular token patterns. |
+| **TUF** | The Update Framework — the signed metadata design whose rollback, freeze, mix-and-match, and equivocation protections are required for registry modules. |
 | **Presentation** | A language specification's content — types, literals, terms, equations, relations, rewrites — before it is named. The mathematical object $`(\Sigma, E, R)`$: a signature, a set of equations, and a set of rewrite rules. |
-| **Extender** | A function from presentations to a presentation. Declared `extender N(args) { ExtenderExpr }`. Not (yet) a functor: a morphism-level story for GSLT composition does not exist. |
+| **Theory abstraction** | A functor between validated presentation categories, declared `Theory N(p: T) { TheoryExpr }`. It maps both objects and structure-preserving morphisms; §XVII gives the preservation laws. |
+| **Installed-language handle** | An opaque, unforgeable local capability returned by an atomic successful install. It commits to grammar identity, categories, observation profile, effects, limits, and granted operations. |
+| **Language morphism** | A mapping of categories, constructors, binding structure, equations, rewrites, observations, effects, and resource grades that satisfies the preservation laws of §XVII. |
+| **Displayed site** | A distinguished occurrence in a Hypercube operational presentation. It records where contextual behavior is generated; it is not an FLT substitution hole. |
+| **Observer context** | A context admitted by a language's observation profile. It may test behavior without receiving unrestricted AST-reflection authority. |
+| **Effect grade** | A monotone summary of required authority and observable effects. Composition joins grades and can never manufacture authority. |
 | **Spec value** | A Rholang value denoting a presentation or a whole specification, in the notation of §III.4. Written $`v`$. |
 | **Native block** | A `![ … ]` or `![{ … }]` region carrying an expression in the active `semantics` language. §V. |
 | **Fold / step** | The two evaluation modes for a native block: `fold` (constant folding only) and `step` (congruence-driven single steps). A native block with neither keyword is a *mode-less* block — see the census in §V.2. |
 | **Carrier** | The native type backing a declared category, e.g. `i64` for `![i64] as Int`. |
-| **Island** | A tagged, delimiter-bounded foreign region inside a specification, e.g. `` Rholang```…``` `` ([Branch], `mettail-spec/src/island/`). |
-| **Installation-pure** | Said of a specification whose every `NativeEval` avoids `("src", …)`: it is elaborable and installable with no compiler in the loop. §V.3.4. |
+| **Island** | A tagged, delimiter-bounded foreign region whose tag selects the parser and capability policy for its body. |
+| **Installation-pure** | Said of a specification whose every `NativeEval` avoids `["src", …]`: it is elaborable and installable with no compiler in the loop. §V.3.4. |
 | **Pure-declarative subset** | The subset of `language!` using no native block at all, no `literals{}` eval body, no `relations{}` rule body, and no theory type path. §V.7. |
 | **Provenance** | A property of the **call site** that invokes `install!`, *not* of the specification value. `Provenance::Local` may be passed only by a locally privileged entry point — an operator console, a build step, a test harness — running with the node operator's own authority. Every path reachable from a **deploy** passes `Provenance::NonLocal` unconditionally. §III.6.4 makes it a parameter of `⟨install⟩`; §V.3.4, §IX.3 R-1, and `⟨G4⟩` are the three clauses that turn on it. |
 
@@ -299,7 +244,7 @@ $`\uplus`$ and $`\setminus`$.
 | --- | --- |
 | $`(\Sigma, E, R)`$ | A presentation: signature, equations, rewrite rules. |
 | $`v`$ | A candidate specification value. |
-| $`\pi`$ | A **value path** — a list of map keys, list indices, and tuple positions locating a node inside $`v`$, e.g. `["terms", 3, "context", 0]`. |
+| $`\pi`$ | A **value path** — a list of map keys and list indices locating a node inside $`v`$, e.g. `["terms", 3, "context", 0]`. |
 | **Elaborator** $`\mathcal{E}`$ | The partial function $`\mathcal{E} : \mathrm{Value} \rightharpoonup \texttt{LanguageDef}`$. Fail-closed, and — under §III.2 — the **sole** decoder. |
 | **Encoder** $`\mathsf{enc}`$ | The function $`\mathsf{enc} : \texttt{LanguageDef} \rightharpoonup \mathrm{Value}`$ specified in §III.6.3, a right inverse of $`\mathcal{E}`$ on its stated domain — which is not all of `LanguageDef`; §III.6.3 gives the domain and requires an error outside it. |
 | **Validator** $`\mathcal{V}`$ | `validate_language` plus composition, auto-injection, and stratification analysis. |
@@ -308,7 +253,7 @@ $`\uplus`$ and $`\setminus`$.
 | $`\Vert`$ | String concatenation. |
 | $`[\![\,t\,]\!]`$ | The reflection of a guest term $`t`$ into a `rhoapi::Par`. |
 | $`\bigstar_1 \ldots \bigstar_5`$ | The five specification fields of `LanguageDef` that carry a Rust type or Rust code. Enumerated in §I.4. |
-| $`\backslash/`$ (written `\/`) | Extender **union** — merges two presentations, right-biased, under a strict conflict policy. §III.3. |
+| $`\backslash/`$ (written `\/`) | Theory **join** — a pushout over a shared presentation parameter, not a right-biased record merge. §III.3, §XVI.4. |
 | $`\uplus`$ (written `⊎`) | **Disjoint union.** It carries two readings in this document and they agree on the only property either one is used for — that nothing is merged, coalesced, or reordered. On *types* it is the **sum**: `Value ⊎ {absent}` is the type of a value-or-the-distinguished-absence marker, the two summands never confused (§III.5). On *ordered sequences* it is **order-preserving concatenation**: `d.types ⊎ d.refinement_types` is the `Vec` whose elements are those of `d.types` in their declared order followed by those of `d.refinement_types` in theirs, with no de-duplication (§III.6.3). The two are disjoint by construction — the categories and the refinement types are drawn from disjoint model fields — which is what licenses the same symbol. |
 | $`\setminus`$ (written `∖`) | **Sequence difference, order-preserving.** `xs ∖ ys` is the subsequence of `xs` obtained by deleting every element that occurs in `ys`, leaving the *relative order of the survivors exactly as it was in* `xs`. It is written as a difference and not as a filter because the removed set is characterised extensionally (`auto_injected(d)` — the rules the augmentation pass appended), not by a predicate on elements. Order preservation is load-bearing: §III.6.3's right-inverse property $`\mathcal{E} \circ \mathsf{enc} = \mathrm{id}`$ holds only if re-running the augmentation pass over `xs ∖ ys` reproduces `xs` positionally, which it does because augmentation appends. |
 | $`\models`$ (written `\|=`) | The **satisfaction predicate** of a behavioral-type guard: `t \|= φ` reads "the term `t` satisfies the behavioral type `φ`". §VII.3. |
@@ -320,11 +265,15 @@ $`\uplus`$ and $`\setminus`$.
 | --- | --- |
 | **`language!`** | The MeTTaIL procedural macro turning Rust tokens into a `LanguageDef` (`macros/src/lib.rs`). |
 | **`LanguageDef`** | The parsed, composed, augmented specification record (`ast/src/language/model.rs`); the sole input to every backend generator. |
-| **NTIR** | Neutral Theory Intermediate Representation — a named, hashed presentation (`mettail-spec/src/ntir.rs`, [Branch]). |
+| **GrammarCore** | The versioned, source-neutral grammar intermediate representation consumed by backend compilers and fingerprinted for parser-image verification. |
 | **PraTTaIL** | MeTTaIL's parser generator: Pratt parsing (precedence climbing over prefix/infix binding powers) plus recursive descent, compiled to a weighted push-down automaton. |
 | **WPDA** | Weighted Push-Down Automaton — a push-down automaton whose transitions carry semiring weights, used here as the parser backend PraTTaIL emits. Weights drive ambiguity resolution. |
 | **WFST** | Weighted Finite-State Transducer — the finite-state device, weighted over a semiring, used in MeTTaIL's lexical and disambiguation analyses. |
 | **GLR** | Generalised **LR** parsing, where LR abbreviates *left-to-right scan, rightmost derivation*: the family of shift-reduce algorithms, generalised to pursue every live parse in parallel rather than committing to one. Used here only to name the *cost model*: two rules accepting the same surface fork the parse, and forks multiply (§IX.3 R-2). |
+| **GLL** | Generalised **LL** parsing, where LL abbreviates *left-to-right scan, leftmost derivation*: a generalized top-down family that shares calls in a graph-structured stack and results in a shared packed parse forest. §XVI.8 uses it as a comparison, not as a replacement backend. |
+| **GSS** | Graph-Structured Stack — a directed graph that shares common stack prefixes among concurrent generalized-parser branches. The existing WPDA walker uses this representation, and §XVI requires the image VM to reuse it. |
+| **SPPF** | Shared Packed Parse Forest — a compact graph sharing common subparses while packing ambiguous alternatives. It lets the generalized parser preserve alternatives without duplicating a full tree for each one. |
+| **VM** | Virtual Machine — in this FIPS, the bounded interpreter for verified parser-image micro-operations. It has no general memory, host-call, operating-system, or arbitrary-code instruction. |
 | **JSON** | JavaScript Object Notation. It appears in this document only as one of the file formats `emit_blockly` / `emit_simulator` write **at macro-expansion time** (§IV.2); no part of this proposal uses it as a specification encoding. |
 | **Dovetail** | MeTTaIL's substrate-neutral rewrite engine (e-graph, set automaton, weighted tree automata). |
 | **TRS** | Term-Rewriting System — a set of oriented rewrite rules over terms. The **substitution TRS** is the reserved in-Rho rule family (`^subst`, `^shift`, …) that performs capture-avoiding substitution on reflected de Bruijn terms. |
@@ -360,7 +309,7 @@ $`\uplus`$ and $`\setminus`$.
 | **`DeterministicCall`** | The `Definition` classification asserting that a system process is a pure function of its arguments, so that block replay reproduces it bit-identically. |
 | **Versioned Registry** | The approved `rho:lib:` / `rho:serve:` namespace and its `insertVersion` / `deprecateVersion` / `approveVersion` calls. §VI.2. |
 | **FNV-1a** | Fowler–Noll–Vo hash, variant 1a — a fast, **non-cryptographic** multiplicative hash. `ast/src/identity.rs` uses the 64-bit variant today; §IX.3 R-1 explains why that is not adequate once specifications cross a network, and W-7 replaces it. |
-| **BLAKE3** | A cryptographic hash function with a 256-bit default output, used by `Ntir::content_hash` today and adopted by W-7 for the v2 fingerprint. Written **BLAKE3-256** where the output width is the point of the sentence. |
+| **BLAKE3** | A cryptographic hash function with a 256-bit default output, used by GrammarCore fingerprints and adopted by W-7 for the shared language identity. Written **BLAKE3-256** where the output width is the point of the sentence. |
 
 ## Part I — The Decoupling Verdict
 
@@ -476,11 +425,10 @@ LanguageMetadata::definition_source()   -- a &'static str
   |> plan_rho_default_backend           -- PlannedRhoBackend, installed on a real RSpace
 ```
 
-[Branch] The second exercise is `mettail-spec`, which assembles a presentation
-from `.rho` extender declarations and reaches the same seam through
-`Ntir::to_language_def()` →
-`mettail_ast::fragments::language_def_from_parts(name, types, literals, terms, equations, rewrites, logic)`.
-No proc-macro is in either path.
+[Branch] The second exercise is the `mettail-elab` review crate. It parses a
+`Module` / `Theory` file, elaborates the selected theory to the canonical
+`language/2` value, and lowers that value to validated GrammarCore. No
+procedural macro is required on this path.
 
 This FIPS replaces the *first* arrow — source-string in, `LanguageDef` out —
 with an implementation that takes a Rholang value instead. Everything
@@ -609,14 +557,14 @@ mere presence flag for the rest.
 **The decoupling is complete as a dataflow seam and partial as a datatype.**
 
 - Every backend generator's sole semantic input is `LanguageDef`. **Verified.**
-- The seam is already exercised from two non-macro callers —
-  `reconstruct_language_def` in the verification base and
-  `Ntir::to_language_def` on the
-  `modules` branch. **Verified**, with one qualification recorded in §III.1:
+- The seam is already exercised from a non-macro caller,
+  `reconstruct_language_def`, and the review branch exercises the source-neutral
+  GrammarCore seam from `Module` / `Theory` and `language/2`. **Verified**, with
+  one qualification:
   `reconstruct_language_def` is `syn::parse_str::<LanguageDef>(raw_source)`, so
   it is evidence for *pipeline replay from a non-macro caller*, not for a
-  `syn`-free producer. `Ntir::to_language_def` is the closer analogue, and it
-  covers roughly half the model's fields (§III.1, observation 3).
+  `syn`-free producer. The GrammarCore projection is the source-neutral
+  producer and is coverage-tested against the canonical value schema.
 - PraTTaIL's *pipeline* never consumes a Rust expression. **Verified** — see
   §I.2 for the precise scope: the dataflow is decoupled, the datatype is not,
   because `LanguageSpec::rust_code` is a `TokenStream` that is carried and never
@@ -654,36 +602,14 @@ where $`\Vert`$ is string concatenation. This is `reflect_tag` in
 `rholang-codegen/src/rho_net_lower.rs`, and `REFLECTED_TERM_ABI_PREFIX` is the
 single constant that both the emitter and the runtime decoder key on.
 
-[Branch] The same discipline has **already been applied one level down**, inside
-the specification surface, by the `modules` branch's *islands*:
-
-````text
-export extender ProcExt() {
-  Rholang```
-    new ch in {
-      ch!(1) |
-      for (@x <- ch) { ch!(x + 1) }
-    }
-  ```
-  semantics Rust
-}
-````
-
-The island body is **valid Rholang**, and it has to be: an island tag names a
-plugin that *parses* the body in the named guest language, so a body that does
-not parse is not an illustration of the mechanism but a counterexample to it.
-The three constructs above are the three the tree-sitter grammar defines —
-`new … in { … }`, a send `ch!(…)` (`grammar.js`'s `send`), and a receive
-`for ( … ) { … }` (`grammar.js`'s `input`, whose receipts are parenthesized).
-
-Here `Rholang` is a tag naming a registered island plugin
-(`mettail-spec/src/island/plugins/{rust,rholang_proc}.rs`, dispatched through
-`island::registry`) that interprets the triple-backtick body. That is the FLT
-mechanism, at specification-authoring time, already built.
+The same dispatch discipline applies inside the canonical value. A tagged
+list selects one closed elaborator arm, while a declared capability URN selects
+one allow-listed semantic handler. `Module` / `Theory` builders normalize to
+those tagged values; they do not introduce a parallel handler registry.
 
 The value notation of §III.4 uses the same discipline a third time: a
-specification node is a tuple whose first component is a tag string, and the tag
-selects an elaborator arm that interprets the remaining components. All three
+specification node is a list whose first element is a tag string, and the tag
+selects an elaborator arm that interprets the remaining elements. All three
 share the resolution rule
 
 ```math
@@ -693,7 +619,7 @@ share the resolution rule
 read "the tag $`\tau`$ applied to the element $`e`$ resolves to the handler
 $`H(\tau)`$ applied to $`e`$."
 
-![One MeTTaIL mechanism at two levels: an FLT tag names a guest grammar and reflector that interprets raw guest source, a spec tag names an elaborator arm that interprets a Rholang value, and both resolve through the fingerprint-derived unforgeable GPrivate tag](diagrams/03-tag-names-a-handler.svg)
+![One capability-scoped dispatch discipline at two levels: an FLT alias resolves an installed-language handle that parses guest chunks and structural holes, while a specification tag selects a closed elaborator arm over an already-parsed Rholang value](diagrams/03-tag-names-a-handler.svg)
 
 PlantUML source: [diagrams/03-tag-names-a-handler.puml](diagrams/03-tag-names-a-handler.puml).
 
@@ -701,22 +627,19 @@ PlantUML source: [diagrams/03-tag-names-a-handler.puml](diagrams/03-tag-names-a-
 
 It buys two things that are not decorative.
 
-- **One resolution story, one registry.** A specification *installs* the very
-  tags that FLTs later resolve. The registration path (§VI) and the FLT
-  resolver path (§VII) are the same path; there is no translation layer between
-  how a language is named when defined and how it is named when used.
+- **One installed identity, separated authorities.** A specification contributes
+  to the fingerprinted record from which an opaque handle is installed. A
+  lexical alias may then name that handle for an FLT. Registry loading,
+  installation, alias binding, and publication are distinct authority checks.
 - **Unforgeable, not conventional, namespacing.** Naming schemes that rely on
   convention can be squatted; a `GPrivate` derived from the fingerprint cannot.
   The consequence, established in the FLT FIPS, is that a mismatch is always a
   *non*-firing and never a *wrong* firing.
 
-It stops in one place, and the difference is worth stating rather than papering
-over: **an FLT tag and an island tag interpret raw source text; a value tag
-interprets an already-parsed value.** The first two are reader-level constructs
-and inherit the modal-lexer delimiter obligations catalogued in the FLT FIPS —
-fence run lengths, heredoc words, escape tracking. The value notation inherits
-none of them, because Rholang's parser has produced the value before any tag is
-examined. The shared content is the resolution discipline, not the syntax.
+It stops in one place: an FLT handle parses delimiter-bounded guest chunks and
+structural hole terminals, while a value tag interprets an already-parsed value.
+The FLT therefore inherits bounded modal-lexer obligations; the value notation
+does not. Neither path concatenates an interpolated value into source.
 
 ### II.3 Consequence for extensibility
 
@@ -729,94 +652,24 @@ transported, stored, or matched.
 
 ## Part III — The In-Rholang Specification Language
 
-### III.1 Prior art, credited and read
+### III.1 Design inputs
 
-Two bodies of work precede this FIPS and are its foundation.
+The proposal combines three complementary artifacts.
 
-**Michael Stay's extender design.** A language specification is a
-**presentation**, and an **extender** is a *function from presentations to a
-presentation*. It is deliberately **not** called a functor: GSLT composition has
-no morphism-level story, so functoriality is neither claimed nor relied on
-anywhere in this FIPS. An extender body is a left-associative chain of block
-modifiers over a base presentation. The mockup:
+1. Greg Meredith's and Michael Stay's `Module` / `Theory` notation defines the
+   normative authoring surface: typed theory parameters, `Empty`, `free`, local
+   `let`, theory application, join / meet / difference, ordered builders,
+   imports, and one or more `theory` entry expressions.
+2. The data-faithful Rholang DDL defines the canonical construction and
+   analysis form. Its maps, lists, strings, integers, booleans, and `Nil` encode
+   every field of `LanguageDef` without requiring a second content parser.
+3. `GSLT/src/main/bnfc/metta_venus.cf` supplies the exhaustive MeTTaIL grammar
+   against which the surface and value forms are checked for coverage.
 
-```text
-export extender MyExtender(arg1, arg2) {
-  { arg1 \/ arg2 }          // a base presentation, modified by what follows
-    semantics M1.Go         // optional; defaults to Rust
-    types { … } terms { … } literals { … }
-    equations { … } relations { … }
-    rewrites { … }
-}
-export language fooLang = MyExtender(Module1.bar, M2.Nested.SomeExtender(…))
-```
-
-with `\/` extender union, and — for parity purposes — **`relations` as the new
-name for `logic`**.
-
-**The `mettail-rust` `modules` branch** (Serhii and George) implements a
-substantial part of it as `mettail-spec`, the "MeTTaIL Unified Specification
-(MUS) compiler for `.rho` module files." What it actually built, established by
-reading the branch rather than by inference:
-
-| Component | File | What it does |
-| --- | --- | --- |
-| Surface AST | `src/surface.rs` | `SurfaceFile`, `Module`, `ExtenderDecl`, `LanguageDecl`, `SpaceDecl`, `ExtenderExpr`, `LanguageExpr`, `IslandToken`, `ContextTemplate` |
-| Parser | `src/parser.rs` | hand-written; `import` / `module` / `export` / `extender` / `language` / `space`; precedence-climbing `ExtenderExpr` |
-| Suffix kinds | `src/surface.rs` | `Types`, `Terms`, `Literals`, `Equations`, **`Relations`**, `Rewrites`, `Exports`, `Replacements` |
-| Fragment parsing | `mettail-ast/src/fragments.rs` | `parse_{types,terms,literals,equations,rewrites,logic,relations}_fragment` — wraps a brace body in its keyword and calls the **existing** `mettail-ast` parser |
-| Resolution | `src/resolve.rs` | import graph, cycles forbidden |
-| Assembly | `src/assemble.rs` | extender application, right-biased union merge, strict conflict policy on overlapping term labels |
-| NTIR | `src/ntir.rs` | named, hashed presentation; `to_language_def()` reaches the seam |
-| Islands | `src/island/` | tag-dispatched foreign regions with a plugin registry |
-| Semantics | `src/ntir.rs`, `src/semantics.rs` | `SemanticsTarget { Rust, Unknown }`; Rust projection refuses anything but `Rust` |
-| Projection | `src/project/rust.rs` | emits a `language!` body and writes `.rs`; `languages/build.rs` generates `MyCalc` from `specs/mycalc/*.rho` |
-| Parity | `src/parity.rs`, `tests/parity_test.rs` | diffs a projected language against a monolithic `language!` snapshot |
-
-Four observations about that branch matter for this FIPS, and the last two are
-qualifications on how far it can be cited as evidence.
-
-1. **The seam verification of §I holds there too.** `Ntir` stores
-   `Vec<LangType>`, `Vec<GrammarRule>`, `Vec<Equation>`, `Vec<RewriteRule>`,
-   `Option<LogicBlock>` — the *same* `mettail-ast` types — and reaches
-   `LanguageDef` directly. Nothing was re-modelled.
-2. **The block bodies are still Rust token streams.** `ExtenderExpr::Suffix`
-   carries `tokens: TokenStream` *and* `raw: String`, and the fragment parsers
-   are `syn`-based. So the branch removes the *macro invocation* from the
-   authoring surface but does not remove the `syn` dependency from the
-   specification *content*, and today's terminal step is still emitting
-   `language!` source for `rustc` to expand. That is a correct and deliberate
-   bootstrap, and it is exactly the remaining gap this FIPS closes.
-3. **The branch's model is roughly half of today's.** The `modules`-branch
-   `LanguageDef` has 8 fields; the verification base's has 16.
-   `Ntir::to_language_def` passes
-   seven components and hard-defaults `options` to empty. `mettail-spec` has
-   never seen `extends` / `includes` / `mixins`, `refinement_types`,
-   `token_defs`, `mode_defs`, `sync_constraints`, `tree_invariants`, or
-   `guard_config`. So §I.6's "verified" holds **over the fields the branch
-   models**, and the six block kinds it has never modelled are the ones §III.3's
-   scoped open item is about — five of which remain as §IV.12's gap **G-4**,
-   `options` being closed by §III.3's Refinement 3.
-4. **Its parity harness cannot discharge this FIPS's parity obligation.**
-   `mettail-spec/src/parity.rs` compares a seven-field `LanguageSnapshot`
-   (`name`, `type_names`, `term_labels`, `equation_names`, `rewrite_names`,
-   `has_literals`, `logic_relation_count`) that is **names only** and **sorts
-   them**, destroying the declaration order §III.4.1 argues is load-bearing; it
-   inspects no syntax pattern, carrier, premise, left/right pattern, option,
-   guard, token, mode, sync constraint, or tree invariant; and
-   `tests/parity_test.rs` asserts snapshot equality plus a hardcoded BLAKE3
-   `Ntir::hash`, never calling `language_definition_fingerprint`. Two
-   presentations with inverted precedence and entirely different syntax patterns
-   produce byte-identical snapshots. §III.2 explains why this FIPS does not
-   extend that harness — but the reason is **not** that the obligation went
-   away, and saying so would be the more comfortable claim rather than the true
-   one. Under the one-decoder decision the obligation is **rehoused and
-   re-signed**: it is no longer "two decoders must agree about a `LanguageDef`",
-   which is the obligation this harness was built for and cannot discharge; it
-   is **RT4** (§III.2), "desugaring a block body to a value and elaborating it
-   must yield what the fragment parser yields from the same text" — a parity
-   obligation in the ordinary sense, over the arrow this FIPS adds rather than
-   between two decoders. The branch harness is superseded rather than vindicated.
+The surface is syntactic sugar over the value form. Both elaborate through the
+same validator and lower to the same versioned GrammarCore. Consequently,
+automatic grammar construction operates on ordinary Rholang values while
+human authors use the concise module notation.
 
 ### III.2 Three layers, and what this FIPS adds
 
@@ -826,20 +679,17 @@ value." They are different layers.
 
 | Layer | What it is | Status | Owner |
 | --- | --- | --- | --- |
-| **L0 — authoring surface** | `extender` / `language` declarations; `ExtenderExpr` with `semantics`, `context`, union, call, and the eight content suffixes | [Branch], refined in §III.3 | Stay; `modules` branch |
-| **L1 — presentation content** | the content of a presentation: what goes *inside* `types { … }`, `terms { … }`, and the rest — **and, additionally, the six block kinds that have no L0 `Content` wrapper at all** | **[Proposed]**: a canonical Rholang **value**; DDL text becomes surface syntax over it | this FIPS, §III.4 |
-| **L2 — the seam** | `LanguageDef`, and every backend below it | [Implemented], unchanged | `mettail-ast` |
+| **L0 — Rholang surface** | `Module` / `Theory` nodes injected into the existing `Proc` grammar in `languages/src/rholang.rs` | normative in §III.3 | Greg and Mike's notation, refined by this FIPS |
+| **L1 — canonical presentation** | the immutable ordinary-Rholang `language/2` value, including the exhaustive data-faithful schema | normative in §III.4 | this FIPS |
+| **L2 — shared grammar core** | validated, normalized GrammarCore and a verified parser image | normative in Parts VIII and XVI | compile-time and runtime frontends |
+| **L3 — installed capability** | an opaque, policy-bound `InstalledLanguageHandle` used by FLTs | normative in Parts VII, IX, and XVII | the Rholang runtime |
 
-> **L1 is a superset of "what goes inside an L0 block", not a synonym for it.**
-> Six block kinds — `options`, `tokens`, `modes`, `sync`, `tree_invariants`,
-> `guards` — have **no L0 `Content` suffix to go inside** (§III.3's scoped open
-> item; five of them remain as gap **G-4**, and `options` is closed by that
-> section's Refinement 3, which gives it a `LanguageDecl` clause rather than a
-> suffix). Their spelling is an L1 key of the whole-specification `Spec` map.
-> Reading the L1 row as "the inside of an L0 block" would make those six
-> unspellable in either layer, which is not what the design says. The correct
-> reading is: L1 is the content language; L0 is one — currently incomplete — way
-> of *assembling* content out of named, composable fragments.
+> **L1 is a superset of the convenience builders in L0.** `options`,
+> `literals`, `tokens`, `modes`, `sync`, `tree_invariants`, `guards`,
+> `relations`, and backend metadata remain constructible in the exhaustive
+> value schema even when the initial `Theory` grammar has no dedicated builder.
+> L0 is the ergonomic composition surface; L1 is the complete programmatic
+> substrate and authority.
 
 #### One decoder from a value, and what that does and does not settle
 
@@ -847,11 +697,12 @@ A presentation has **two admissible *surfaces*** and **exactly one decoder from
 a value**. This is normative, and the qualification in it is load-bearing.
 
 ```math
-\mathrm{parse\_ddl} : \texttt{TokenStream} \rightharpoonup \mathrm{Value}, \qquad \mathcal{E} : \mathrm{Value} \rightharpoonup \texttt{LanguageDef}.
+\mathrm{elaborate}_{DDL} : \mathrm{RholangAst} \rightharpoonup \mathrm{Value}, \qquad
+\mathcal{E} : \mathrm{Value} \rightharpoonup \mathrm{GrammarCore}.
 ```
 
-`parse_ddl` is a **desugarer**: it reads today's DDL text — the content of a
-`types { … }` block and its siblings — and produces a *specification value*.
+`elaborate_DDL` is a **desugarer** over already parsed Rholang AST nodes: it
+reads `Module` / `Theory` nodes and produces a specification value.
 $`\mathcal{E}`$ is the **sole** function from a value to a `LanguageDef`: there
 is no second elaborator, no second validator, and no second fingerprint
 computation **on the value path**.
@@ -859,8 +710,9 @@ computation **on the value path**.
 > **★ What this does not claim, stated before the benefit rather than after
 > it.** `language!` still exists (§XIII.1 makes its retention normative), and its
 > step 2 is `parse_macro_input!(input as LanguageDef)` — Rust tokens straight
-> into `LanguageDef`, not through a value. `parse_ddl` **desugars the extender
-> `Content` block**; it is a third function beside the two that exist, not a
+> into `LanguageDef`, not through a value. The `Module` / `Theory` parser
+> **desugars a whole surface module to `language/2`**; it is a third function
+> beside the two that exist, not a
 > replacement for the macro's whole-definition parser. So figure 1 draws two
 > arrows into `LanguageDef` because there **are** two, and the one-decoder
 > property is scoped to the arrow this FIPS adds.
@@ -871,16 +723,16 @@ computation **on the value path**.
 >
 > | Gap | What has no v1 value spelling | Which shipped language stops compiling |
 > | --- | --- | --- |
-> | **G-1** | a `relations` rule with a host body | `RhoCalc` |
-> | **G-3** | *introducing* an opaque carrier — `RhoCalc` declares `![Arc<…ReadZipperLit>] as ReadZipper` rather than naming a registered one | `RhoCalc` |
+> | **G-1** | a `relations` rule with a host body | `Rholang` |
+> | **G-3** | *introducing* an opaque carrier — `Rholang` declares `![Arc<…ReadZipperLit>] as ReadZipper` rather than naming a registered one | `Rholang` |
 > | **G-2** | `compose_languages!` | `CalcLambda` |
 >
 > Note which languages are **not** in that table, because the boundary is
 > narrower than "everything with Rust in it": `Calculator` and `LedTest` carry
 > 127 and 7 native bodies respectively and would route through the value form
-> perfectly well, as `("src", "Rust", …)` — a form that is admissible at
+> perfectly well, as `["src", "Rust", …]` — a form that is admissible at
 > macro-expansion time, which is by definition local (§III.6.4). What blocks
-> `RhoCalc` and `CalcLambda` is not embedded Rust; it is two constructs the value
+> `Rholang` and `CalcLambda` is not embedded Rust; it is two constructs the value
 > form has no production for at all.
 >
 > Two shipped languages stopping compilation contradicts normative §XIII.1. The
@@ -910,12 +762,12 @@ mechanism by which it happens, has converted a managed risk into an unmanaged
 one.
 
 **Why the value path has one decoder and not two.** The obvious alternative —
-keep `parse_ddl` producing a `Presentation` directly, and add
+keep `desugar_module` producing a `Presentation` directly, and add
 $`\mathcal{E}_{\mathrm{pres}}`$ beside it — institutionalizes exactly the
 failure this repository has been burned by before, and which the standing
 *no dual runtime paths* discipline forbids. Concretely, two decoders targeting
 one identity fail like this. Suppose
-`parse_ddl` gains field $`N+1`$ — and it demonstrably does grow: `#[tier(...)]`,
+`desugar_module` gains field $`N+1`$ — and it demonstrably does grow: `#[tier(...)]`,
 `*flt(...)`, `pathmap`, `#opt`, guards, connectives, channels, theories, modal
 lexing, `sync`, and tree invariants all arrived after the first version — and
 $`\mathcal{E}_{\mathrm{pres}}`$ does not. Then
@@ -934,26 +786,26 @@ No stage emits a diagnostic. Worse, the strongest security property in this FIPS
 drift into an undiagnosable dead language.
 
 Under the one-decoder rule that class of bug cannot be written down **between
-DDL text and a value**. Within the value path, encoding parity stops being a
-test obligation and becomes a **type**: `parse_ddl` cannot disagree with
-$`\mathcal{E}`$ about a `LanguageDef`, because `parse_ddl` never produces one.
+Module / Theory text and a value**. Within the value path, encoding parity stops being a
+test obligation and becomes a **type**: `desugar_module` cannot disagree with
+$`\mathcal{E}`$ about a `LanguageDef`, because `desugar_module` never produces one.
 
-##### `parse_ddl`'s obligation, with the correct sign
+##### `desugar_module`'s obligation, with the correct sign
 
-The obligation is emphatically **not** that `parse_ddl` be *total*. Totality
+The obligation is emphatically **not** that `desugar_module` be *total*. Totality
 would be the wrong requirement, and stating it would license the wrong
 behaviour: a total function must produce *something* for every token stream,
 which permits it to drop a field it does not understand and forbids the loud
-alternative. `parse_ddl` gets the same discipline §III.6.3 gives
+alternative. `desugar_module` gets the same discipline §III.6.3 gives
 $`\mathsf{enc}`$ — **a stated domain, and an error outside it**:
 
-- **Domain.** $`\mathrm{dom}(\mathrm{parse\_ddl})`$ is exactly the token
+- **Domain.** $`\mathrm{dom}(\mathrm{desugar\_module})`$ is exactly the token
   sequences the corresponding `mettail-ast` fragment parser accepts —
   `parse_types_fragment`, `parse_terms_fragment`, `parse_literals_fragment`,
   `parse_equations_fragment`, `parse_rewrites_fragment`,
   `parse_relations_fragment` — restricted to those whose content lies in
   §III.4.2's grammar.
-- **Outside it, `parse_ddl` errors.** A `types { … }` body naming a construct
+- **Outside it, `desugar_module` errors.** A `types { … }` body naming a construct
   with no value spelling — a `theory` path, a host-bodied `relations` rule, an
   `![{ … }]` under a non-`Rust` semantics — is a hard `Err`, reported at the
   offending token, and **never** an approximation, a dropped field, or a
@@ -963,7 +815,7 @@ The property that actually has to hold is an **equality of two paths**, and it
 is a parity obligation in the ordinary sense:
 
 ```math
-\mathcal{E} \circ \mathrm{parse\_ddl} \;=\; \left[\!\left[\; \texttt{DDL text} \longrightarrow \texttt{LanguageDef} \;\right]\!\right] \quad \text{on } \mathrm{dom}(\mathrm{parse\_ddl}),
+\mathcal{E} \circ \mathrm{desugar\_module} \;=\; \left[\!\left[\; \texttt{Module / Theory text} \longrightarrow \texttt{LanguageDef} \;\right]\!\right] \quad \text{on } \mathrm{dom}(\mathrm{desugar\_module}),
 ```
 
 read: desugaring a block body to a value and elaborating it yields the same
@@ -972,16 +824,16 @@ read: desugaring a block body to a value and elaborating it yields the same
 **Its check is a new corpus test, not §III.8's round trip.** This must be said
 plainly, because §III.8's loop is
 $`\mathsf{enc} \to \mathcal{W} \to \mathcal{R} \to \mathcal{E} \to \mathcal{F}`$
-and **`parse_ddl` does not appear in it** — that loop starts from a
+and **`desugar_module` does not appear in it** — that loop starts from a
 `LanguageDef`, so it cannot witness a property of a function that starts from
 text. Naming it as the check would be naming an instrument that cannot take the
 measurement. The obligation's check is:
 
 > **RT4 — DDL parity.** For every `language!` body in `languages/src/*.rs`, and
 > for each of its block bodies $`b`$: assert
-> $`\mathcal{E}(\mathrm{parse\_ddl}(b))`$ agrees with the corresponding
+> $`\mathcal{E}(\mathrm{desugar\_module}(b))`$ agrees with the corresponding
 > sub-record of `syn::parse_str::<LanguageDef>` applied to the whole body. Where
-> $`b \notin \mathrm{dom}(\mathrm{parse\_ddl})`$, assert that `parse_ddl`
+> $`b \notin \mathrm{dom}(\mathrm{desugar\_module})`$, assert that `desugar_module`
 > **errors** — a block that silently produced a smaller value would pass a
 > weaker test and is exactly what this one exists to catch.
 
@@ -1022,7 +874,7 @@ design gives is *"it may, and that costs nothing structurally."*
 | Role | What plays it | Status |
 | --- | --- | --- |
 | **1. Programmatic substrate** | the canonical Rholang **value** (§III.4) | **not optional** |
-| **2. Human authoring surface** | today, the L0 extender surface or the value written directly; **reserved**: a bespoke specification syntax | **open** |
+| **2. Human authoring surface** | Greg and Mike's capitalized `Module` / `Theory` syntax, or the value written directly | **settled by §III.3 and §XVI** |
 
 Role 1 is not a preference. The Motivation's central use — *"a contract can take
 a specification, add a rewrite rule, and hand back a new specification"* — is a
@@ -1034,12 +886,14 @@ registry stores it, $`\mathcal{E}`$ decodes it, $`\mathcal{F}`$ fingerprints it,
 the gates run over it, and the security argument quantifies over it. **Role 1 is
 where the design's weight rests, and it does not move.**
 
-Role 2 is genuinely open, and can stay open without blocking v1.
+Role 2 is `Module` / `Theory`. Another future surface remains possible
+only if it desugars to the same value and passes the same parity obligation; it
+does not create another semantic pipeline.
 
 **Why adding a surface is cheap — a design property, not an accident.** §III.2's
 retreat to *one decoder from a value* already introduced a second arrow
-terminating on `Value`: `parse_ddl` desugars a non-value surface into the value
-form, and `parse_ddl` is not $`\mathcal{E}`$. A bespoke specification syntax is
+terminating on `Value`: `desugar_module` desugars a non-value surface into the value
+form, and `desugar_module` is not $`\mathcal{E}`$. A bespoke specification syntax is
 **the same shape**: a third arrow
 $`\mathrm{parse}_S : \mathrm{Text} \rightharpoonup \mathrm{Value}`$
 that inherits $`\mathcal{E}`$, the five gates, the fingerprint, the registry,
@@ -1066,7 +920,7 @@ supplies three things — and nothing else is required of them:
 
 1. $`\mathrm{parse}_S : \mathrm{Text} \rightharpoonup \mathrm{Value}`$, with a
    **stated domain and a hard error outside it**, exactly the discipline
-   §III.2 gives `parse_ddl` and §III.6.3 gives $`\mathsf{enc}`$;
+   §III.2 gives `desugar_module` and §III.6.3 gives $`\mathsf{enc}`$;
 2. a parity obligation of RT4's shape,
    $`\mathcal{E} \circ \mathrm{parse}_S = [\![\,S \rightarrow \texttt{LanguageDef}\,]\!]`$
    on $`\mathrm{dom}(\mathrm{parse}_S)`$, discharged by a corpus test;
@@ -1092,277 +946,159 @@ that path therefore requires all three of:
 - **runtime parse fuel**, because a static admission bound cannot bound the work
   a grammar induces on an input it also supplies.
 
-**★ And the mitigation, which is why the question can stay open.** None of that
+**★ Required publishing discipline.** None of that
 arises if the bespoke surface is **authoring-only**: author in whatever notation
 reads best, desugar **locally**, and publish the **value**. The parser then
 never faces an adversary, `⟨G5a⟩` keeps its current position, and the choice of
 surface becomes local tooling rather than a consensus decision. This FIPS
 **recommends** that arrangement and does not require it — *author in the
 surface, publish the value* — and it is the same discipline §V.3.4 already
-applies to `("src", …)`: a form may be perfectly reasonable locally and
+applies to `["src", …]`: a form may be perfectly reasonable locally and
 inadmissible over a network, and the two need not be the same form.
 
-The choice of Role 2 is therefore recorded as an open decision for Mike and
-Greg (**Q-7**, §XV) rather than settled here. Making either choice cheap is this
-FIPS's job; making it is not.
+Role 2 is therefore Greg and Mike's `Module` / `Theory` surface. Local tooling
+desugars it to `language/2`; the registry publishes the value. This is a
+requirement, not a choice between textual syntaxes.
 
-![Three layers: the L0 extender authoring surface, the L1 presentation content in which DDL text is surface sugar desugared by parse_ddl into the canonical Rholang value, and the L2 LanguageDef seam that every backend consumes, reached by the single elaborator](diagrams/08-three-layers.svg)
+![Three layers: the L0 Module/Theory authoring surface desugars to the L1 canonical language/2 Rholang value, which alone lowers through GrammarCore to the existing backend seam](diagrams/08-three-layers.svg)
 
 PlantUML source: [diagrams/08-three-layers.puml](diagrams/08-three-layers.puml).
 Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
 
-### III.3 L0 — the extender surface
+### III.3 L0 — `Module` and `Theory` inside Rholang
 
-This FIPS adopts the surface below. It is Stay's grammar as implemented on the
-`modules` branch, with the module spine elided per §Scope and two refinements
-marked ★.
+The grammar below is an extension of the `Proc` entrypoint in the existing
+nouveau Rholang `language!` definition. `DdlModule` and `DdlTheory` are bound
+terms carried by `Proc`; they are not a file entrypoint and do not create a new
+language. A process may send, receive, store, pattern-match, transform, install,
+or publish them like other immutable Rholang data. A source unit may contain any
+number of these terms. A module may export any number of language
+specifications, and a standalone theory needs no enclosing module.
+
+The grammar combines Greg's prototype with the explicit context, collection,
+observation, capability, and resource features required by the data-faithful
+DDL. Keywords are contextual after `Module` or `Theory`; they must not become
+global Rholang lexer reservations.
 
 ```ebnf
-(* ══ LEXICAL LEVEL ══════════════════════════════════════════════════════
-   Stated normatively, because a grammar shown only at the phrase level
-   cannot be implemented from.  Terminals below are UTF-8 code points. *)
+Proc          ::= DdlModule | DdlTheory ;
+DdlModule     ::= { Import } "Module" Ident "{" { ModuleItem } "}" ;
+DdlTheory     ::= "Theory" Ident "(" [ TheoryParam { "," TheoryParam } ] ")"
+                  "{" TheoryExpr "}" ;
 
-Whitespace      ::= U+0009 | U+000A | U+000D | U+0020 ;
-LineComment     ::= "//" { any code point except U+000A } ;
-BlockComment    ::= "/*" { BlockComment | any code point } "*/" ;  (* NESTING *)
-DocComment      ::= "///" { any code point except U+000A } ;
+ModuleItem    ::= TheoryDecl | TheoryStmt | Proc ;
+Import        ::= "import" String "as" Ident
+                | "import" Ident "from" String ;
+TheoryDecl    ::= DdlTheory ;
+TheoryParam   ::= Ident ":" Path ;
+TheoryStmt    ::= "theory" TheoryExpr ;
+Path          ::= Ident { "." Ident } ;
 
-(* Whitespace and LineComment/BlockComment are discarded between tokens.
-   A DocComment is NOT discarded: it attaches to the declaration that
-   follows it and becomes that declaration's "doc" key (III.4.2), which
-   III.7 excludes from the fingerprint. *)
+TheoryExpr    ::= TheoryJoin [ "\\" TheoryExpr ] ;
+TheoryJoin    ::= TheoryMeet { "\\/" TheoryMeet } ;
+TheoryMeet    ::= TheoryBuild { "/\\" TheoryBuild } ;
+TheoryBuild   ::= TheoryAtom { Builder } | Builder { Builder } ;
+TheoryAtom    ::= "Empty"
+                | "free" "(" Path ")"
+                | Path [ "(" [ TheoryExpr { "," TheoryExpr } ] ")" ]
+                | "let" Ident "=" TheoryExpr "in" "(" TheoryExpr ")"
+                | "{" TheoryExpr "}"
+                | "(" TheoryExpr ")" ;
 
-Ident           ::= IdentStart { IdentContinue } ;
-IdentStart      ::= "A".."Z" | "a".."z" | "_" ;
-IdentContinue   ::= IdentStart | "0".."9" ;
-(* Ident must additionally be DISJOINT from the reserved sets of IX.5.1;
-   an elaborator that admits a reserved label is unsound, not merely lax. *)
+Builder       ::= Types | Exports | Replacements | Terms | Equations | Rewrites | Data ;
+Types         ::= "Types" "{" { Ident ";" } "}" ;
+Exports       ::= "Exports" "{" { Ident [ "=>" Ident ] ";" } "}" ;
+Replacements  ::= "Replacements" "{" { Ident "=>" TermRule } "}" ;
+Terms         ::= "Terms" "{" { TermRule } "}" ;
 
-Int             ::= ["-"] Digit { Digit } ;
-Digit           ::= "0".."9" ;
-Float           ::= ["-"] Digit {Digit} "." Digit {Digit} ;
-Bool            ::= "true" | "false" ;
+TermRule      ::= Ident "." [ Binding { "," Binding } ] "|-"
+                  { SyntaxItem } ":" Ident ";" ;
+Binding       ::= Ident ":" Sort
+                | "^" Ident "." Ident ":" "[" Ident "->" Ident "]" ;
+Sort          ::= Ident
+                | ( "HashBag" | "Set" | "List" ) "(" Ident ")" ;
+SyntaxItem    ::= String | Ident | Ident "." "*" "sep" "(" String ")" ;
 
-String          ::= '"' { StringChar } '"' ;
-StringChar      ::= any code point except '"', "\" and U+000A
-                  | Escape ;
-Escape          ::= "\" ( '"' | "\" | "n" | "r" | "t" | "0"
-                        | "u" "{" HexDigit {HexDigit} "}" ) ;
-HexDigit        ::= Digit | "a".."f" | "A".."F" ;
+Equations     ::= "Equations" "{" { Equation } "}" ;
+Equation      ::= { "if" Ident "#" Ident "then" } Ast "==" Ast ";" ;
+Rewrites      ::= "Rewrites" "{" { Rewrite } "}" ;
+Rewrite       ::= Ident ":" { "if" Ident "~>" Ident "then" }
+                  Ast "~>" Ast ";" ;
+Data          ::= "Data" "(" RholangValueLiteral ")" ;
 
-(* A REGEX literal, used by tokens{} and literals{} patterns. *)
-Regex           ::= "/" { any code point except "/" and U+000A | "\" any } "/" ;
-(* IX.3 R-2 constrains which regular expressions are ADMISSIBLE, not which
-   are lexable: no backtracking construct may appear. *)
-
-(* ══ FENCE RUN LENGTHS — the island / FLT delimiter rule ════════════════
-   A fence is a run of n >= 1 backticks.  The closing fence must have the
-   SAME length n as the opening fence.  A body may contain shorter AND
-   longer runs verbatim, with no escaping, which is what lets an island
-   quote source that itself contains backticks.
-
-   ★ TIE-BREAK, stated because the rule is otherwise not decidable.  A
-   naive reading — "the body contains no run of exactly n backticks" — is
-   ambiguous when a LONGER run abuts the closing fence: with n = 3 and a
-   body whose final character is followed by a run of FIVE backticks, one
-   may read two body backticks then a 3-fence, or one body backtick then
-   a 3-fence with a stray left over, and so on.  The scan is therefore
-   defined operationally and LEFT-TO-RIGHT, which makes it deterministic:
-
-     scan forward from the opening fence; at each maximal run of k
-     backticks:
-       - if k <  n : the run is BODY, verbatim;
-       - if k =  n : the run is the CLOSING fence; the body ends before it;
-       - if k >  n : the run is BODY, verbatim, ENTIRE — a longer run is
-                     never split to manufacture a closing fence.
-
-   So a 3-fenced body whose text runs into a five-backtick run is
-   UNTERMINATED, and that is a lexical error rather than a silent early
-   close.  To end a body with backticks, open with a longer fence. *)
-
-Fence(n)        ::= n * "`" ;
-Body(n)         ::= { MaximalRun(k) with k /= n | any non-backtick code point } ;
-MaximalRun(k)   ::= k * "`" , not preceded and not followed by "`" ;
-
-(* ══ DECLARATIONS ═══════════════════════════════════════════════════════
-   The module spine — File, Module, Import, Space — is specified in X.2 and
-   is NOT IMPLEMENTED in version 1 (work item W-13).  It is macro-side: X.1
-   establishes that `import` reads a compilation unit from the filesystem,
-   which a deployed Rholang process does not have, so the in-Rho form gets
-   the composition algebra below and reaches other specifications through
-   VI.2's registry instead.
-
-   The `export` MODIFIER is given a production here because the branch's
-   parser accepts it and II.1's worked example uses it.  Its MEANING is
-   X.2's: it makes a module member visible to an importer.  In v1 — where
-   there are no modules to import from — the modifier is accepted and has
-   no effect on the presentation or its identity.  ★ Do not confuse it with
-   the `exports` SUFFIX below, which renames categories and is unrelated;
-   X.1 tabulates the two. *)
-
-Export          ::= "export" ;
-
-ExtenderDecl    ::= {DocComment} [Export] "extender" Ident
-                    "(" [ExtenderArg {"," ExtenderArg}] ")"
-                    "{" ExtenderExpr "}" ;
-ExtenderArg     ::= Ident ;
-
-(* ★ Refinement 3: an OPTIONAL options clause.  Options are language-GLOBAL,
-   not a presentation fragment, so this is a clause on LanguageDecl and NOT a
-   ninth SuffixKind — see the G-4 carve-out below. *)
-LanguageDecl    ::= {DocComment} [Export] "language" Ident "=" LanguageExpr
-                    [ "options" "=" RhoValue ] ;
-
-LanguageExpr    ::= PathElement {"." PathElement}
-                    [ "(" [ LanguageExpr {"," LanguageExpr} ] ")" ] ;
-PathElement     ::= Ident ;
-
-(* ══ EXTENDER BODIES ════════════════════════════════════════════════════
-   A base presentation, then a LEFT-ASSOCIATIVE chain of modifiers.
-   Precedence, loosest to tightest:  \/  <  suffix application. *)
-
-ExtenderExpr    ::= ExtenderExpr "\/" ExtenderExpr        (* union *)
-                  | "{" ExtenderExpr "}"
-                  | ExtenderExpr "types"        Content
-                  | ExtenderExpr "literals"     Content
-                  | ExtenderExpr "terms"        Content
-                  | ExtenderExpr "equations"    Content
-                  | ExtenderExpr "relations"    Content    (* was: logic *)
-                  | ExtenderExpr "rewrites"     Content
-                  | ExtenderExpr "exports"      Content    (* category renaming *)
-                  | ExtenderExpr "replacements" Content    (* conflict resolution *)
-                  | ExtenderExpr "semantics" LanguageExpr
-                  | "context" "{" String "}"
-                  | "empty"
-                  | Ident [ "(" [ ExtenderExpr {"," ExtenderExpr} ] ")" ] ;
-
-(* ★ Refinement 1: a block body has two admissible SURFACES.  Both denote
-   the same value; III.2 makes parse_ddl a desugarer into RhoValue. *)
-Content         ::= "{" DdlText "}"        (* surface sugar: today's DDL text *)
-                  | "=" RhoValue ;         (* the canonical value, III.4      *)
-
-DdlText         ::= the token sequence accepted by the corresponding
-                    mettail-ast fragment parser
-                    (parse_types_fragment, parse_terms_fragment,
-                     parse_literals_fragment, parse_equations_fragment,
-                     parse_rewrites_fragment, parse_relations_fragment),
-                    balanced with respect to (), [] and {} ;
-
-RhoValue        ::= the Rholang literal grammar for maps, lists, tuples,
-                    strings, integers, floats, booleans and Nil, as given
-                    by the official Rholang tree-sitter grammar's
-                    `collection` production, restricted by III.4.2 ;
-
-(* ★ Refinement 2: the FLT/island tag form is stated once and shared, now
-   WITH the fence-run-length rule that II.2 promises. *)
-Island          ::= Ident Fence(n) Body(n) Fence(n) ;   (* n >= 1 *)
+Ast           ::= Ident
+                | "(" Ident { Ast } ")"
+                | "(" "subst" Ast Ast ")"
+                | "^" Ident "." Ast
+                | "{" [ Ast { "," Ast } ] "}"
+                | "..." Ident ;
 ```
 
-**★ Empty argument lists are derivable.** Both `LanguageExpr` and the call form
-of `ExtenderExpr` wrap their argument list in `[ … ]`, so `LambdaExt()` — a call
-with zero arguments — is a sentence of this grammar. That is deliberate: an
-extender abstracting over nothing is how §XI.3 writes a self-contained language,
-so requiring at least one argument would make the worked example underivable.
+#### III.3.1 Surface provenance and parity
 
-The reading of each construct:
+The spelling and precedence above are Greg Meredith's and Michael Stay's DDL,
+as instantiated by the `feature/module-syntax` prototype, with exhaustive
+construct coverage checked against `GSLT/src/main/bnfc/metta_venus.cf`.
 
-- **`empty`** is the empty presentation, the unit of union.
-- **union `\/`** merges two presentations. The branch implements it
-  right-biased with a **strict conflict policy**: overlapping term labels are an
-  error unless resolved by a `replacements { … }` block
-  (`assemble.rs::ensure_no_unresolved_term_conflicts`). This FIPS keeps that
-  policy — silent shadowing of a constructor would silently change a
-  fingerprint.
-- **`semantics LanguageExpr`** names the language in which this extender's
-  native `![ … ]` blocks are written. §V.
-- **`context { String }`** is a host preamble for generated code, with a single
-  `INSERT_HERE` marker where the assembled body is spliced
-  (`semantics.rs::insert_at_marker`; more than one marker is an error). It is a
-  **backend artifact**, not part of the presentation, and §III.7 excludes it
-  from the fingerprint accordingly.
-- **`exports { A => B }`** renames categories on the way out of an extender.
-- **`replacements { … }`** resolves a union conflict by naming which side wins
-  for a given term label. Its value form is the `Replacement` production of
-  §III.4.2.
-- **A bare `Ident`** is a base or a call — extender application, with the actual
-  argument presentation substituted into the body at assembly time.
-
-**Refinement 1** is the substance of this FIPS's change to L0: `Content` gains a
-second form. `types { … }` keeps working; `types = <value>` is the Rust-free
-alternative. **Refinement 3** adds one optional clause, for the reason given
-below. Everything else in the surface is unchanged.
-
-**★ Scoped open item — five block kinds have no L0 suffix, and one is closed
-here.** This must be stated plainly rather than papered over, because it bounds
-what the L0 surface can express. The `ExtenderExpr` grammar admits exactly
-**eight** content suffixes (`types`, `literals`, `terms`, `equations`,
-`relations`, `rewrites`, `exports`, `replacements`), matching `SuffixKind` on
-the `modules` branch. The L1 `Spec` map of §III.4.2 has **twenty-two** keys —
-two mandatory header keys, ten ordered content blocks, one unordered content
-block (`guards`), four composition keys, two presentation-algebra keys, and
-three backend/metadata keys. That arithmetic does not by itself locate the gap,
-so the gap is **enumerated** instead:
-
-| Block kind | L0 status | Which shipped languages need it |
+| Surface family | Prototype / BNFC source | Rholang refinement |
 | --- | --- | --- |
-| `options` | ★ **closed here** — Refinement 3's `LanguageDecl` clause | **18 of 31** flat specs carry one |
-| `tokens { … }` | value form only | RhoCalc (`raw mode`, `flt_body_brace`) |
-| `modes { … }` | value form only | RhoCalc |
-| `sync { … }` | value form only | none shipped |
-| `tree_invariants { … }` | value form only | none shipped |
-| `guards { … }` | value form only | GuardedRho (`guards { channels { … } }`) — and only GuardedRho |
+| imports | `import String as Ident`; `import Ident from String` | the string is classified by the injected resolver |
+| module | `Module Name { [Prog] }` | the complete node is one Rholang `Proc` value |
+| declaration | `Theory Name([VariableDecl]) { TheoryInst }` | also admitted as a standalone Rholang `Proc` |
+| entry result | `theory TheoryInst` | several statements may return several specifications |
+| atoms | `Empty`, `free(Path)`, reference, application, `let`, braces | unchanged |
+| algebra | postfix builders, `/\`, `\/`, `\` | unchanged precedence and associativity |
+| builders | `Types`, `Exports`, `Replacements`, `Terms`, `Equations`, `Rewrites` | `Data(v)` is the sole additive bridge to exhaustive L1 fields |
+| term rule | `Label . bindings \|- syntax : Cat ;` | unchanged judgment form |
+| equations and rewrites | freshness premise, `==`, named `~>`, conditional premise | unchanged |
+| AST | variables, S-expressions, substitution, abstraction, collections, remainder | unchanged |
 
-**★ Why `options` is closed now and the other five are deferred.** The two
-decisions have different costs and different consequences, and collapsing them
-would be a false economy in one direction and needless scope in the other.
+The implementation must run Greg's accepted and rejected prototype corpus
+unchanged, except that the root is parsed through nouveau Rholang's `Proc`
+entrypoint. A production-by-production coverage test compares this grammar to
+`metta_venus.cf`; a surface-to-value parity test asserts that every accepted
+surface form and its direct `language/2` construction have identical canonical
+bytes, GrammarCore, and semantic fingerprint.
 
-`options` is closed because it is the one whose absence bites **broadly** and
-whose fix is **smallest**. It is carried by 18 of the 31 flat shipped specs —
-more than half — so deferring it makes the extender surface unusable for most
-of the corpus rather than for two languages. And it is not really a `Content`
-suffix at all: options are **language-global** (`beam_width`,
-`unicode_normalization`, `emit_tests` are properties of a whole language, not of
-a presentation fragment), so composing them as a chainable suffix would raise a
-merge question the model does not ask. One optional clause on `LanguageDecl`
-adds **no** `SuffixKind` variant, no chain-algebra interaction, and no new merge
-policy: `parse_options`' closed ten-key set (§IV.2) is the value's schema, and
-`decode_options` is its decoder, both already specified.
+The precedence from tightest to loosest is postfix builder application,
+`/\`, `\/`, and `\`. Builder-only bodies have implicit base `Empty`. A module
+must contain at least one `theory` entry expression and may contain several;
+each produces a distinct language specification result in source order.
+Declaration order inside each theory retains the order required by its grammar.
+An implementation must reject forward references, undeclared categories,
+duplicate labels, unshared names at a join, replacement shadowing, import
+cycles, and any use of an argument outside the rule context.
 
-The other five are deferred with **G-4** because each is either unexercised or
-already blocked. `sync` and `tree_invariants` have **zero** shipped users.
-`tokens` and `modes` have exactly one — `RhoCalc` — which cannot be written as
-an extender in v1 for two *independent* reasons anyway (gap **G-1**, its
-host-bodied `relations` rules; and the zipper carrier of gap **G-3**), so
-closing G-4 for them buys nothing until those close. `guards` has exactly one
-user, `GuardedRho`, a leaf smoke-test with no composition requirement.
+The import string is classified before resolution. A `rho:` URI resolves
+through the injected registry resolver. A file URI or relative path addresses
+the future Rholang File I/O capability boundary: until that FIPS is implemented
+and an authorized resolver is injected, evaluation returns
+`FileIoUnavailable` without touching the host filesystem. A specification never
+acquires authority merely by naming either location.
 
-**Consequence, stated exactly.** `RhoCalc` — which declares a
-`tokens { … raw mode … }` block — and `GuardedRho` — which declares
-`guards { channels { … } }` — **cannot be written as extenders** in v1. They can
-be written as whole-specification values, which is the form this FIPS makes
-normative, so this does not block the proposal; but any claim that the extender
-algebra is a *complete* alternative authoring surface would be false, and is not
-made. Note also that `ast/src/merge.rs` **does** define composition over all six
-of these block kinds, so the macro's composition algebra is defined precisely
-where L0 is silent — the gap is in the surface, not in the model.
-
-Closing the remainder means adding five suffixes to `ExtenderExpr` and five
-`SuffixKind` variants, which is additive and breaks nothing; it is deferred to
-the module feature branch that owns the L0 surface, and recorded as gap **G-4**
-in §IV.12.
+`Data(v)` applies a canonical partial-specification value `v` to the current
+presentation. `v` must be a Rholang value literal containing only keys from
+§III.4; sequence fields append in source order, map fields merge recursively,
+and unequal scalar collisions are errors. `"mettail"` and `"name"` are
+not permitted in a partial value. This builder makes every exhaustive value
+field available even when it has no dedicated convenience builder. A program
+may also construct and publish a complete `language/2` value directly. Both
+paths have identical canonical bytes and GrammarCore fingerprints.
 
 ### III.4 L1 — the canonical value form
 
 #### III.4.1 Which Rholang shape carries which meaning
 
-The notation uses five Rholang literal forms, each for exactly one job, so that
-a reader can tell what kind of thing a node is from its brackets.
+The notation uses four Rholang literal forms. Three carry exactly one job
+each, so a reader can tell what kind of thing a node is from its brackets; the
+list carries two, and the two are told apart by the head and by the schema
+position, never by guessing.
 
 | Rholang form | Role | Why this form |
 | --- | --- | --- |
 | Map `{"k": v, …}` | **Record** — a declaration with named, optional, extensible fields | Named keys survive schema growth; an absent key is the natural encoding of `Option<…>` |
 | List `[a, b, c]` | **Ordered sequence** — where order is semantically load-bearing | Every sequence in `LanguageDef` is a `Vec`, and declaration order fixes binding power |
-| Tuple `(tag, x, …)` | **Tagged node** — a variant of a sum type | Fixed arity, `match`-friendly, visually distinct from a sequence |
+| List `[tag, x, …]`, head-tagged | **Tagged node** — a variant of a sum type | The head is a tag string from a closed alphabet; one component count per `(tag, arity)` pair; schema-directed and `match`-friendly |
 | String `"…"` | **Name or terminal** — label, category, parameter, grammar terminal, regex | All `Ident` or `String` in the model |
 | Integer / Boolean / `Nil` | **Scalar** — binding power, priority, flag, explicit absence | Direct correspondence |
 
@@ -1372,30 +1108,28 @@ Two choices deserve their reasons stated.
 set: `types`, `terms`, `equations`, `rewrites`, `token_defs`, `mode_defs`, and
 every syntax pattern are `Vec`s whose order is consulted. Declaration order
 fixes infix binding power, the prefix binding-power fallback
-(`max_infix_bp + 2`), lexer maximal-munch tie-breaking, and — as
-`languages/src/rhocalc.rs` documents at length in its "Divergence I" note — the
-carrier a numeral binds to. Encoding an ordered sequence as a set would destroy
+(`max_infix_bp + 2`), lexer maximal-munch tie-breaking, and the carrier a
+numeral binds to. Encoding an ordered sequence as a set would destroy
 information the fingerprint must preserve. `options` is the sole genuinely
 unordered member, and it is a map already.
 
-**Tuples distinguish tagged nodes from sequences.** In a presentation the two
-nest constantly: a syntax pattern is a *sequence* of *tagged* items. Writing
-both as lists makes `[[…], […]]` illegible; `[( … ), ( … )]` is immediate.
+**Tuples are deliberately not used.** The canonical value needs one uniform
+zero-or-more-arity tagged-node representation and remainder patterns for schema
+evolution. Head-tagged lists provide both without a one-element special case.
+This choice depends only on the nouveau Rholang value model in
+`languages/src/rholang.rs`, not on a legacy parser.
 
-> **Dependency, stated plainly and verifiably.** Official Rholang has tuples:
-> the tree-sitter grammar carries a `tuple` production reached from
-> `collection` (`rholang-tree-sitter/grammar.js:453,464`). **MeTTaIL's own
-> Rholang specification does not.** That is directly checkable rather than
-> taken on authority — `rg -c -i tuple languages/src/rhocalc.rs` returns **zero
-> matches**, so `RhoCalc` declares no tuple category, no tuple constructor, and
-> no tuple pattern. The obstacle is the `(a, b)` versus grouping-`(a)`
-> ambiguity, which a WPDA disambiguation must resolve rather than a heuristic.
->
-> Adding tuples to `languages/src/rhocalc.rs` is a **v1 prerequisite**, tracked
-> as work item **W-1**, and it is justified on its own merits: official Rholang
-> has tuples and MeTTaIL should converge with it regardless of this FIPS. If
-> W-1 slips, a list-only encoding profile is a mechanical fallback (§XIII.5),
-> at the cost of legibility only.
+A tagged node is therefore a **head-tagged list**: `[tag, x, …]`, the head a
+string drawn from the closed admissible-tag alphabet of §III.4.2. In a
+presentation, tagged nodes and plain sequences nest constantly — a syntax
+pattern is a *sequence* of *tagged* items — and the discriminant is stated
+once and used everywhere: **a list in a variant position whose head is a
+string is a tagged node** (§III.6.5). That rule is sound only because the
+decoder is schema-driven — the elaborator always knows from the schema whether
+a position expects a sequence or a node, so the head is a check, never a
+guess. The value form is expressible using existing nouveau Rholang literals;
+the L0 DDL surface is separately added to the same `Proc` grammar as specified
+in §III.3.
 
 #### III.4.2 The grammar of the value form
 
@@ -1446,7 +1180,7 @@ does not join those lines falsely reports `BehavioralPred`, `RefinementPred` and
 Spec ::= { "mettail"  : "language/2"       -- notation version, required
          , "name"     : Str                -- an identifier, gated by III.6
          , "options"? : { Str : Scalar, … }
-         , "semantics"?: Str | ("path", [Str, …])   -- §V; default "Rust"
+         , "semantics"?: Str | ["path", [Str, …]]   -- §V; default "Rust"
          , "types"?   : [ TypeDecl, … ]
          , "literals"?: [ LiteralDecl, … ]
          , "tokens"?  : [ TokenDecl, … ]
@@ -1460,7 +1194,7 @@ Spec ::= { "mettail"  : "language/2"       -- notation version, required
          , "relations"?: [ RelationDecl, … ]
          , "extends"? : [ Str, … ]  , "includes"? : [ Str, … ]
          , "mixins"?  : [ Str, … ]
-         , "exports"? : [ (Str, Str), … ]  -- category renaming, A => B
+         , "exports"? : [ [Str, Str], … ]  -- category renaming, A => B
          , "replacements"? : [ Replacement, … ]  -- union conflict resolution
          , "context"? : Str                -- host preamble; backend-only,
                                            --   excluded from the fingerprint
@@ -1482,13 +1216,13 @@ feeds all five $`\bigstar`$ fields into the hashed identity as *verbatim token
 text* — `:170` `push_tokens(native)` for $`\bigstar_1`$, `:486-487`
 `push_tokens(&code.code)` for $`\bigstar_2`$, `:269` `token.rust_code` for
 $`\bigstar_3`$, `:242` `push_tokens(&logic.content)` for $`\bigstar_4`$, `:1069`
-`push_tokens(&theory.theory_type)` for $`\bigstar_5`$. Therefore `("op", "add")`
+`push_tokens(&theory.theory_type)` for $`\bigstar_5`$. Therefore `["op", "add"]`
 and `![a + b]` **cannot** produce the same fingerprint, and no encoder can make
 them: the operator alphabet is not injective onto the corpus's bodies
-(`("op","and")` is ambiguous between `a && b`, at two sites, and `a & b`, at
+(`["op","and"]` is ambiguous between `a && b`, at two sites, and `a & b`, at
 three), and the macro's token rendering is not reproducible from a symbol
 (`led_test.rs:47` writes `![(-a)] step`, whose token text is `( - a )`, where
-`("op","neg")` would yield `- a`). §VI.3 and §XIII.2 state the consequence for
+`["op","neg"]` would yield `- a`). §VI.3 and §XIII.2 state the consequence for
 migration. The notation version is bumped so that the transition is **explicit,
 versioned, and diagnosable** rather than a silent non-match under one prefix,
 and §IX.2 shows why v1 and v2 tags can never be confused.
@@ -1506,9 +1240,9 @@ Carrier    ::= "i8"|"i16"|"i32"|"i64"|"i128"|"isize"
              | "u8"|"u16"|"u32"|"u64"|"u128"|"usize"
              | "f32"|"f64"|"bool"|"str"|"String"
              | "BigInt"|"BigRat"|"Fixed"
-             | ("vec", Str) | ("bag", Str) | ("set", Str)
-             | ("map", Str, Str) | ("pathmap", Str, Str)
-             | ("extern", Str)                        -- a registered opaque carrier
+             | ["vec", Str] | ["bag", Str] | ["set", Str]
+             | ["map", Str, Str] | ["pathmap", Str, Str]
+             | ["extern", Str]                        -- a registered opaque carrier
 
 CollectionDecl ::= { "kind" : "list"|"bag"|"map"|"set"|"pathmap"
                    , "open"? : Str , "close"? : Str
@@ -1533,13 +1267,13 @@ path is what removes $`\bigstar_1`$.
 > extension; without it W-3a is not implementable as written, and saying so is
 > cheaper than discovering it during implementation.
 >
-> A second, subtler consequence bounds `("extern", urn)`: a carrier's
+> A second, subtler consequence bounds `["extern", urn]`: a carrier's
 > contribution to the fingerprint is its **verbatim type text**, so
-> `rhocalc.rs:88-89`'s `![std::sync::Arc<crate::rhocalc::zipper::ReadZipperLit>]`
+> `rholang.rs`'s `![std::sync::Arc<crate::rholang::zipper::ReadZipperLit>]`
 > hashes the `crate::`-relative path, and the corpus's carrier spellings are not
 > a function of the alphabet symbol at all — `Vec<Proc>` and `HashMap<Proc,Proc>`
 > appear unqualified while `mettail_runtime::HashBag`, `HashSetLit`, and
-> `PathMapLit` appear qualified. An `("extern", urn)` therefore **cannot
+> `PathMapLit` appear qualified. An `["extern", urn]` therefore **cannot
 > reproduce a v1 carrier fingerprint**, which is one more reason the notation is
 > v2.
 
@@ -1559,41 +1293,41 @@ TermRule ::= { "label"    : Str
                             , "bound"?: Int, "force"?: Bool }
              , "doc"?     : Str }
 
--- ★ ONE arity per tag.  ("param", …) takes an OPTIONAL fourth component,
+-- ★ ONE arity per tag.  ["param", …] takes an OPTIONAL fourth component,
 -- the guard quantifier; it is absent for an ordinary parameter and present
 -- only inside a guards{} built-in predicate declaration (§IV.6).
-Param      ::= ("param",   Str, TypeExpr)              -- n : Name
-             | ("param",   Str, TypeExpr, Quantifier)  -- forall/exists marker
-             | ("binder",  Str, Str, TypeExpr)         -- ^x.p : [A -> B]
-             | ("binders", Str, Str, TypeExpr)         -- ^[xs].p : [A* -> B]
-             | ("guard",   Str)                        -- ?g : Guard
-             | ("optional", [ Param, … ])              -- *opt( … )
+Param      ::= ["param",   Str, TypeExpr]              -- n : Name
+             | ["param",   Str, TypeExpr, Quantifier]  -- forall/exists marker
+             | ["binder",  Str, Str, TypeExpr]         -- ^x.p : [A -> B]
+             | ["binders", Str, Str, TypeExpr]         -- ^[xs].p : [A* -> B]
+             | ["guard",   Str]                        -- ?g : Guard
+             | ["optional", [ Param, … ]]              -- *opt( … )
 
 Quantifier ::= "forall" | "exists"
 
 TypeExpr   ::= Str                                 -- a base category
-             | ("arrow", TypeExpr, TypeExpr)       -- [A -> B]
-             | ("multi", TypeExpr)                 -- A*
-             | ("vec", TypeExpr) | ("bag", TypeExpr) | ("set", TypeExpr)
-             | ("map", TypeExpr, TypeExpr)
-             | ("pathmap", TypeExpr, TypeExpr)     -- PathMap(K, V)
+             | ["arrow", TypeExpr, TypeExpr]       -- [A -> B]
+             | ["multi", TypeExpr]                 -- A*
+             | ["vec", TypeExpr] | ["bag", TypeExpr] | ["set", TypeExpr]
+             | ["map", TypeExpr, TypeExpr]
+             | ["pathmap", TypeExpr, TypeExpr]     -- PathMap(K, V)
 
--- ★ ("sep", …) and ("map", …) take a SyntaxItem source, not a bare name,
+-- ★ ["sep", …] and ["map", …] take a SyntaxItem source, not a bare name,
 -- because PatternOp::Sep carries `source: Option<Box<PatternOp>>` and the
 -- corpus chains them:  *zip(ns,xs).*map(|n,x| n "?" x).*sep(",")
 -- (class3multi.rs:57, class3opt.rs:55).
 SyntaxItem ::= Str                                 -- a parameter reference
-             | ("lit", Str)                        -- a quoted terminal
-             | ("sep", SyntaxItem, Str)            -- <source>.*sep("|")
-             | ("zip", Str, Str)                   -- *zip(a, b)
-             | ("map", SyntaxItem, [Str,…], [SyntaxItem,…])
-             | ("opt", [ SyntaxItem, … ])          -- *opt( … )
-             | ("tok", Str, Str | Nil)             -- a declared token kind
-             | ("flt", Str, Str, Str)              -- *flt(bind, open, close);
+             | ["lit", Str]                        -- a quoted terminal
+             | ["sep", SyntaxItem, Str]            -- <source>.*sep("|")
+             | ["zip", Str, Str]                   -- *zip(a, b)
+             | ["map", SyntaxItem, [Str,…], [SyntaxItem,…]]
+             | ["opt", [ SyntaxItem, … ]]          -- *opt( … )
+             | ["tok", Str, Str | Nil]             -- a declared token kind
+             | ["flt", Str, Str, Str]              -- *flt(bind, open, close);
                                                    --   components in THAT order
 
-BnfItem    ::= ("lit", Str) | ("nt", Str) | ("bind", Str)
-             | ("coll", Str, Str, Str, Str | Nil, Str | Nil)
+BnfItem    ::= ["lit", Str] | ["nt", Str] | ["bind", Str]
+             | ["coll", Str, Str, Str, Str | Nil, Str | Nil]
                                      -- (kind, elem, sep, open, close)
 ```
 
@@ -1614,28 +1348,28 @@ because `language!`'s pattern syntax is already an S-expression —
 
 ```text
 Pattern ::= Str                                    -- a metavariable
-          | (Str, Pattern, …)                      -- a constructor application
-          | ("eval", Pattern, Pattern)             -- (eval f a); the reserved head
-          | ("eval", Pattern, Str, Pattern)        -- legacy 3-argument form
-          | ("^",  Str, Pattern)                   -- ^x.body
-          | ("^*", [ Str, … ], Pattern)            -- ^[xs].body
-          | ("coll", [ Pattern, … ], Str | Nil)    -- {P, Q, ...rest}
-          | ("coll_typed", Str, [ Pattern, … ], Str | Nil)
-          | ("pmap", Pattern, [ Str, … ], Pattern) -- xs.*map(|x| body)
-          | ("pzip", Pattern, Pattern)             -- *zip(a, b)
-          | ("lit", Carrier, Scalar)               -- ★ a typed literal; see below
+          | [Str, Pattern, …]                      -- a constructor application
+          | ["eval", Pattern, Pattern]             -- (eval f a); the reserved head
+          | ["eval", Pattern, Str, Pattern]        -- legacy 3-argument form
+          | ["^",  Str, Pattern]                   -- ^x.body
+          | ["^*", [ Str, … ], Pattern]            -- ^[xs].body
+          | ["coll", [ Pattern, … ], Str | Nil]    -- {P, Q, ...rest}
+          | ["coll_typed", Str, [ Pattern, … ], Str | Nil]
+          | ["pmap", Pattern, [ Str, … ], Pattern] -- xs.*map(|x| body)
+          | ["pzip", Pattern, Pattern]             -- *zip(a, b)
+          | ["lit", Carrier, Scalar]               -- ★ a typed literal; see below
 
 Equation ::= { "name": Str, "premises"?: [Premise,…]
-             , "context"?: [("typed", Str, TypeExpr), …]
+             , "context"?: [["typed", Str, TypeExpr], …]
              , "left": Pattern, "right": Pattern }
 Rewrite  ::= (as Equation)
 
-Premise  ::= ("fresh", Str, Str)              -- x # P
-           | ("fresh_rest", Str, Str)         -- x # ...rest
-           | ("~>", Str, Str)                 -- S ~> T (rewrites only)
-           | ("rel", Str, [ Str, … ])         -- env_var(x, v)
-           | ("forall", Str, Str, Premise)    -- xs.*map(|x| premise)
-           | ("guard", Pred)                  -- a behavioral predicate, §VII.3
+Premise  ::= ["fresh", Str, Str]              -- x # P
+           | ["fresh_rest", Str, Str]         -- x # ...rest
+           | ["~>", Str, Str]                 -- S ~> T (rewrites only)
+           | ["rel", Str, [ Str, … ]]         -- env_var(x, v)
+           | ["forall", Str, Str, Premise]    -- xs.*map(|x| premise)
+           | ["guard", Pred]                  -- a behavioral predicate, §VII.3
 ```
 
 The reserved constructor head is exactly `eval` — verified against
@@ -1644,7 +1378,7 @@ The reserved constructor head is exactly `eval` — verified against
 and three-argument forms. Validation rejects a user constructor labelled `eval`,
 the same restriction `language!` already imposes.
 
-> **★ `("lit", Carrier, Scalar)` is a deliberate extension, not parity.** The
+> **★ `["lit", Carrier, Scalar]` is a deliberate extension, not parity.** The
 > omnibus paper's Turing-machine presentation writes transition entries as
 > `(Cf (Q 0u32) …)`, embedding a typed literal in a pattern. **`language!`
 > cannot parse that.** `parse_pattern` (`ast/src/language/parse.rs:2836-3006`)
@@ -1655,19 +1389,19 @@ the same restriction `language!` already imposes.
 > declaring `Q0` and `Q1` as nullary constants.
 >
 > The value form **can** express it, because a value is not a token stream. This
-> FIPS therefore adopts `("lit", Carrier, Scalar)` as a **named extension** with
+> FIPS therefore adopts `["lit", Carrier, Scalar]` as a **named extension** with
 > two consequences stated up front: (i) a specification using it has **no
 > `language!` projection**, so §III.1's Rust projection must reject it rather
 > than emit unparseable source; and (ii) it is one of the reasons the notation
 > is v2 rather than v1. The carrier is spelled with the closed `Carrier`
 > alphabet rather than folded into the tag, so that one production covers every
-> width — `("lit", "u32", 0)`, `("lit", "i64", -1)`, `("lit", "BigInt", 10)` —
+> width — `["lit", "u32", 0]`, `["lit", "i64", -1]`, `["lit", "BigInt", 10]` —
 > and the elaborator needs one arm rather than one per carrier.
 >
 > The same honesty applies to **multi-substitution**. `PatternTerm::MultiSubst`
 > exists, but `replacements` is only ever constructed as `vec![second]`, so an
 > arity of two or more replacements is **unreachable from `language!` source**.
-> `("eval", ("^*", […], body), replacements)` is the value spelling of the
+> `["eval", ["^*", […], body], replacements]` is the value spelling of the
 > reachable one-replacement case; the general case is a model capability with no
 > frontend, in either notation.
 
@@ -1679,7 +1413,7 @@ TokenDecl   ::= { "name": Str, "pattern": Str, "category"?: Str
                 , "eval"?: NativeEval, "priority"?: Int          -- §V
                 , "push"?: Str, "pop"?: Bool, "stream"?: Str }
 ModeDecl    ::= { "name": Str, "raw"?: Bool, "tokens": [TokenDecl, …] }
-SyncDecl    ::= ("align", Str, Str, Str) | ("track", Str, Str)
+SyncDecl    ::= ["align", Str, Str, Str] | ["track", Str, Str]
 RelationDecl ::= { "relation": Str, "params": [Str, …], "doc"?: Str
                  , "rules"?: [ Rule, … ] }        -- §V.5; GAP in v1, §IV.12 G-1
 GuardConfig ::= { "predicates"?  : [ BuiltinPredicate, … ]
@@ -1688,7 +1422,7 @@ GuardConfig ::= { "predicates"?  : [ BuiltinPredicate, … ]
                                      , "for"?: [Str,…]}, … ]
                 , "channels"?    : { "channel"?: [Str,…]
                                    , "join"?: [ {"label": Str
-                                                , "params": [(Str,Str),…]}, … ] } }
+                                                , "params": [[Str,Str],…]}, … ] } }
 ```
 
 `"theory"` names a **registered theory implementation**, not a Rust type path —
@@ -1716,8 +1450,7 @@ Scalar   ::= Str | Int | Float | Bool | Nil
 > reject an `Int` where the model declares a float rather than coerce it.
 
 **Predicates.** `Pred` is the single symbol under which two *different*
-predicate languages sit, and conflating them is what made earlier parity claims
-unearned. They are separated here.
+predicate languages sit, and conflating them produces overstated parity claims. They are separated here.
 
 ```text
 Pred     ::= RefinementPred          -- a TYPE refinement, in types{}.refine
@@ -1728,82 +1461,82 @@ Pred     ::= RefinementPred          -- a TYPE refinement, in types{}.refine
 -- Every model variant has a tag; the four SUGAR forms are marked and their
 -- lowering is normative.
 RefinementPred
-         ::= ("linear",  [(Str, Int), …], Rel, Int)   -- 2*x + 3*y <= 7   → Linear
-           | ("call",    Str, [PredArg, …])           -- R(x, C)          → Relation, negated=false
-           | ("ncall",   Str, [PredArg, …])           -- ~R(x, C)         → Relation, negated=true
-           | ("quant",   Quantifier, Str, Str | Nil, Int | Nil, RefinementPred)
+         ::= ["linear",  [[Str, Int], …], Rel, Int]   -- 2*x + 3*y <= 7   → Linear
+           | ["call",    Str, [PredArg, …]]           -- R(x, C)          → Relation, negated=false
+           | ["ncall",   Str, [PredArg, …]]           -- ~R(x, C)         → Relation, negated=true
+           | ["quant",   Quantifier, Str, Str | Nil, Int | Nil, RefinementPred]
                                                       -- q v [in D] [_{k=N}]. body → Quantified
-           | ("and",     [RefinementPred, …])         -- → nested And
-           | ("or",      [RefinementPred, …])         -- → nested Or
-           | ("not",     RefinementPred)              -- → Not
-           | ("implies", RefinementPred, RefinementPred)  -- → Implies
-           | ("term_eq",  PredArg, PredArg)           -- → TermEq
-           | ("term_neq", PredArg, PredArg)           -- → TermNeq
+           | ["and",     [RefinementPred, …]]         -- → nested And
+           | ["or",      [RefinementPred, …]]         -- → nested Or
+           | ["not",     RefinementPred]              -- → Not
+           | ["implies", RefinementPred, RefinementPred]  -- → Implies
+           | ["term_eq",  PredArg, PredArg]           -- → TermEq
+           | ["term_neq", PredArg, PredArg]           -- → TermNeq
            -- ── SUGAR: no model variant; lowered by the elaborator, normatively ──
-           | ("cmp",     Rel, Term, Term)             -- x > 0
-           | ("in",      Term, Domain)                -- x in {0..9}
-           | ("true") | ("false")
+           | ["cmp",     Rel, Term, Term]             -- x > 0
+           | ["in",      Term, Domain]                -- x in {0..9}
+           | ["true"] | ["false"]
 
-PredArg  ::= ("var", Str) | ("const", Str)            -- PredArg::{Var, Constant}
+PredArg  ::= ["var", Str] | ["const", Str]            -- PredArg::{Var, Constant}
 Rel      ::= "lt" | "le" | "gt" | "ge" | "eq" | "ne"
-Domain   ::= ("range", Int, Int) | ("finite", [Int, …])
-Term     ::= Str | Int | ("add"|"sub"|"mul", Term, Term) | ("neg", Term)
+Domain   ::= ["range", Int, Int] | ["finite", [Int, …]]
+Term     ::= Str | Int | ["add"|"sub"|"mul", Term, Term] | ["neg", Term]
 
 -- Behavioral predicates constrain the BEHAVIOUR of a process term, and are
 -- the right-hand side of the satisfaction predicate  t |= phi.
 -- (`BehavioralPred`, ast/src/language/model.rs:266 — 8 variants.)
 BehavioralPred
-         ::= ("call",    Str, [PredArg, …])           -- → RelationQuery, negated=false
-           | ("ncall",   Str, [PredArg, …])           -- → RelationQuery, negated=true
-           | ("quant",   Quantifier, Str, Str | Nil, Int | Nil, BehavioralPred)
+         ::= ["call",    Str, [PredArg, …]]           -- → RelationQuery, negated=false
+           | ["ncall",   Str, [PredArg, …]]           -- → RelationQuery, negated=true
+           | ["quant",   Quantifier, Str, Str | Nil, Int | Nil, BehavioralPred]
                                                       -- → Quantified
-           | ("and",     [BehavioralPred, …])         -- → nested And
-           | ("or",      [BehavioralPred, …])         -- → nested Or
-           | ("not",     BehavioralPred)              -- → Not
-           | ("implies", BehavioralPred, BehavioralPred)  -- → Implies
-           | ("ac_match", Str, [Str, …], Str | Nil)   -- bag, elements, rest → AcMatch
-           | ("true")                                 -- → Top, the identity predicate
+           | ["and",     [BehavioralPred, …]]         -- → nested And
+           | ["or",      [BehavioralPred, …]]         -- → nested Or
+           | ["not",     BehavioralPred]              -- → Not
+           | ["implies", BehavioralPred, BehavioralPred]  -- → Implies
+           | ["ac_match", Str, [Str, …], Str | Nil]   -- bag, elements, rest → AcMatch
+           | ["true"]                                 -- → Top, the identity predicate
 ```
 
 **The normative lowering of the four sugar forms.** Each is a notation
 convenience with **no** model variant behind it, so the elaborator must lower it
 and must say so when it cannot:
 
-- `("cmp", rel, t1, t2)` — if `rel` is `eq` or `ne` and both terms are `PredArg`
+- `["cmp", rel, t1, t2]` — if `rel` is `eq` or `ne` and both terms are `PredArg`
   shaped, lower to `TermEq` / `TermNeq`; otherwise move both sides to the left,
   normalize to $`\sum_i a_i x_i \mathbin{\mathrm{rel}} c`$, and emit `Linear`.
   A comparison that is **not linearizable** — a product of two variables, say —
   is `Err(NonLinearComparison, π)`, never an approximation. This is how
   `refinementsmoke.rs`'s `PosInt = { x: Int | x > 0 }` reaches the model:
-  `("cmp", "gt", "x", 0)` becomes `Linear { terms: [("x", 1)], relation: Gt, rhs: 0 }`.
-- `("in", t, ("range", lo, hi))` lowers to
-  `("and", [("cmp","ge",t,lo), ("cmp","le",t,hi)])`; `("in", t, ("finite", vs))`
-  lowers to a disjunction of `("cmp","eq",t,v)`.
-- `("true")` lowers to `Linear { terms: [], relation: Le, rhs: 0 }` (the
-  vacuously satisfiable constraint $`0 \le 0`$) and `("false")` to
+  `["cmp", "gt", "x", 0]` becomes `Linear { terms: [("x", 1)], relation: Gt, rhs: 0 }`.
+- `["in", t, ["range", lo, hi]]` lowers to
+  `["and", [["cmp","ge",t,lo], ["cmp","le",t,hi]]]`; `["in", t, ["finite", vs]]`
+  lowers to a disjunction of `["cmp","eq",t,v]`.
+- `["true"]` lowers to `Linear { terms: [], relation: Le, rhs: 0 }` (the
+  vacuously satisfiable constraint $`0 \le 0`$) and `["false"]` to
   `Linear { terms: [], relation: Le, rhs: -1 }` ($`0 \le -1`$). Both are stated
   explicitly because a lowering that reached the *fingerprint* by an unstated
   route would make two spellings of the same specification hash differently.
 
-> **★ Three earlier productions are withdrawn, and the reason is that the model
-> does not have them.** A notation that spells a thing the target cannot hold is
-> not a richer notation; it is an elaborator arm that must fail at run time.
+> **★ The following shapes are invalid because the model does not have them.**
+> A notation that spells a thing the target cannot hold is not a richer
+> notation; it is an elaborator arm that must fail at run time.
 >
-> - **`("sat", Pattern, BehavioralPred)`** — the explicit-subject form
+> - **`["sat", Pattern, BehavioralPred]`** — the explicit-subject form
 >   $`t \models \varphi`$. `Premise::BehavioralGuard(BehavioralPred)`
 >   (`model.rs:122`) carries the predicate **with no subject**: the subject is
 >   the rule's own redex. §VII.3 adopts $`\models`$ as the *surface* spelling of
 >   a guard, which it is; it does not follow that the subject is stored, and it
 >   is not. The value form therefore carries the predicate alone.
-> - **`("modal", Str, BehavioralPred)`** — this **contradicted §VII.3**, which
+> - **`["modal", Str, BehavioralPred]`** — this **contradicted §VII.3**, which
 >   deliberately declines to fix an encoding for the modality and reserves
->   `("modal", K, relies, indices, Pred)` for Meredith's indexed form. One of the
+>   `["modal", K, relies, indices, Pred]` for Meredith's indexed form. One of the
 >   two had to go; the reservation is the considered position, so the
->   rule-label-only arm is withdrawn. `("modal", …)` is **not admissible in v1**
+>   rule-label-only arm is unsupported. `["modal", …]` is **not admissible in v1**
 >   and `decode_pred` rejects it with `Err(ModalityNotInV1, π)`.
-> - **`("fresh", Str, Str)`** and **`("ground", Pattern)`** — freshness is a
+> - **`["fresh", Str, Str]`** and **`["ground", Pattern]`** — freshness is a
 >   `Premise`, not a `BehavioralPred` (`Premise::Freshness`, and the value form's
->   `("fresh", …)` / `("fresh_rest", …)` premise arms already carry it), and
+>   `["fresh", …]` / `["fresh_rest", …]` premise arms already carry it), and
 >   groundness is a runtime marker (`^gnd`), not a declarable predicate. Both
 >   were duplicate spellings of things the notation already has elsewhere.
 
@@ -1812,7 +1545,7 @@ and must say so when it cannot:
 > `refinementsmoke.rs`'s `PosInt = { x: Int | x > 0 }` lowers as above, and a
 > `guard(pred)` premise carries a `BehavioralPred`. The **full** modal layer is
 > **not** covered, and is not claimed — §VII.3 records why the notation
-> deliberately reserves `("modal", K, relies, indices, Pred)` rather than fixing
+> deliberately reserves `["modal", K, relies, indices, Pred]` rather than fixing
 > an encoding for Meredith's indexed form.
 
 **Tree invariants.** A recursive constraint language over the parse tree, whose
@@ -1822,24 +1555,24 @@ and must say so when it cannot:
 TreeInvariant ::= { "name": Str, "constraint": TreeConstraint, "doc"?: Str }
 
 TreeConstraint
-         ::= ("forall", Str, TreeDomain, TreeConstraint)   -- ∀ n ∈ D . C
-           | ("exists", Str, TreeDomain, TreeConstraint)   -- ∃ n ∈ D . C
-           | ("and", [TreeConstraint, …])                  -- C ∧ C
-           | ("or",  [TreeConstraint, …])                  -- C ∨ C
-           | ("not", TreeConstraint)                       -- ¬ C
-           | ("holds", Str, [TreeNodeRef, …])              -- a named node pred
-           | ("descends", TreeNodeRef, TreeNodeRef)        -- m ↓ n
+         ::= ["forall", Str, TreeDomain, TreeConstraint]   -- ∀ n ∈ D . C
+           | ["exists", Str, TreeDomain, TreeConstraint]   -- ∃ n ∈ D . C
+           | ["and", [TreeConstraint, …]]                  -- C ∧ C
+           | ["or",  [TreeConstraint, …]]                  -- C ∨ C
+           | ["not", TreeConstraint]                       -- ¬ C
+           | ["holds", Str, [TreeNodeRef, …]]              -- a named node pred
+           | ["descends", TreeNodeRef, TreeNodeRef]        -- m ↓ n
 
-TreeDomain   ::= ("children", TreeNodeRef) | ("subtree", TreeNodeRef)
-               | ("category", Str) | ("label", Str)
-TreeNodeRef  ::= Str | ("root") | ("parent", TreeNodeRef)
+TreeDomain   ::= ["children", TreeNodeRef] | ["subtree", TreeNodeRef]
+               | ["category", Str] | ["label", Str]
+TreeNodeRef  ::= Str | ["root"] | ["parent", TreeNodeRef]
 ```
 
 **Built-in guard predicates.** The `guards { … }` declaration form.
 
 ```text
 BuiltinPredicate ::= { "name"   : Str
-                     , "params" : [ Param, … ]     -- ("param", n, ty [, quant])
+                     , "params" : [ Param, … ]     -- ["param", n, ty [, quant]]
                      , "forms"  : [ [ SyntaxItem, … ], … ]  -- alternatives
                      , "annotations"? : { Str : Scalar, … }
                      , "doc"?   : Str }
@@ -1861,12 +1594,12 @@ Replacement ::= { "label"  : Str          -- the conflicting term label
 **Datalog rules.** Reserved for §V.5; **not** admissible in v1 (gap **G-1**).
 
 ```text
-Rule     ::= { "head"  : ("rel", Str, [ RuleTerm, … ])
+Rule     ::= { "head"  : ["rel", Str, [ RuleTerm, … ]]
              , "body"  : [ RuleAtom, … ] }
-RuleAtom ::= ("rel", Str, [ RuleTerm, … ])
-           | ("not", ("rel", Str, [ RuleTerm, … ]))
-           | ("guard", Pred)
-RuleTerm ::= Str | Scalar | (Str, [ RuleTerm, … ])
+RuleAtom ::= ["rel", Str, [ RuleTerm, … ]]
+           | ["not", ["rel", Str, [ RuleTerm, … ]]]
+           | ["guard", Pred]
+RuleTerm ::= Str | Scalar | [Str, [ RuleTerm, … ]]
 ```
 
 > `Rule` is given a production so the grammar has no dangling nonterminal, and
@@ -1887,14 +1620,15 @@ above are **overloaded across contexts**, and the elaborator resolves them by
 | --- | --- | --- |
 | `"map"` | a `Carrier`, a `TypeExpr`, and a `SyntaxItem` meta-operator | the schema position — a carrier slot, a type slot, or a syntax-item slot |
 | `"coll"` | a `Pattern` (elements + rest) and a `BnfItem` (kind, elem, sep, open, close) | the schema position — a pattern slot or an item slot |
-| `"lit"` | a `SyntaxItem` terminal `("lit", Str)` and a `Pattern` typed literal `("lit", Carrier, Scalar)` | the schema position, and secondarily the arity |
+| `"lit"` | a `SyntaxItem` terminal `["lit", Str]` and a `Pattern` typed literal `["lit", Carrier, Scalar]` | the schema position, and secondarily the arity |
 | `"param"` | with and without a quantifier | arity, within one context |
 
 This is admissible **only because the decoder is schema-driven**: at every point
 the elaborator knows which production it is decoding, so it knows which arm a tag
 selects. It would be inadmissible in a self-describing, position-free encoding —
-which is the same property §XIII.5 relies on for the list-only fallback profile.
-Naming the overloads here is what keeps that reliance explicit.
+and it is the same property that makes §III.6.5's head-tag discriminant a check
+rather than a guess. Naming the overloads here is what keeps that reliance
+explicit.
 
 ### III.5 Canonicalization
 
@@ -1950,7 +1684,7 @@ by inspection of the fragments:
    `"context"` keys, and no production makes either a list element — so
    ⟨canon an ordered sequence⟩ cannot silently shorten a `Vec` whose length is
    load-bearing.
-3. **A tuple component can never be `absent`,** for the same reason, so
+3. **A tagged node's component can never be `absent`,** for the same reason, so
    ⟨canon a tagged node⟩ cannot change an arm's arity and thereby its
    §III.4.4 disambiguation.
 
@@ -1970,10 +1704,10 @@ notation is order-load-bearing; canonicalization must not touch that order, and
 this fragment is where that commitment is discharged.
 
 ```text
-⟨canon a tagged node⟩ ≡                                -- schema is a Tuple production
-  (tag, args…) ← v
-  arm ← schema.arm(tag, arity(v))            -- schema-directed; III.4.4
-  return Tuple(tag, [ canon(a_i, arm.component(i)) | i ])
+⟨canon a tagged node⟩ ≡                            -- schema is a variant production
+  [tag, args…] ← v                                 -- head-tagged list; III.4.1
+  arm ← schema.arm(tag, arity(v))                  -- schema-directed; III.4.4
+  return List([Str(tag)] ++ [ canon(a_i, arm.component(i)) | i ])
 ```
 
 ```text
@@ -2050,8 +1784,8 @@ are worded accordingly.
 
 The elaborator is presented in literate form: a root fragment names the phases,
 each phase is defined and explained beneath it. Throughout, $`v`$ is the
-candidate value and $`\pi`$ is a **value path** — a list of map keys, list
-indices, and tuple positions locating a node inside $`v`$, e.g.
+candidate value and $`\pi`$ is a **value path** — a list of map keys and list
+indices locating a node inside $`v`$, e.g.
 `["terms", 3, "context", 0, 2]`.
 
 ```text
@@ -2086,10 +1820,10 @@ does not contain*:
 | Phase | How it introduces a name the gate never saw |
 | --- | --- |
 | `apply_extends` / `apply_includes` / `apply_mixins` | every constructor, category, token, and mode of the base language enters `def` here — and the base was resolved by *name*, so its contents were never in $`v`$ at all |
-| `exports { A => B }` | renames a category **to** `B`; `"exports": [("Foo", "^gnd")]` is a pair of ordinary strings that a raw-value gate over `types`/`terms`/`tokens` never inspects |
+| `exports { A => B }` | renames a category **to** `B`; `"exports": [["Foo", "^gnd"]]` is a pair of ordinary strings that a raw-value gate over `types`/`terms`/`tokens` never inspects |
 | `replacements { … }` | its `"rename"` key introduces a fresh label for a kept-both conflict resolution |
 
-A specification declaring `"exports": [("Foo", "^gnd")]` therefore passes a
+A specification declaring `"exports": [["Foo", "^gnd"]]` therefore passes a
 first-position gate cleanly and lands the reserved marker `^gnd` as a live
 category during composition — which is precisely the defect §IX.5.1 exists to
 close. The gate must run **after composition**, and
@@ -2181,8 +1915,8 @@ where the implementation puts it (`validator.rs:147-150`, the first statement of
     require ¬ is_reserved_reflect_label(n)     else Err(ReservedLabel, loc(n))
 
 streams(s) ≡ case s of                     -- SyncConstraint is a two-armed enum
-  ("align", a, b, _) → { a, b }            -- `stream_a`, `stream_b`
-  ("track", x, y)    → { x, y }            -- `auxiliary`, `primary`
+  ["align", a, b, _] → { a, b }            -- `stream_a`, `stream_b`
+  ["track", x, y]    → { x, y }            -- `auxiliary`, `primary`
 ```
 
 **Four families sit outside what an enumeration of the obvious blocks would
@@ -2350,7 +2084,7 @@ remaining eleven by that rule.
     eval    ← if r has "eval"
                 then Some(decode_native_eval(r["eval"], π+["eval"]))
                 else None
-    require (eval is a ("op", …))  ⟹  the syntax body has an operator terminal
+    require (eval is a ["op", …])  ⟹  the syntax body has an operator terminal
                                              else Err(OpWithoutTerminal, π)
     emit GrammarRule { label: r["label"], category: r["category"],
                        term_context: context, body,
@@ -2373,12 +2107,12 @@ precisely the defect this subsection exists to prevent.
 
 ```text
 ⟨reclassify_token_kinds(terms, kinds) : ()⟩ ≡
-  -- A ("tok", name, bind) syntax item is admissible only if `name` was declared
+  -- A ["tok", name, bind] syntax item is admissible only if `name` was declared
   -- by tokens{} or by a mode's token list.  The macro frontend performs the same
   -- reclassification after parsing, which is why it is replayed here rather than
   -- folded into decode_syntax_item: at decode_terms time the token set is not
   -- yet complete when terms precede tokens in the value's key order.
-  for each r ∈ terms, for each ("tok", name, _) ∈ r.body at position π :
+  for each r ∈ terms, for each ["tok", name, _] ∈ r.body at position π :
     require name ∈ kinds      else Err(UnknownTokenKind name, π)
     mark that item as a DECLARED token kind rather than a nonterminal reference
 ```
@@ -2393,15 +2127,16 @@ The remaining eleven fragments — `decode_options`, `decode_name_lists`,
 further design**, because each follows one uniform rule:
 
 > **The uniform decode rule.** For a production $`P`$, `decode_P(v, π)` requires
-> $`v`$ to have $`P`$'s Rholang shape (Map, List, Tuple, or Scalar) and errors
+> $`v`$ to have $`P`$'s Rholang shape (Map, List, or Scalar) and errors
 > with `Err(ExpectedP, π)` otherwise; for a Map it requires every mandatory key,
 > rejects any key outside $`P`$'s key set, and substitutes the model default for
-> each absent optional key; for a List it decodes elementwise **preserving
-> order**, extending $`π`$ with the index; for a Tuple it selects the arm by
-> $`(tag, arity)`$ — §III.4.4 — rejects an unknown tag or a wrong arity, and
-> decodes each component against that arm's component schema, extending $`π`$
-> with the position; for a Scalar it requires the declared scalar type with **no
-> widening** (§III.4.3).
+> each absent optional key; for a List in a sequence position it decodes
+> elementwise **preserving order**, extending $`π`$ with the index; for a List
+> in a variant position it requires a `Str` head — §III.6.5's discriminant —
+> selects the arm by $`(tag, arity)`$ — §III.4.4 — rejects an unknown tag or a
+> wrong arity, and decodes each component against that arm's component schema,
+> extending $`π`$ with the position; for a Scalar it requires the declared
+> scalar type with **no widening** (§III.4.3).
 
 That rule is what makes the elaborator *derivable from the schema* rather than
 hand-written per block, and it is also the reason the metacircular check of
@@ -2418,7 +2153,7 @@ Three fragments carry obligations the uniform rule does not:
   rejects a non-empty `"rules"` list in v1 with `Err(RuleBodiesNotInV1, π)` —
   gap **G-1**.
 - **`decode_semantics`** accepts a bare `Str` naming the semantics language, or
-  a `("path", [Str, …])` for a dotted `M2.Nested.Go` reference (§X), and
+  a `["path", [Str, …]]` for a dotted `M2.Nested.Go` reference (§X), and
   defaults to `"Rust"` when the key is absent. In v1 it accepts **only**
   `"Rust"`: any other target is `Err(SemanticsTargetNotInV1, π)`, matching the
   branch's own fail-closed check (§V.1) rather than admitting a target no
@@ -2442,7 +2177,7 @@ specification and a Rust-authored one **converge on the same augmentation pass,
 hence on structurally equal augmented definitions wherever $`\mathsf{enc}`$ is
 defined.** The stronger phrasing — *byte-identical* — would be false for a
 Rust-bearing language and is not claimed: §VI.3 establishes that a
-`("op", "add")` rule and a `![a + b]` rule differ in `rust_code`, so their
+`["op", "add"]` rule and a `![a + b]` rule differ in `rust_code`, so their
 definitions differ in a field and their identity strings differ with them. What
 converges is the *pipeline*, not the bytes.
 
@@ -2528,23 +2263,23 @@ Four properties of $`\mathsf{enc}`$ are worth stating, and one non-property.
 
 - **Totality has a stated domain.** $`\mathsf{enc}`$ is total on
   `LanguageDef`s **whose native bodies lie in the declarative forms of §V.3.1
-  and §V.3.2, or are being migrated verbatim as `("src", …)`**. It is *not*
+  and §V.3.2, or are being migrated verbatim as `["src", …]`**. It is *not*
   total on `LanguageDef`s carrying an arbitrary `syn::Expr` under a semantics
   target other than `Rust`, and it is not total on a `LogicBlock` with a
   non-empty `content` token stream (gap **G-1**). Where it is undefined it
   **errors**; it never emits an approximation.
-- **★ Its `NativeEval` form choice is fixed, and it is `("src", …)`.** This is a
+- **★ Its `NativeEval` form choice is fixed, and it is `["src", …]`.** This is a
   decision, not an implementation detail, because the two properties this FIPS
   wants of $`\mathsf{enc}`$ pull in opposite directions and only one choice can
   be made. §XIII.2's migration gate is
   $`\mathcal{E}(\mathsf{enc}(d)) = d`$ — a **structural** equality on the
   augmented definition — and `GrammarRule::rust_code` is one of the fields
-  compared. Emitting `("op", "add")` sets `rust_code = None` on the way back, so
+  compared. Emitting `["op", "add"]` sets `rust_code = None` on the way back, so
   a language migrated that way **fails its own gate**. Emitting
-  `("src", "Rust", "a + b")` verbatim restores the field and passes. Therefore:
+  `["src", "Rust", "a + b"]` verbatim restores the field and passes. Therefore:
 
-  > **$`\mathsf{enc}`$ emits `("src", semantics, text)` for every native body it
-  > encounters, verbatim.** It never infers `("op", …)` or `("carrier", …)` from
+  > **$`\mathsf{enc}`$ emits `["src", semantics, text]` for every native body it
+  > encounters, verbatim.** It never infers `["op", …]` or `["carrier", …]` from
   > a Rust expression.
 
   The consequence must be stated in the same breath, because it is the reason
@@ -2552,7 +2287,7 @@ Four properties of $`\mathsf{enc}`$ are worth stating, and one non-property.
   Rust-bearing language is **not installation-pure**, even when a hand-authored
   specification of the same language would be. Mechanical migration produces a
   faithful artifact; making it *publishable* is a second, human step — replacing
-  each `("src", …)` with the declarative form that expresses it, and re-running
+  each `["src", …]` with the declarative form that expresses it, and re-running
   the gate under the new identity. §V.7's rows measure the second step's
   destination; §XIII.2's gate measures the first step's fidelity; they are not
   the same 25 languages and this FIPS does not pretend they are.
@@ -2575,16 +2310,22 @@ Elaboration is only half of what `install!` does. The whole operation, in the
 same literate form, so that §IX's gates have a procedure to attach to:
 
 ```text
-⟨install(v : Value, p : Provenance, ret : Name)⟩ ≡
+⟨install(v : Value, p : Provenance, grants : Authority, ret : Name)⟩ ≡
   ⟨G5a — admission bound, BEFORE anything is decoded⟩
+  graph ← resolve and pin the complete import graph
   d, F ← ⟨Elaborate a Rholang specification value⟩          -- G1, G2, identity
-  ⟨G4 — resolve every capability reference⟩                 -- consumes p
-  ⟨Build the installable artifacts⟩
-  ⟨Publish the tag binding⟩
-  ret!(F)
+  requested ← ⟨G4 — resolve every capability reference⟩     -- consumes p
+  rights ← intersect(requested, grants)                      -- cannot amplify
+  image ← ⟨Build and verify the installable artifacts⟩
+  h ← atomic_install(F, d, image, rights)                    -- no partial state
+  ret!({"ok": h})                                            -- opaque handle
 
 Provenance ::= Local | NonLocal
 ```
+
+Every failing branch sends `{"error": InstallError}` on `ret`; it never sends
+a handle-shaped value and never changes installed state. The return channel is
+fresh and private. A success-only map pattern therefore cannot consume an error.
 
 > **Short forms, bound here so they are never ambiguous.** Three fragment names
 > are abbreviated throughout the rest of this document. Each **is** its long
@@ -2592,27 +2333,26 @@ Provenance ::= Local | NonLocal
 >
 > | Short form | Long form | Defined at |
 > | --- | --- | --- |
-> | `⟨install⟩` | `⟨install(v : Value, p : Provenance, ret : Name)⟩` | above |
+> | `⟨install⟩` | `⟨install(v : Value, p : Provenance, grants : Authority, ret : Name)⟩` | above |
 > | `⟨G5a⟩` | `⟨G5a — admission bound, BEFORE anything is decoded⟩` | below |
 > | `⟨G4⟩` | `⟨G4 — resolve every capability reference⟩` | below |
 >
 > **★ And `install!` in Rholang IS `⟨install⟩`'s `NonLocal` entry point, by
 > construction.** The Rholang examples in §VII.1 and §XI.5 write
-> `install!(spec, *ret)` — two arguments, where the fragment has three. That is
+> `install!(spec, *ret)` — two arguments, where the host fragment has four. That is
 > not an inconsistency to reconcile but the mechanism of §III.6.4 working as
-> specified: **provenance is a property of the call site, not an argument a
-> caller supplies.** `install!` is the surface of the `Definition` bound to the
+> specified: **provenance and grants are properties of the call site, not
+> arguments a caller supplies.** `install!` is the surface of the `Definition` bound to the
 > deploy-reachable `rho:mettail:install` system channel, and that `Definition`
-> passes `Provenance::NonLocal` unconditionally. A Rholang-visible `install!`
-> with a provenance parameter would be the defect, because a caller could then
-> claim `Local`. The two-argument spelling is therefore normative for every
-> Rholang-visible call site, and the three-parameter fragment is the host-side
-> operation it invokes.
+> passes `Provenance::NonLocal` and injected deploy policy unconditionally. A
+> Rholang-visible `install!` with either parameter would let a caller claim
+> authority it does not possess. The two-argument spelling is therefore
+> normative, and the four-parameter fragment is the host operation it invokes.
 
 > **★ `Provenance` is a property of the CALL SITE, and it must be, because the
 > elaborator cannot compute it.** Three normative clauses in this FIPS turn on
 > provenance — §IX.3 R-1's "no specification of non-local provenance may
-> elaborate under a v1 fingerprint", `⟨G4⟩`'s `("src", …)` rejection, and
+> elaborate under a v1 fingerprint", `⟨G4⟩`'s `["src", …]` rejection, and
 > §V.3.4's categorical ban — and every one of them would be unenforceable if
 > provenance were a property of the *value*. At $`\mathcal{E}`$'s input a
 > registry-fetched specification and an inline-built one are **the same object**:
@@ -2648,17 +2388,17 @@ Provenance ::= Local | NonLocal
 
 ```text
 ⟨G4 — resolve every capability reference⟩ ≡
-  for each ("handler", urn) ∈ eval-positions of d :
+  for each ["handler", urn] ∈ eval-positions of d :
     require registry.contains(urn)               else Err(UnregisteredHandler urn)
     require registry.arity(urn) = declared arity else Err(HandlerArityMismatch urn)
     require registry.code_hash(urn) = commitment(urn)   -- see below: NOT from d
                                                  else Err(HandlerCodeMismatch urn)
-  for each ("extern", urn) ∈ carrier-positions of d :
+  for each ["extern", urn] ∈ carrier-positions of d :
     require carrier_registry.contains(urn)       else Err(UnregisteredCarrier urn)
   for each theory name t ∈ d.guard_config :
     require theory_registry.contains(t)          else Err(UnregisteredTheory t)
   if p = NonLocal then
-    require d contains no ("src", …)             else Err(SrcNotPublishable)
+    require d contains no ["src", …]             else Err(SrcNotPublishable)
 ```
 
 > **★ `commitment(urn)` must not come from the specification, or the check is
@@ -2686,53 +2426,32 @@ Provenance ::= Local | NonLocal
 > accordingly has none.
 
 ```text
-⟨Build the installable artifacts⟩ ≡
+⟨Build and verify the installable artifacts⟩ ≡
+  core     ← lower_to_grammar_core(d)
+  image    ← compile_dfa_wpda_image(core)
+  require verify_image(image, core, F, rights)
   lowering ← lower_language_def(d)               -- rhoapi::Par scalar contracts
   net      ← rho_net_build(d, F)                 -- driver network + pattern DAG
   handlers ← native_handler_specs(d, F)          -- fingerprint-scoped, §IX.5.3
-  install lowering, net into RSpace
-  inject handlers via extra_system_processes
+  return immutable_staging_record(core, image, lowering, net, handlers)
 ```
 
-```text
-⟨Publish the tag binding⟩ ≡
-  tag_map[surface_tag(d)] ← F                    -- §VII.1; siting is Q-6
-```
+##### III.6.5 The head-tag discriminant
 
-##### III.6.5 The list-only fallback profile
+A list serves two roles in the notation (§III.4.1), and the rule that keeps
+them from colliding is stated here once, where the decoder lives:
 
-If W-1 slips and `RhoCalc` still has no tuple category, the notation degrades
-mechanically rather than by redesign. The substitution is a single rewriting of
-the tagged-node shape:
+> **The discriminant.** *A list in a variant position whose head is a string
+> is a tagged node.* In a sequence position a list is decoded as a sequence;
+> in a variant position the decoder requires a `Str` head, reads it as the
+> tag, and selects the arm by `(tag, arity)` (§III.4.4). A missing or
+> non-string head where a variant is expected is `Err(ExpectedTaggedNode)` —
+> fail-closed, like every other shape error of the elaborator.
 
-```text
-⟨to_list_profile(v, schema) : Value⟩ ≡
-  match schema:
-    Tuple production → (tag, a_1, …, a_n) ↦
-                       List([ Str(tag) ] ++ [ to_list_profile(a_i, …) ])
-    List production  → List([ to_list_profile(x, schema.element) | x ∈ v ])
-    Map production   → Map([ (k, to_list_profile(v[k], schema.field(k))) ])
-    Scalar           → v
-```
-
-```text
-⟨from_list_profile(v, schema) : Value⟩ ≡
-  match schema:
-    Tuple production → require v is a List with a Str head
-                                              else Err(ExpectedTaggedNode)
-                       Tuple(head(v), [ from_list_profile(x_i, …) ])
-    …                → as above, structurally
-```
-
-The discriminant rule — *"a list in a variant position whose head is a string is
-a tagged node"* — is sound **only because the decoder is schema-driven**: the
+The discriminant is sound **only because the decoder is schema-driven**: the
 position always determines which reading applies, so there is no position at
-which a list-of-things and a tagged-node could both be admissible. §III.4.4's
+which a list-of-things and a tagged node could both be admissible. §III.4.4's
 tag overloading is the same reliance, stated once.
-
-The cost is legibility only: `[["lit","lam "], "x"]` is harder to read than
-`[("lit","lam "), "x"]`. Nothing in the schema, the elaborator, the fingerprint,
-or the security argument changes.
 
 ### III.7 Validation, diagnostics, and a metacircular check
 
@@ -2823,11 +2542,11 @@ corpus:
 **RT4 — DDL parity** (§III.2).
 
 ```math
-\mathcal{E}\bigl(\mathrm{parse\_ddl}(b)\bigr) = \left[\!\left[\; b \;\right]\!\right] \quad\text{when } b \in \mathrm{dom}(\mathrm{parse\_ddl}), \qquad \mathrm{parse\_ddl}(b) = \texttt{Err} \quad\text{otherwise.}
+\mathcal{E}\bigl(\mathrm{desugar\_module}(b)\bigr) = \left[\!\left[\; b \;\right]\!\right] \quad\text{when } b \in \mathrm{dom}(\mathrm{desugar\_module}), \qquad \mathrm{desugar\_module}(b) = \texttt{Err} \quad\text{otherwise.}
 ```
 
 RT4 is listed here beside RT1–RT3 because §III.2 owes it a home, and because it
-is the **only** one of the four that exercises `parse_ddl` at all: RT1 and RT2
+is the **only** one of the four that exercises `desugar_module` at all: RT1 and RT2
 begin from $`\mathsf{enc}`$, which begins from a `LanguageDef`, so neither can
 witness a property of a function whose domain is text.
 
@@ -2840,7 +2559,7 @@ witness a property of a function whose domain is text.
 > to `x0` / `x1` / `free0`, neither of which re-reads to the original value. A
 > conforming $`\mathcal{W}`$ is therefore part of the L1 encoder work item, and
 > its obligation is exactly RT1. Its scope is small — it prints maps, lists,
-> tuples, strings, integers, floats, booleans, and `Nil`, and nothing else,
+> strings, integers, floats, booleans, and `Nil`, and nothing else,
 > because §III.4.1 admits nothing else — but it is *work*, not an inheritance.
 
 RT1 and RT2 are property-test obligations over the shipped corpus: every
@@ -2850,24 +2569,14 @@ fingerprint of the same specification elaborated from the value form** — not,
 per §VI.3, against the v1 macro fingerprint. RT3 states that the elaborator has
 no hidden dependency on *how* a value was produced — which §III.9 makes precise.
 
-**The two-hash problem, and its resolution.** There are currently two identities
-in play.
-
-| Identity | Where | Over what | Algorithm |
-| --- | --- | --- | --- |
-| $`\mathcal{F}`$ = `language_definition_fingerprint` | `ast/src/identity.rs` [Implemented] | the augmented `LanguageDef` | FNV-1a 64, `mettail-langdef-v1:` prefix — **replaced by W-7** |
-| $`\mathcal{F}`$ under W-7 | `ast/src/identity.rs` [Proposed] | the augmented `LanguageDef`, **length-prefixed** | BLAKE3-256, `mettail-langdef-v2:` prefix |
-| `Ntir::hash` = `content_hash` | `mettail-spec/src/ntir.rs` [Branch] | a serde view of the `Presentation` | BLAKE3 |
-
-These are not interchangeable, and only one may key the FLT ABI.
-**$`\mathcal{F}`$ is normative** and is what the reflected tag
-$`\ulcorner \mathcal{F} \cdot L \urcorner`$ is derived from — it is already
-load-bearing for the installed driver network, the `^subst`/`^shift` traversal,
-and the native-handler URN band. `Ntir::hash` is a **build-cache key**: useful
-for incremental assembly, not an ABI. This FIPS specifies that the NTIR carries
-$`\mathcal{F}`$ alongside its content hash, computed by calling
-`language_definition_fingerprint` on `to_language_def()`, and that any
-FLT-facing surface uses $`\mathcal{F}`$ only. That is work item **W-5**.
+**One authoritative identity.** The installed language and every derived
+parser image are keyed by the BLAKE3-256 GrammarCore fingerprint. Source text,
+surface abstract syntax, diagnostic provenance, and parser-image bytes are not
+independent semantic identities. A parser image carries the authoritative core
+fingerprint and is accepted only after the core has been reconstructed from the
+canonical `language/2` value. Work item W-7 replaces the current FNV-1a
+`language_definition_fingerprint` with the same length-prefixed identity
+discipline so the existing and runtime paths converge.
 
 **Injectivity, and why v1 is not merely weak but broken.** The usual statement
 is that a 64-bit digest yields a collision in roughly $`2^{32}`$ trials by the
@@ -2912,7 +2621,7 @@ five families:
 That means the preimage does **not** require a `tokens { … }` block, an
 `options { … }` value, or a `sync` constraint. A specification in the
 **pure-declarative subset** — the very subset §V.7 measures at 81% of the corpus
-and §V.3.4 leans on as the reason the `("src", …)` fence is affordable — mounts
+and §V.3.4 leans on as the reason the `["src", …]` fence is affordable — mounts
 the identical attack with nothing but a padded terminal in an ordinary term rule:
 
 ```text
@@ -3027,95 +2736,48 @@ a prudent requirement into a necessary one.
 
 ## Part IV — Feature Correspondence: Parity and Divergence
 
-Feature parity with `language!` is a hard requirement, so this section is an
-exhaustive inventory. Every feature the macro accepts appears with its
-`language!` spelling and its Rholang spelling — in both the L0 extender surface
-and the L1 value form, where they differ. The inventory derives from
-`ast/src/language/parse.rs`, `ast/src/language/model.rs`, `ast/src/grammar.rs`,
-and `ast/src/pattern.rs`, cross-checked against [Omnibus]'s normative-syntax
-digest and against `mettail-spec` on the `modules` branch.
-
-**★ The relation this Part asserts is containment, not equality**, and the Part
-is named for the relation it actually establishes rather than for the one a
-shorter title would imply. The invariant is:
+Feature parity with `language!` is a hard requirement. Every macro feature has
+a canonical `language/2` representation. Frequently used presentation
+operations also have a `Module` / `Theory` spelling; the `Data(v)` builder
+covers the remaining canonical fields without adding another model.
 
 ```math
-\left\{\,\text{constructs } \texttt{language!} \text{ accepts}\,\right\} \;\subsetneq\; \left\{\,\text{constructs the value form accepts}\,\right\}.
+\operatorname{AcceptedBy}(\mathtt{language!})
+\;\subsetneq\;
+\operatorname{AcceptedBy}(\mathtt{language/2}).
 ```
 
-Read left to right, that containment **is** parity: every construct the macro
-accepts has a value spelling, which is the hard requirement. Read right to
-left, it is the honest remainder: the value form accepts things the macro
-cannot, because a value is not a token stream. That set difference is the
-**divergence**, it is small, and §IV.13 closes it by enumeration so that it
-stays small.
-
-**Legend.** Every row carries exactly one of three marks:
-
-| Mark | Meaning |
-| --- | --- |
-| ✅ **parity** | the construct exists on both sides, with the spellings shown |
-| ⚠ **gap** | the construct exists in `language!` and has **no** v1 value spelling; it reappears in §IV.12 as **G-1** … **G-4** |
-| ★ **extension** | the construct exists in the value form and has **no** `language!` spelling; it is a member of the closed set enumerated in §IV.13 |
-
-A ✅ in the **L1 value** column means the value form expresses the feature; a ✅
-in the **L0 surface** column means the extender surface does. §III.3's scoped
-open item records the block kinds where those two answers differ.
+The strict remainder is enumerated in §IV.13. A surface construct and its value
+normalization must produce byte-identical canonical values.
 
 ### IV.1 Top level and composition
 
-| Feature | `language!` | L0 surface | L1 value | Status |
-| --- | --- | --- | --- | --- |
-| Language name | `name: Lambda,` | `language Lambda = …` | `"name": "Lambda"` | ✅ |
-| Notation version | *(implicit)* | *(implicit)* | `"mettail": "language/2"` | ✅ new, required |
-| Full inheritance | `extends: [B1, B2]` | `B1 \/ B2` union, or extender call | `"extends": ["B1","B2"]` | ✅ ⚠ order, below |
-| Grammar-only import | `includes: [Calc]` | extender call | `"includes": ["Calc"]` | ✅ |
-| Fragment mixin | `mixins: [ArithOps]` | extender call | `"mixins": ["ArithOps"]` | ✅ |
-| Empty presentation | *(no equivalent)* | `empty` | a map carrying **only** the two mandatory keys, `{"mettail": "language/2", "name": …}` | ✅ |
-| Presentation union | *(no equivalent)* | `A \/ B` | list concatenation under the merge policy | ✅ |
-| Extender abstraction | *(no equivalent)* | `extender N(Base) { … }` | *(L0 only)* | ✅ |
-| Extender application | *(no equivalent)* | `N(Arg)` | *(L0 only)* | ✅ |
-| Category renaming | *(no equivalent)* | `exports { Elem => Proc }` | `"exports": [("Elem","Proc")]` | ✅ |
-| Conflict resolution | *(no equivalent)* | `replacements { … }` | `"replacements": [ … ]` | ✅ |
-| Host preamble | *(ambient Rust file)* | `context { … INSERT_HERE … }` | `"context": Str` | ✅ backend-only |
-| Doc comments | `/// text` | `/// text` | `"doc": "text"` | ✅ |
+| Feature | `language!` | `Module` / `Theory` | `language/2` value |
+| --- | --- | --- | --- |
+| Language name | `name: Lambda,` | `Module Lambda { … theory T() }` | `"name": "Lambda"` |
+| Notation version | implicit | implicit | `"mettail": "language/2"` |
+| Empty presentation | no equivalent | `Empty` | mandatory keys with empty fields |
+| Theory abstraction | no equivalent | `Theory N(Base: T) { … }` | eliminated by elaboration |
+| Theory application | no equivalent | `N(Arg)` | eliminated by elaboration |
+| Local binding | no equivalent | `let x = E in (F)` | eliminated by elaboration |
+| Presentation join | `extends` is the closest operation | `A \/ B` | normalized presentation fields |
+| Presentation meet | no equivalent | `A /\ B` | normalized presentation fields |
+| Presentation difference | no equivalent | `A \ B` | normalized presentation fields |
+| Category declaration | `types { … }` | `Types { … }` | `"types": […]` |
+| Category export | no equivalent | `Exports { A; A => B; }` | `"exports": […]` |
+| Replacement | no equivalent | `Replacements { … }` | `"replacements": […]` |
+| Exhaustive field access | macro block or option | `Data({ … })` | corresponding canonical key |
 
-Extender union is **right-biased with a strict conflict policy**: overlapping
-term labels are an error unless a `replacements` block resolves them
-(`assemble.rs::ensure_no_unresolved_term_conflicts`). This FIPS keeps that
-policy, because silent shadowing of a constructor would silently change a
-fingerprint and therefore silently change a reflected tag.
+Theory join is a pushout over shared ancestry. Independently introduced names
+that collide are errors; common inherited entities retain one identity.
+`Replacements` explicitly retargets a named contribution. No composition
+operator performs silent right-biased shadowing.
 
-> **★ `extends` and `\/` are not the same operation, and the difference is
-> semantic.** The ✅ marks above must be read with two qualifications.
->
-> **1. `extends: [B1, B2]` reverses the base order.** `merge.rs:764-784` folds
-> `def := merge_language_defs(&base_i, def)` over `extends_names` in order, and
-> `merge_terms` places the *base* first. So after `B1` the term order is
-> `B1 ++ local`, and after `B2` it is `B2 ++ B1 ++ local` — the **reverse** of
-> the reading `extends: [B1, B2]` invites. Because declaration order fixes infix
-> binding power and the `max_infix_bp + 2` prefix fallback, this is
-> **semantics-changing**, not cosmetic. The value form inherits it exactly (a
-> list is a list), so parity holds; but an author must know that
-> `"extends": ["B1","B2"]` binds as `B2` then `B1`. Making the order match the
-> written order would be a behavioural change to the macro and is out of scope
-> here; the behaviour is documented rather than silently reproduced.
->
-> **2. The three composition operators have three different merge policies.**
-> `apply_extends` uses `DuplicateStrategy::Error`; `apply_includes` uses
-> `Override` **and strips equations, rewrites, and logic** from the imported
-> grammar; `apply_mixins` uses `Override`. L0's `\/` is the strict-conflict
-> policy only. So `B1 \/ B2` is the analogue of `extends`, not of `includes` or
-> `mixins`, and an extender surface cannot currently express the
-> override-with-stripping behaviour that `includes` has.
->
-> **3. L1 is not closed under the L0 chain algebra.** `X terms{A} terms{B}` has
-> no L1 form, because a `Spec` map has exactly one `"terms"` key; and
-> `A \/ B terms{T}` and `A \/ (B terms{T})` flatten to the same value. L0's
-> chain algebra is therefore *strictly finer* than L1's records. This is
-> acceptable — assembly happens at L0 and produces one presentation, which is
-> what L1 encodes — but it means an L0 expression is not recoverable from its L1
-> value, and no round-trip claim in this FIPS asserts otherwise.
+The macro's `extends`, `includes`, and `mixins` keep their existing distinct
+merge policies on the compile-time compatibility path. Their canonical value
+tags preserve those exact policies. A `Theory` author should use theory
+application and the algebra above; `Data(v)` may carry the compatibility tags
+when exact macro behavior is required.
 
 ### IV.2 `options { … }` — the complete accepted key set
 
@@ -3171,18 +2833,18 @@ transfer directly; a keyword-valued option becomes a string.
 | Structural category | `Proc` | `"Proc"` | ✅ |
 | Native carrier | `![i64] as Int` | `{"name":"Int","carrier":"i64"}` | ✅ |
 | Arbitrary-precision carrier | `![mettail_runtime::CanonicalBigInt] as BigInt` | `{"name":"BigInt","carrier":"BigInt"}` | ✅ |
-| Collection carrier, defaults | `![Vec<Proc>] as List` | `{"name":"List","carrier":("vec","Proc"),"collection":{"kind":"list"}}` | ✅ |
+| Collection carrier, defaults | `![Vec<Proc>] as List` | `{"name":"List","carrier":["vec","Proc"],"collection":{"kind":"list"}}` | ✅ |
 | Collection carrier, delimiters | `![Vec<Proc>] as List { open_parts: ["["], close_parts: ["]"], sep: "," }` | `…,"collection":{"kind":"list","open":"[","close":"]","sep":","}` | ✅ |
 | Map key/value separator | `key_val_sep: ":"` | `"key_val_sep": ":"` | ✅ |
-| Refinement type | `PosInt = { x: Int \| x > 0 }` | `{"name":"PosInt","refine":{"var":"x","base":"Int","pred":("cmp","gt","x",0)}}` | ✅ — `RefinementPred`, §III.4.3 |
-| Opaque foreign carrier | `![std::sync::Arc<…::ReadZipperLit>] as ReadZipper` | `{"name":"ReadZipper","carrier":("extern","mtl:carrier:readzipper")}` | ⚠ §V.4; **does not preserve a v1 fingerprint**, §III.4.2 |
+| Refinement type | `PosInt = { x: Int \| x > 0 }` | `{"name":"PosInt","refine":{"var":"x","base":"Int","pred":["cmp","gt","x",0]}}` | ✅ — `RefinementPred`, §III.4.3 |
+| Opaque foreign carrier | `![std::sync::Arc<…::ReadZipperLit>] as ReadZipper` | `{"name":"ReadZipper","carrier":["extern","mtl:carrier:readzipper"]}` | ⚠ §V.4; **does not preserve a v1 fingerprint**, §III.4.2 |
 
 ### IV.4 `literals { … }`
 
 | Feature | `language!` | Value form | Status |
 | --- | --- | --- | --- |
 | Regex pattern | `pattern: r"[0-9]+i32";` | `"pattern": "[0-9]+i32"` | ✅ |
-| Evaluation body | `eval: ![{ parse_int_lit(text, Some(Suffix::I32)) }]` | `"eval": ("carrier","int",{"suffix":"i32"})` | ✅ §V.3 |
+| Evaluation body | `eval: ![{ parse_int_lit(text, Some(Suffix::I32)) }]` | `"eval": ["carrier","int",{"suffix":"i32"}]` | ✅ §V.3 |
 | Token-family mapping | implicit via `NativeKind::standard_token_variant` | identical, computed by the elaborator | ✅ |
 | Cross-block duplicate detection | by `(name, pattern)` | identical check | ✅ |
 
@@ -3206,8 +2868,8 @@ transfer directly; a keyword-valued option becomes a string.
 | Alternate stream | `-> COMMENTS` | `"stream": "COMMENTS"` | ✅ |
 | Named mode | `mode string_body { … }` | `{"name":"string_body","tokens":[ … ]}` | ✅ |
 | Raw (whitespace-significant) mode | `raw mode guest { … }` | `…,"raw": true` | ✅ |
-| Stream alignment | `align(a, b) on /…/;` | `("align","a","b","…")` | ✅ |
-| Stream tracking | `track(aux, primary);` | `("track","aux","primary")` | ✅ |
+| Stream alignment | `align(a, b) on /…/;` | `["align","a","b","…"]` | ✅ |
+| Stream tracking | `track(aux, primary);` | `["track","aux","primary"]` | ✅ |
 | Tree invariants | `tree_invariants { … }` | `"tree_invariants": [ … ]` | ✅ — `TreeConstraint`, §III.4.3 |
 
 > **Latent, not blocking.** No shipped language uses `sync`, `tree_invariants`,
@@ -3225,13 +2887,13 @@ transfer directly; a keyword-valued option becomes a string.
 | Built-in predicate | `Halts . p:Proc \|- "halts" "(" p ")" ;` | `{"name":"Halts","params":[…],"forms":[[…],…]}` | ✅ — `BuiltinPredicate`, §III.4.3 |
 | Predicate alternatives | `\|- form1 \| form2` | `"forms": [[…],[…]]` | ✅ |
 | Annotations | `@[selectivity(0.1), cost(4)]` | `"annotations": {"selectivity":0.1,"cost":4}` | ✅ — the `"annotations"` key of `BuiltinPredicate` |
-| Parameter quantifier | `forall` / `exists` markers | `("param", name, ty, quantifier)` — the **4-tuple arm** of `Param`, §III.4.2 | ✅ |
+| Parameter quantifier | `forall` / `exists` markers | `["param", name, ty, quantifier]` — the **four-component arm** of `Param`, §III.4.2 | ✅ |
 | Connectives | `connectives { and = ["&","and"]; … }` | `[{"role":"and","keywords":["&","and"]}, …]` | ✅ |
 | Theory registration | `theories { arith = PresburgerAlgebra for [Int]; }` | `[{"name":"arith","theory":"presburger","for":["Int"]}]` | ⚠ §V.4 |
 | Channel category | `channels { channel Name; }` | `"channels": {"channel": ["Name"]}` | ✅ — **L1 only**, §III.3 |
-| Join pattern | `join PGuardedInput(ch: Name);` | `"join": [{"label":"PGuardedInput","params":[("ch","Name")]}]` | ✅ — **L1 only**, §III.3 |
+| Join pattern | `join PGuardedInput(ch: Name);` | `"join": [{"label":"PGuardedInput","params":[["ch","Name"]]}]` | ✅ — **L1 only**, §III.3 |
 
-> **The per-instance predicate is not stored, and that is why `("guard", Str)`
+> **The per-instance predicate is not stored, and that is why `["guard", Str]`
 > suffices.** A `?guard:Guard` term parameter carries only a *slot name*; the
 > actual `BehavioralPred` is parsed from **user source** by PraTTaIL's
 > `predicate_pratt` at guest-parse time and never lives in `LanguageDef`. So the
@@ -3245,23 +2907,23 @@ Both normative rule forms are supported, because both appear in the corpus.
 | Feature | `language!` | Value form | Status |
 | --- | --- | --- | --- |
 | **Judgement form** | `App . fun:Term, arg:Term \|- "(" fun "," arg ")" : Term;` | `{"label":"App","category":"Term","context":[…],"syntax":[…]}` | ✅ |
-| **BNF form** | `JNull . Value ::= "null" ;` | `{"label":"JNull","category":"Value","items":[("lit","null")]}` | ✅ |
-| BNF binder | `PNew . Proc ::= "new" <Name> Proc ;` | `"items":[("lit","new"),("bind","Name"),("nt","Proc")]` | ✅ |
-| BNF collection | `PPar . Proc ::= HashBag(Proc) sep "\|" delim "{" "}" ;` | `"items":[("coll","bag","Proc","\|","{","}")]` | ✅ |
-| Plain parameter | `n:Name` | `("param","n","Name")` | ✅ |
-| Single binder | `^x.p:[Name -> Proc]` | `("binder","x","p",("arrow","Name","Proc"))` | ✅ |
-| Multi-binder | `^[xs].p:[Name* -> Proc]` | `("binders","xs","p",("arrow",("multi","Name"),"Proc"))` | ✅ |
-| Guard slot | `?guard:Guard` | `("guard","guard")` | ✅ |
-| Optional group | `*opt( … )` | `("optional",[Param,…])` / `("opt",[SyntaxItem,…])` | ✅ |
-| Collection parameter | `ps:HashBag(Proc)` | `("param","ps",("bag","Proc"))` | ✅ |
-| Vec / Set / Map parameters | `Vec(T)` / `HashSet(T)` / `HashMap(K,V)` | `("vec","T")` / `("set","T")` / `("map","K","V")` | ✅ |
-| Terminal | `"lam "` | `("lit","lam ")` | ✅ |
+| **BNF form** | `JNull . Value ::= "null" ;` | `{"label":"JNull","category":"Value","items":[["lit","null"]]}` | ✅ |
+| BNF binder | `PNew . Proc ::= "new" <Name> Proc ;` | `"items":[["lit","new"],["bind","Name"],["nt","Proc"]]` | ✅ |
+| BNF collection | `PPar . Proc ::= HashBag(Proc) sep "\|" delim "{" "}" ;` | `"items":[["coll","bag","Proc","\|","{","}"]]` | ✅ |
+| Plain parameter | `n:Name` | `["param","n","Name"]` | ✅ |
+| Single binder | `^x.p:[Name -> Proc]` | `["binder","x","p",["arrow","Name","Proc"]]` | ✅ |
+| Multi-binder | `^[xs].p:[Name* -> Proc]` | `["binders","xs","p",["arrow",["multi","Name"],"Proc"]]` | ✅ |
+| Guard slot | `?guard:Guard` | `["guard","guard"]` | ✅ |
+| Optional group | `*opt( … )` | `["optional",[Param,…]]` / `["opt",[SyntaxItem,…]]` | ✅ |
+| Collection parameter | `ps:HashBag(Proc)` | `["param","ps",["bag","Proc"]]` | ✅ |
+| Vec / Set / Map parameters | `Vec(T)` / `HashSet(T)` / `HashMap(K,V)` | `["vec","T"]` / `["set","T"]` / `["map","K","V"]` | ✅ |
+| Terminal | `"lam "` | `["lit","lam "]` | ✅ |
 | Parameter reference | bare `fun` | `"fun"` | ✅ |
-| Separated collection render | `ps.*sep("\|")` | `("sep","ps","\|")` — the `SyntaxItem` source arm, §III.4.2 | ✅ |
-| Zip | `*zip(ns, xs)` | `("zip","ns","xs")` | ✅ |
-| **Chained** meta-operators | `*zip(ns,xs).*map(\|n,x\| n "?" x).*sep(",")` | `("sep",("map",("zip","ns","xs"),["n","x"],["n",("lit","?"),"x"]),",")` | ✅ — requires `("sep", SyntaxItem, Str)`, not `("sep", Str, Str)` |
-| Declared token kind | `v@Tok` or bare `Tok` | `("tok","Tok","v")` / `("tok","Tok",Nil)` | ✅ |
-| FLT guest-body capture | `*flt(bind, open, close)` | `("flt","bind","open","close")` | ✅ — components in **that** order |
+| Separated collection render | `ps.*sep("\|")` | `["sep","ps","\|"]` — the `SyntaxItem` source arm, §III.4.2 | ✅ |
+| Zip | `*zip(ns, xs)` | `["zip","ns","xs"]` | ✅ |
+| **Chained** meta-operators | `*zip(ns,xs).*map(\|n,x\| n "?" x).*sep(",")` | `["sep",["map",["zip","ns","xs"],["n","x"],["n",["lit","?"],"x"]],","]` | ✅ — requires `["sep", SyntaxItem, Str]`, not `["sep", Str, Str]` |
+| Declared token kind | `v@Tok` or bare `Tok` | `["tok","Tok","v"]` / `["tok","Tok",Nil]` | ✅ |
+| FLT guest-body capture | `*flt(bind, open, close)` | `["flt","bind","open","close"]` | ✅ — components in **that** order |
 | Native evaluation body | `![a + b]` | `"eval": NativeEval` | ⚠ §V |
 | Evaluation mode | `fold` / `step` | `"mode": "fold"` / `"step"` | ✅ |
 | Right associativity | `right` | `"assoc": "right"` | ✅ |
@@ -3276,33 +2938,33 @@ reason §III.4.1 rules sets out.
 
 | Feature | `language!` | Value form | Status |
 | --- | --- | --- | --- |
-| Named equation | `Assoc . \|- (Mul (Mul X Y) Z) = (Mul X (Mul Y Z)) ;` | `{"name":"Assoc","left":("Mul",("Mul","X","Y"),"Z"),"right":("Mul","X",("Mul","Y","Z"))}` | ✅ |
-| Type context | `P:Proc \|- …` | `"context": [("typed","P","Proc")]` | ✅ |
-| Freshness premise | `\| x # P \|- …` | `"premises": [("fresh","x","P")]` | ✅ |
-| Freshness over a remainder | `\| x # ...rest \|- …` | `"premises": [("fresh_rest","x","rest")]` | ✅ |
-| Relation-query premise | `\| env_var(x, v) \|- …` | `"premises": [("rel","env_var",["x","v"])]` | ✅ |
-| Universal premise | `xs.*map(\|x\| premise)` | `("forall","xs","x",Premise)` | ✅ |
-| Behavioral-guard premise | `guard(pred)` | `("guard",Pred)` | ✅ |
-| Collection pattern | `{P, Q, ...rest}` | `("coll",["P","Q"],"rest")` | ✅ |
+| Named equation | `Assoc . \|- (Mul (Mul X Y) Z) = (Mul X (Mul Y Z)) ;` | `{"name":"Assoc","left":["Mul",["Mul","X","Y"],"Z"],"right":["Mul","X",["Mul","Y","Z"]]}` | ✅ |
+| Type context | `P:Proc \|- …` | `"context": [["typed","P","Proc"]]` | ✅ |
+| Freshness premise | `\| x # P \|- …` | `"premises": [["fresh","x","P"]]` | ✅ |
+| Freshness over a remainder | `\| x # ...rest \|- …` | `"premises": [["fresh_rest","x","rest"]]` | ✅ |
+| Relation-query premise | `\| env_var(x, v) \|- …` | `"premises": [["rel","env_var",["x","v"]]]` | ✅ |
+| Universal premise | `xs.*map(\|x\| premise)` | `["forall","xs","x",Premise]` | ✅ |
+| Behavioral-guard premise | `guard(pred)` | `["guard",Pred]` | ✅ |
+| Collection pattern | `{P, Q, ...rest}` | `["coll",["P","Q"],"rest"]` | ✅ |
 | Metavariable | `X` | `"X"` | ✅ |
-| Nullary constructor | `(PZero)` | `("PZero",)` | ✅ |
-| Binder pattern | `^x.P` | `("^","x","P")` | ✅ |
-| Multi-binder pattern | `^[xs].P` | `("^*",["xs"],"P")` | ✅ |
+| Nullary constructor | `(PZero)` | `["PZero"]` | ✅ |
+| Binder pattern | `^x.P` | `["^","x","P"]` | ✅ |
+| Multi-binder pattern | `^[xs].P` | `["^*",["xs"],"P"]` | ✅ |
 
 ### IV.9 `rewrites { … }`
 
 | Feature | `language!` | Value form | Status |
 | --- | --- | --- | --- |
-| Base rewrite | `Beta . \|- (App (Lam fun) arg) ~> (eval fun arg);` | `{"name":"Beta","left":("App",("Lam","fun"),"arg"),"right":("eval","fun","arg")}` | ✅ |
-| Congruence (premised) rewrite | `AppCongL . \| M0 ~> M1 \|- (App M0 N) ~> (App M1 N);` | `"premises":[("~>","M0","M1")]` plus `left`/`right` | ✅ |
-| Substitution | `(subst ^x.p (NQuote q))` | `("eval",("^","x","p"),("NQuote","q"))` | ✅ |
-| Legacy three-argument substitution | `(eval term var repl)` | `("eval",Pattern,"var",Pattern)` | ✅ |
-| Multi-substitution, **one** replacement | `(multisubst scope r0)` | `("eval",("^*",[…],body),r0)` | ✅ |
+| Base rewrite | `Beta . \|- (App (Lam fun) arg) ~> (eval fun arg);` | `{"name":"Beta","left":["App",["Lam","fun"],"arg"],"right":["eval","fun","arg"]}` | ✅ |
+| Congruence (premised) rewrite | `AppCongL . \| M0 ~> M1 \|- (App M0 N) ~> (App M1 N);` | `"premises":[["~>","M0","M1"]]` plus `left`/`right` | ✅ |
+| Substitution | `(subst ^x.p (NQuote q))` | `["eval",["^","x","p"],["NQuote","q"]]` | ✅ |
+| Legacy three-argument substitution | `(eval term var repl)` | `["eval",Pattern,"var",Pattern]` | ✅ |
+| Multi-substitution, **one** replacement | `(multisubst scope r0)` | `["eval",["^*",[…],body],r0]` | ✅ |
 | Multi-substitution, **two or more** replacements | `(multisubst scope r0 r1)` | — | **★ neither form has it.** `PatternTerm::MultiSubst.replacements` is only ever built as `vec![second]`, so arity ≥ 2 is unreachable from `language!` source. Not a parity gap: a model capability with no frontend, in either notation. |
-| Remainder in a rewrite | `(PPar {…, ...rest})` | `("PPar",("coll",[…],"rest"))` | ✅ |
-| Typed literal in a pattern | `(Q 0u32)` | `("Q",("lit","u32",0))` | **★ extension, not parity** — `language!` cannot parse `(Q 0u32)` at all (§III.4.2). The value form gains a capability the macro lacks, so a specification using it has no `language!` projection. |
+| Remainder in a rewrite | `(PPar {…, ...rest})` | `["PPar",["coll",[…],"rest"]]` | ✅ |
+| Typed literal in a pattern | `(Q 0u32)` | `["Q",["lit","u32",0]]` | **★ extension, not parity** — `language!` cannot parse `(Q 0u32)` at all (§III.4.2). The value form gains a capability the macro lacks, so a specification using it has no `language!` projection. |
 
-### IV.10 `relations { … }` — formerly `logic { … }`
+### IV.10 `relations { … }`
 
 The rename is adopted: **`relations` is the new name for `logic`**, matching
 Stay's mockup and `SuffixKind::Relations` on the `modules` branch. `logic` is
@@ -3320,7 +2982,7 @@ The split is precise and decides two shipped languages. `LogicBlock` carries
 `content: TokenStream` (verbatim). A block containing only `relation`
 declarations — exactly what `GuardedRho` and `GuardOptSmoke` contain — is fully
 recoverable from the declarative half and has a value spelling. A block
-containing Datalog rules with host bodies — what `RhoCalc` contains — does not,
+containing Datalog rules with host bodies — what `Rholang` contains — does not,
 in v1.
 
 > **A naming caution.** `RelationDecl::param_types` holds **host type text**
@@ -3332,65 +2994,29 @@ in v1.
 
 ### IV.11 Fragments and composites
 
-| Feature | `language!` | Rholang | Status |
+| Feature | `language!` | Rholang representation | Status |
 | --- | --- | --- | --- |
-| `language_fragment! { name, types, token_defs, mode_defs, terms }` | a types/tokens/modes/terms-only definition | an `extender` with only those suffixes — **`tokens` and `modes` have no L0 suffix**, §III.3 | ⚠ partial: the extender subsumes the `types`/`terms` part only |
-| `compose_languages! { name, languages: [ … ] }` | delegating composite | — | **GAP** |
+| `language_fragment!` | types/tokens/modes/terms fragment | a partial canonical value applied with `Data(v)` | parity |
+| `compose_languages!` | delegating composite wrapper | theory application and join cover presentation composition, but not the generated wrapper ABI | runtime wrapper gap |
 
-> `FragmentDef` (`ast/src/fragment.rs:28-35`) carries `name`, `types`,
-> `token_defs`, `mode_defs`, and `terms` — not just types and terms. Two of
-> those five have no extender spelling, which is gap **G-4**.
+### IV.12 Remaining semantic gaps
 
-### IV.12 The gaps, named explicitly
+Three boundaries remain; none requires a second DDL syntax.
 
-Four features have **no** Rholang spelling in version 1.
+1. **Host-language Datalog bodies.** Relation declarations are data, but an
+   arbitrary Rust body is not publishable runtime semantics. It must become a
+   declarative rule or an allow-listed handler capability.
+2. **Generated composite wrappers.** Theory composition constructs the combined
+   presentation. Reproducing `compose_languages!`'s Rust wrapper type and
+   metadata ABI at runtime requires a dynamic-term adapter.
+3. **New opaque machine implementations.** A value may name a registered
+   carrier or theory capability; it cannot publish new native machine code.
 
-**G-1. Datalog rules with host bodies (`relations { … }`).** A rule body is
-arbitrary host code over the generated AST enums
-(`if let Proc::POutput2Plus(…)`, `let res = { … }`). It is a Datalog clause
-with host guards and host let-bindings, so neither the operator algebra of
-§V.2 nor the arity-$`k`$ handler signature of §V.4 fits it. *What is lost:* a
-Rholang-authored language cannot carry custom saturation rules in v1. In the
-shipped corpus this affects `RhoCalc` alone. Relation *declarations* are
-unaffected, and §III.4.3 gives `Rule` a production so the schema does not have
-to change when the gap closes — only the gate does. §V.5 states the path: once
-`semantics` names a specified language, a rule body becomes a term of that
-language.
-
-**G-2. `compose_languages!`.** The composite generator emits a delegating
-`Term` wrapper enum, a per-sub-language environment struct, and an aggregated
-metadata implementation. It is a *code* generator over several `LanguageDef`s,
-not a specification feature of one, and its output has no runtime-installable
-form today. *What is lost:* multi-language composites must still be declared in
-Rust. Extender union and application cover the common case. In the shipped
-corpus this affects exactly one language, `CalcLambda`
-(`languages/src/composition/composed_lang.rs:8`, exercised by
-`languages/tests/composition_tests.rs:86`) — see the corpus note in §V.2.
-
-**G-3. Introducing new opaque carriers or theory implementations.**
-`("extern", urn)` and `"theory": name` *name* a registered implementation; they
-do not define one. *What is lost:* a Rholang-authored language may use
-`ReadZipperLit` or `PresburgerAlgebra` if the node already registers them, but
-cannot introduce a new one. This is a deliberate boundary: introducing a new
-carrier means introducing new machine code, which is what a capability registry
-is for.
-
-**G-4. Five block kinds have no L0 extender suffix.** `tokens`, `modes`,
-`sync`, `tree_invariants`, and `guards` exist only in the L1 value form.
-*(`options`, the sixth and by far the most widely used — 18 of 31 flat specs —
-is **not** deferred: §III.3's Refinement 3 gives it a clause on `LanguageDecl`,
-because options are language-global rather than a composable presentation
-fragment and one optional clause is cheaper than a `SuffixKind` variant.)*
-*What is lost:* `RhoCalc` and `GuardedRho` **cannot be written as extenders**,
-and `language_fragment!`'s `token_defs` / `mode_defs` have no extender spelling
-either. They can be written as whole-specification values, which is the normative
-form, so this bounds the *authoring surface* rather than the proposal. The
-deferral is cheap because the affected users are already blocked or absent:
-`sync` and `tree_invariants` have **zero** shipped users; `tokens` and `modes`
-have one, `RhoCalc`, which G-1 and G-3 block independently; `guards` has one,
-`GuardedRho`, a leaf smoke-test. §III.3 gives the full table and the closure
-path: five additive `ExtenderExpr` suffixes and five `SuffixKind` variants,
-deferred to the branch that owns L0.
+Fields without dedicated builders—including options, literals, tokens, modes,
+relations, synchronization constraints, tree invariants, and guards—remain
+fully expressible through `Data(v)` and through directly constructed
+`language/2` values. Adding ergonomic builders for them is additive sugar, not
+a schema or backend change.
 
 ### IV.13 The non-projectable fragment — the closed set of extensions
 
@@ -3413,7 +3039,7 @@ than a paragraph a future author may not read.
 
 | # | Production | Why `language!` cannot spell it | Evidence |
 | --- | --- | --- | --- |
-| **N-1** | `("lit", Carrier, Scalar)` — a typed literal in a `Pattern` | `parse_pattern`'s terminal branch is `input.parse::<Ident>()`, so it has **no literal alternative at all**; `(Q 0u32)` fails at macro-parse time because `0u32` is not an identifier | `ast/src/language/parse.rs:2836-3006`; the corpus records the workaround at `languages/tests/omnibus_turing.rs:51` |
+| **N-1** | `["lit", Carrier, Scalar]` — a typed literal in a `Pattern` | `parse_pattern`'s terminal branch is `input.parse::<Ident>()`, so it has **no literal alternative at all**; `(Q 0u32)` fails at macro-parse time because `0u32` is not an identifier | `ast/src/language/parse.rs:2836-3006`; the corpus records the workaround at `languages/tests/omnibus_turing.rs:51` |
 
 **Why N-1 is kept rather than removed for symmetry.** The tempting alternative —
 delete the production, and restore an exact bijection between the two frontends
@@ -3423,7 +3049,7 @@ Turing-machine transition table as `(Cf (Q 0u32) …)`; that is the normative
 syntax this FIPS cross-checks against in §IV. `language!` cannot parse it, and
 the shipped digest works around the limitation by declaring `Q0` and `Q1` as
 nullary constants — a *workaround for an implementation accident*, not a
-modelling decision. Removing `("lit", …)` would propagate a `syn`-inherited
+modelling decision. Removing `["lit", …]` would propagate a `syn`-inherited
 restriction into a notation whose entire purpose is to outlive `syn`.
 
 **Two rules keep $`N`$ from growing quietly.**
@@ -3448,61 +3074,26 @@ miscount.** `PatternTerm::MultiSubst.replacements` is only ever constructed as
 value spelling either: it is a model capability with **no frontend at all**. It
 belongs on neither list.
 
-## Part V — Native Blocks and the `semantics` Clause
+## Part V — Native Blocks and Semantic Targets
 
-The one place a specification embeds Rust is the native block: `![ a + b ]` on a
-term rule, `eval: ![{ … }]` in `literals`, a payload constructor in `tokens`,
-and a Datalog rule body in `relations`. A Rholang-authored specification cannot
-embed Rust. This section reports how that is resolved.
+The one place the compile-time specification embeds Rust is a native block:
+`![ a + b ]` on a term rule, `eval: ![{ … }]` in `literals`, a payload
+constructor in `tokens`, or a Datalog rule body in `relations`. A
+registry-published Rholang specification cannot embed Rust source.
 
-### V.1 The sanctioned design
+### V.1 Semantic-target design
 
-The resolution is not chosen here; it is Michael Stay's, and it is a *bootstrap*
-rather than a restriction:
+The canonical value's `"semantics"` field states which language gives meaning
+to native expressions. The field is available in a theory through `Data(v)`.
+It is not a textual directive and does not alter theory-expression parsing.
 
-> The point of the **semantics** portion of the extender blocks is to say
-> **"these things should behave like those things"**, since we need to be able
-> to **bootstrap using the semantics of Rust data types until we have a
-> description of the semantics in the spec language itself**.
-> — Michael Stay, design discussion, 2026-07
-
-Concretely, from the mockup:
-
-```text
-semantics M1.Go   // a spec for the language to use in ![] blocks;
-                  // currently optional, defaults to Rust
-```
-
-So a native block is **not** "Rust embedded in a specification." It is an
-expression **in the language named by the enclosing `semantics` clause**, and
-`Rust` is merely the bootstrap default because Rust is the only semantics that
-exists today. The migration path is: name the semantics explicitly, then
-replace the named semantics with a MeTTaIL specification once one exists.
-
-[Branch] The clause is already parsed and already restricts the backend:
-`ExtenderExpr::Semantics { inner, target: LanguageExpr }`,
-`SemanticsTarget { Rust, Unknown }`, and
-`semantics.rs::assemble_rust_theory_body` refuses to project anything but
-`Rust`:
-
-```rust
-if ntir.semantics != SemanticsTarget::Rust {
-    return Err(SpecError::Assemble { message: format!(
-        "Rust projection requires semantics Rust, got {:?}", ntir.semantics) });
-}
-```
-
-That is a correct fail-closed stub: an unrecognized semantics target produces
-an error, never a silent Rust reading.
-
-This FIPS's contribution is to make the clause *precise* — what a
-`NativeEval` may be, what each form costs, and which forms need no semantics
-target at all — and to measure how far each form actually reaches.
-
-![Choosing a NativeEval form as an activity with a decision node: four mutually exclusive alternatives — declarative operator, declarative literal carrier, named handler capability, and the source-text bootstrap escape — each with its downstream artifact](diagrams/05-native-block-tiers.svg)
-
-PlantUML source: [diagrams/05-native-block-tiers.puml](diagrams/05-native-block-tiers.puml).
-Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
+Runtime installation accepts only declarative operator and carrier plans or an
+allow-listed `['handler', urn]` capability. Unknown targets and unauthorized
+capabilities fail closed. `['src', 'Rust', text]` exists solely for privileged
+local migration of compile-time grammars and is categorically rejected on every
+deploy-reachable installation path. The target therefore bootstraps existing
+Rust-authored languages without making source compilation part of the runtime
+module contract.
 
 ### V.2 What the corpus actually contains
 
@@ -3528,7 +3119,7 @@ command**.
   - `#![…]` is a Rust **inner attribute** (`#![allow(…)]` opens most corpus
     files);
   - `ident![…]` is a Rust **bang macro**. `vec![]` alone accounts for **ten**
-    occurrences inside `rhocalc.rs`'s native bodies
+    occurrences inside `rholang.rs`'s native bodies
     (`mettail_runtime::mk_proc_list(vec![])` and friends), so a sweep that
     counts every `![` reports **24** mode-less blocks where the correct figure
     is **14**. Stating "comments and strings are stripped" without stating this
@@ -3537,12 +3128,12 @@ command**.
 - **A fold/step native body** is a native block whose closing `]` is
   followed by the mode keyword `fold` or `step`. `![T] as Cat` **carrier
   declarations** are not bodies. A body is counted **once** however many source
-  lines it spans — and they do span lines: `rhocalc.rs` has bodies whose
+  lines it spans — and they do span lines: `rholang.rs` has bodies whose
   closing `}] fold;` is on its own line.
 - **Comments and string literals are stripped before counting**, with `//`,
   `/* … */` (nesting), `"…"`, and `r#"…"#` all recognized. A doc-comment that
   *mentions* `![a + b] fold` is not a body — this is not hypothetical, and it is
-  the second trap: `rhocalc.rs:878`, `:1051`, and `:1863` each discuss a
+  the second trap: `rholang.rs` contains comments that discuss a
   `![…]` body in a `//` comment, and counting those three as blocks is exactly
   how a mode-less count of 14 becomes a mode-less count of 17.
 
@@ -3571,7 +3162,7 @@ with no argument — it exports the verification base itself — it prints:
 | --- | --- |
 | **fold/step bodies** | **245** |
 | carrier declarations `![T] as Cat` | 42 |
-| mode-less native blocks | **14** — of which **13 are `literals{}` eval bodies** (8 Calculator, 5 RhoCalc) and 1 is `guardoptsmoke.rs:57`'s `![{ k }]` |
+| mode-less native blocks | **14** — of which **13 are `literals{}` eval bodies** (8 Calculator, 5 Rholang) and 1 is `guardoptsmoke.rs:57`'s `![{ k }]` |
 | braced `![{ … }]` blocks, all kinds | 144 — of which **130 carry a fold/step mode** |
 
 Classifying every one of the **245** fold/step bodies by shape:
@@ -3585,7 +3176,7 @@ Classifying every one of the **245** fold/step bodies by shape:
 | Other expression | 19 | `a & !b`, `[a, b].concat()`, `CanonicalBigInt::from(a.get() - b.get())` |
 | **Total** | **245** | |
 
-Per language: Calculator 127, RhoCalc 108, LedTest 7, and one each in
+Per language: Calculator 127, Rholang 108, LedTest 7, and one each in
 NativeDemo, NativeFoldDemo, and OptSmoke. That sums to 245 and agrees with
 §V.7's partition, which is the internal consistency check any figure quoted here
 must pass. A plain `rg '!\['` count does **not** pass it, because it counts
@@ -3594,7 +3185,7 @@ carrier declarations, mode-less blocks, bang macros, and comment mentions alike.
 #### V.2.3 The literal-carrier bodies
 
 The `literals { … }` `eval:` bodies — **13 across the whole corpus**, 8 in
-Calculator and 5 in RhoCalc — are near-uniformly a call to one of a *fixed set*
+Calculator and 5 in Rholang — are near-uniformly a call to one of a *fixed set*
 of framework parsers: `mettail_prattail::parse_int_lit`, `parse_rational_lit`,
 `parse_fixed_lit`, `mettail_runtime::parse_float_lit`, with a suffix argument.
 
@@ -3603,10 +3194,10 @@ restrictions on the accepted literal spellings**, not arbitrary computation:
 
 - Calculator's `BigInt` arm accepts the declared `…n` spelling *or* an
   unsuffixed numeral too large for the narrower carrier — a **disjunction**;
-- RhoCalc's `Int` arm is `if text.ends_with('n') { Err(()) } else { … }` — a
+- Rholang's `Int` arm is `if text.ends_with('n') { Err(()) } else { … }` — a
   **negative suffix exclusion**.
 
-Both are expressible in `("carrier", …)`'s parameter map (§V.3.2), but only
+Both are expressible in `["carrier", …]`'s parameter map (§V.3.2), but only
 because that map carries `require_suffix`, `allow_overflow_of`, **and**
 `exclude_suffix`; the third was added precisely so this claim is 13 of 13 rather
 than 11 of 13. Saying which two arms are non-trivial, and which parameter each
@@ -3628,19 +3219,19 @@ Two conclusions follow.
 they need from the host.
 
 ```text
-NativeEval ::= ("op",      Str)                       -- V.3.1 declarative operator
-             | ("carrier", Str, {Str : Scalar})       -- V.3.2 declarative literal carrier
-             | ("handler", Str)                       -- V.3.3 named capability, by URN
-             | ("src",     Str, Str)                  -- V.3.4 source text in the
+NativeEval ::= ["op",      Str]                       -- V.3.1 declarative operator
+             | ["carrier", Str, {Str : Scalar}]       -- V.3.2 declarative literal carrier
+             | ["handler", Str]                       -- V.3.3 named capability, by URN
+             | ["src",     Str, Str]                  -- V.3.4 source text in the
                                                       --       named semantics language
 ```
 
-#### V.3.1 `("op", name)` — the declarative operator algebra
+#### V.3.1 `["op", name]` — the declarative operator algebra
 
 **This form needs no `semantics` target at all**, and §I.5 is why: the
 rho-native lowering already derives an operator rule's meaning from the
 *terminal in its syntax pattern*, through `rho_binop`/`rho_unop`, and never
-reads the Rust body. `("op", "add")` simply *states* what the lowering already
+reads the Rust body. `["op", "add"]` simply *states* what the lowering already
 infers, so that the same rule can be lowered without a Rust expression to fall
 back on.
 
@@ -3667,19 +3258,19 @@ operator rule in every language that currently lowers to a Rholang scalar
 contract. Every operator-shaped body in the corpus falls inside the alphabet
 above; there is no operator-shaped body the alphabet fails to name.
 
-#### V.3.2 `("carrier", kind, params)` — declarative literal carriers
+#### V.3.2 `["carrier", kind, params]` — declarative literal carriers
 
 For `literals { … }`, the eval body names a framework parser and its
 parameters:
 
 ```text
-("carrier", "int",   {"suffix": "i32"})     -- parse_int_lit(text, Some(I32))
-("carrier", "int",   {})                    -- parse_int_lit(text, None)
-("carrier", "rat",   {})                    -- parse_rational_lit(text)
-("carrier", "fixed", {})                    -- parse_fixed_lit(text)
-("carrier", "float", {})   ("carrier","bool",{})   ("carrier","str",{})
-("carrier", "int",   {"require_suffix": "n", "allow_overflow_of": "i32"})
-("carrier", "int",   {"exclude_suffix": "n"})
+["carrier", "int",   {"suffix": "i32"}]     -- parse_int_lit(text, Some(I32))
+["carrier", "int",   {}]                    -- parse_int_lit(text, None)
+["carrier", "rat",   {}]                    -- parse_rational_lit(text)
+["carrier", "fixed", {}]                    -- parse_fixed_lit(text)
+["carrier", "float", {}]   ["carrier","bool",{}]   ["carrier","str",{}]
+["carrier", "int",   {"require_suffix": "n", "allow_overflow_of": "i32"}]
+["carrier", "int",   {"exclude_suffix": "n"}]
 ```
 
 The last two forms are what make this claim **13 of 13** rather than 11 of 13,
@@ -3689,7 +3280,7 @@ and each answers one measured corpus arm (§V.2.3):
   `BigInt` **disjunction** — accept the declared `…n` spelling, *or* an
   unsuffixed numeral too large for the narrower carrier — declaratively rather
   than as a conditional expression;
-- `{"exclude_suffix": …}` expresses RhoCalc's `Int` **negative** restriction,
+- `{"exclude_suffix": …}` expresses Rholang's `Int` **negative** restriction,
   `if text.ends_with('n') { Err(()) } else { … }`, which no positive parameter
   can encode.
 
@@ -3697,7 +3288,7 @@ The parameter map is a closed key set — `suffix`, `require_suffix`,
 `exclude_suffix`, `allow_overflow_of` — and `decode_native_eval` hard-errors on
 any other key, exactly as `parse_options` does for `options`.
 
-#### V.3.3 `("handler", urn)` — a named capability
+#### V.3.3 `["handler", urn]` — a named capability
 
 [Implemented] For everything the first two forms do not reach, the specification
 **names** an evaluator rather than defining one. The registry already exists and
@@ -3752,19 +3343,19 @@ requirement in §IX.
    makes an unregistered URN a **hard elaboration error**, which is what makes
    the "inert" reading true.
 
-#### V.3.4 `("src", semantics, text)` — the bootstrap escape
+#### V.3.4 `["src", semantics, text]` — the bootstrap escape
 
 The final form carries source text tagged with the semantics language it is
 written in:
 
 ```text
-("src", "Rust", "mettail_runtime::numeric_int_bin_i32(a, w)")
+["src", "Rust", "mettail_runtime::numeric_int_bin_i32(a, w)"]
 ```
 
 This is the honest encoding of what a native block *is today*, and it is what
 makes migration mechanical: an existing `![ … ]` body becomes
-`("src", "Rust", "…")` with no loss and no reinterpretation. It is also the
-form that carries the least: a specification using `("src", "Rust", …)`
+`["src", "Rust", "…"]` with no loss and no reinterpretation. It is also the
+form that carries the least: a specification using `["src", "Rust", …]`
 
 - still requires a Rust toolchain **at installation time**, so it cannot be
   installed by deploy on a node that has no compiler;
@@ -3772,19 +3363,17 @@ form that carries the least: a specification using `("src", "Rust", …)`
 - is **rejected outright** when the target semantics is not `Rust`, per the
   branch's existing fail-closed check.
 
-> **★ NORMATIVE: `("src", …)` is a local-authoring form only, and must never be
+> **★ NORMATIVE: `["src", …]` is a local-authoring form only, and must never be
 > installed from a non-local source.** This is a categorical restriction, not a
 > preference, and the reason is that "requires a compiler" understates what the
-> form is. `("src", "Rust", text)` is **Rust source in a registry-published,
+> form is. `["src", "Rust", text]` is **Rust source in a registry-published,
 > network-transportable artifact**, and installing it means `rustc` *compiles*
-> that source with the installer's privileges. The `modules` branch's terminal
-> step, `mettail-spec/src/project/rust.rs`, **writes a `.rs` file** assembled
-> from that text; the `context { … }` preamble — also attacker-supplied — is
-> spliced at `INSERT_HERE`, so `use` declarations, proc-macro attributes,
-> `include!`, `env!`, and build scripts all execute at compile time. There is no
-> sandbox anywhere in this design, and adding one is not in scope.
+> that source with the installer's privileges. A local Rust projection writes source that the Rust compiler executes with
+> the installer's privileges; imports, procedural macros, `include!`, `env!`,
+> and build scripts can execute during compilation. There is no sandbox in this
+> design, and adding one is not in scope.
 >
-> Therefore: **`⟨install⟩` must reject `("src", …)` unconditionally whenever its
+> Therefore: **`⟨install⟩` must reject `["src", …]` unconditionally whenever its
 > call site passed `Provenance::NonLocal`** — a hard `Err(SrcNotPublishable)`,
 > per §III.6.4's `⟨G4⟩`, never a warning and never a flag. Two properties make
 > that fence real rather than nominal.
@@ -3805,31 +3394,31 @@ form that carries the least: a specification using `("src", "Rust", …)`
 > the fence is affordable precisely because most of the corpus does not need the
 > form.
 
-A specification whose every `NativeEval` avoids `("src", …)` is
+A specification whose every `NativeEval` avoids `["src", …]` is
 **installation-pure**: elaborable and installable with no compiler in the loop.
 That property, not the absence of the form, is the goal.
 
 ### V.4 Carriers and theories are the same capability pattern
 
-`("extern", urn)` for an opaque carrier and `"theory": name` for a constraint
-theory are the same discipline as `("handler", urn)`: the specification
+`["extern", urn]` for an opaque carrier and `"theory": name` for a constraint
+theory are the same discipline as `["handler", urn]`: the specification
 references a registered implementation by name, and an unregistered name is a
 fail-closed elaboration error rather than a silent fallback. Together with
 §V.3.3 these three references are the complete list of places where a
 Rholang-authored specification depends on host-provided machine code, and each
 is a *name*, never a body.
 
-### V.5 What `semantics <spec>` will mean
+### V.5 What a specified semantic target means
 
 The destination — Stay's "until we have a description of the semantics in the
 spec language itself" — is that `semantics` names a MeTTaIL specification, and
 a native block is a term of *that* language. Then:
 
-- `("src", "M1.Go", "…")` parses with `M1.Go`'s own generated parser, and
+- `["src", "M1.Go", "…"]` parses with `M1.Go`'s own generated parser, and
   evaluates under `M1.Go`'s own rewrite theory;
 - a `relations` rule body becomes a term of the semantics language rather than
   host code, which is what would close gap **G-1**;
-- and `("op", …)` becomes a *derived* special case rather than a primitive: the
+- and `["op", …]` becomes a *derived* special case rather than a primitive: the
   operator algebra is simply the fragment of the semantics language whose
   reduction the rho-native lowering can discharge as a single scalar contract.
 
@@ -3880,15 +3469,15 @@ theory path, or any `relations` rule body.
 > | Which languages **can be written** in the declarative forms by a human? | the **25** below | this table |
 > | Which languages does **`enc` produce** an installation-pure value for? | **0** of the Rust-bearing ones | §III.6.3 |
 >
-> $`\mathsf{enc}`$ emits `("src", semantics, text)` **verbatim** for every
+> $`\mathsf{enc}`$ emits `["src", semantics, text]` **verbatim** for every
 > native body, because §XIII.2's migration gate is structural equality
-> $`\mathcal{E}(\mathsf{enc}(d)) = d`$ and `("op", "add")` sets
+> $`\mathcal{E}(\mathsf{enc}(d)) = d`$ and `["op", "add"]` sets
 > `rust_code = None`, failing it. So NativeFoldDemo — the language in the third
-> row, reachable with `("op", "add")` by hand — migrates *mechanically* to
-> `("src", "Rust", "a + b")`, which is **not** installation-pure and is not
+> row, reachable with `["op", "add"]` by hand — migrates *mechanically* to
+> `["src", "Rust", "a + b"]`, which is **not** installation-pure and is not
 > registry-publishable under §V.3.4. Migration is therefore two steps:
 > $`\mathsf{enc}`$ gives a **faithful** value that passes the gate, and a human
-> then replaces each `("src", …)` with the declarative form this table says
+> then replaces each `["src", …]` with the declarative form this table says
 > exists, re-running the gate under the new identity. The 25 is the destination,
 > not the output of step one.
 
@@ -3896,12 +3485,12 @@ theory path, or any `relations` rule body.
 | --- | --- | --- |
 | **Already pure-declarative** | 23 / 31 (74%) | AcBagDemo, AcDemo, AmbDemo, Ambient, AmbNewDemo, AppSubst, BiCongDemo, Class2HashMapSmoke, Class2Multi, Class2OptSmoke, Class2Smoke, Class3Multi, Class3Opt, CommDemo, CtxDemo, FortranModel, InOutDemo, **Lambda**, LambdaDemo, NlAcDemo, RefinementSmoke, ReservedModel, SwapDemo |
 | **Pure-declarative once `relation` declarations are separated from rule bodies** | +1 → 24 / 31 (77%) | GuardedRho — its `logic {}` block contains *only* `relation` declarations, and it carries no native block |
-| **Reachable with `("op", …)` alone** | +1 → 25 / 31 (81%) | NativeFoldDemo — one fold body, `![a + b]`, in the closed alphabet |
-| **Needs `("handler", …)` or `("src", …)`** | 6 / 31 (19%) | Calculator (127 bodies + 8 literal evals), RhoCalc (108 bodies + 5 literal evals), LedTest (7 bodies, 6 of them operator-shaped ⇒ **one** handler), NativeDemo (`![a.pow(b as u32)]`), OptSmoke (`![{ if cond { t } else { e.unwrap_or(0) } }]`), GuardOptSmoke (`![{ k }]`) |
+| **Reachable with `["op", …]` alone** | +1 → 25 / 31 (81%) | NativeFoldDemo — one fold body, `![a + b]`, in the closed alphabet |
+| **Needs `["handler", …]` or `["src", …]`** | 6 / 31 (19%) | Calculator (127 bodies + 8 literal evals), Rholang (108 bodies + 5 literal evals), LedTest (7 bodies, 6 of them operator-shaped ⇒ **one** handler), NativeDemo (`![a.pow(b as u32)]`), OptSmoke (`![{ if cond { t } else { e.unwrap_or(0) } }]`), GuardOptSmoke (`![{ k }]`) |
 
 So **81% of the shipped corpus is reachable as installation-pure under the
 declarative forms alone**, and the remaining 19% is six languages, of which two —
-Calculator and RhoCalc — account for 235 of the 245 fold/step bodies. Notably,
+Calculator and Rholang — account for 235 of the 245 fold/step bodies. Notably,
 **Lambda — the worked example of §XI, and the presentation [Omnibus] gives — is
 in the first group**, as are every binder, ambient-calculus,
 associative-commutative, and composition demo.
@@ -3911,7 +3500,7 @@ associative-commutative, and composition demo.
 > operator-reachable. Only one is. The other three are in the fourth row for the
 > reasons below, each read off the body itself:
 >
-> | Language | The body | Why `("op", …)` does not reach it |
+> | Language | The body | Why `["op", …]` does not reach it |
 > | --- | --- | --- |
 > | NativeDemo | `nativedemo.rs:53` `![a.pow(b as u32)] fold` | `pow` is not in the alphabet, **and** the body contains a Rust cast. The file's own header says it needs a native handler. |
 > | OptSmoke | `optsmoke.rs:44-50` `![{ if cond { t } else { e.unwrap_or(0) } }] step` | A braced block with a conditional and `Option::unwrap_or` on an `*opt` parameter — §V.2's "braced block" shape. |
@@ -3919,12 +3508,12 @@ associative-commutative, and composition demo.
 > | NativeFoldDemo | `nativefolddemo.rs:57` `![a + b] fold` | ✅ genuinely operator-reachable — this is the one. |
 
 The honest reading: the *demonstrative* corpus is already reachable, and the
-*industrial* corpus (Calculator and RhoCalc) is not. That is the right place
+*industrial* corpus (Calculator and Rholang) is not. That is the right place
 for the boundary to sit in v1, and §V.5 is how it moves.
 
 ## Part VI — Naming, Versioning, and Identity
 
-![Lifecycle of a Rholang-authored language specification as a sequence: pure value construction, fail-closed elaboration and validation, identity computation, versioned registration of the value, retrieval that re-runs both gates, backend installation, and finally use through a Foreign Language Term](diagrams/04-spec-lifecycle.svg)
+![Lifecycle of a Rholang-authored language specification: pure construction, fail-closed elaboration, verified image generation, one atomic local installation returning an opaque handle, separately authorized registry publication, retrieval through the same gates, and handle-scoped FLT use](diagrams/04-spec-lifecycle.svg)
 
 PlantUML source: [diagrams/04-spec-lifecycle.puml](diagrams/04-spec-lifecycle.puml).
 Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
@@ -3978,8 +3567,8 @@ new getLambda(`rho:lib:1.*:0xab12cd34:lambda:1.0.*`),
     // `spec` is the specification VALUE — matchable, transformable, installable.
     // It re-enters G1 and G2 here; the registry is not a trusted shortcut.
     install!(spec, *ret) |
-    for (@fingerprint <- ret) {
-      stdout!(["installed", fingerprint])
+    for (@{"ok": handle} <- ret) {
+      stdout!(["installed", handle])
     }
   }
 }
@@ -4041,7 +3630,7 @@ $`\bigstar`$ fields as verbatim token text, so an encoder has exactly two moves
 and both fail. Set `rust_code = None` and the identity string gets `":"` where
 the macro put `"a + b"`. Synthesize an `Expr` instead and the encoder must
 reproduce the macro's *exact* tokens, which it cannot: the operator alphabet is
-not injective onto the corpus's bodies (`("op","and")` covers both `a && b` and
+not injective onto the corpus's bodies (`["op","and"]` covers both `a && b` and
 `a & b`), and parenthesization is not recoverable from a symbol
 (`led_test.rs:47`'s `![(-a)]` renders as `( - a )`).
 
@@ -4051,13 +3640,13 @@ not injective onto the corpus's bodies (`("op","and")` covers both `a && b` and
 | Language | Why the v1 fingerprint cannot be reproduced |
 | --- | --- |
 | Calculator | 127 fold/step bodies + 8 `literals{}` evals, hashed as verbatim token text |
-| RhoCalc | 108 fold/step bodies + 5 `literals{}` evals — **and** a `logic{}` block whose `content` token stream is hashed at `identity.rs:242` |
+| Rholang | 108 fold/step bodies + 5 `literals{}` evals — **and** a `logic{}` block whose `content` token stream is hashed at `identity.rs:242` |
 | LedTest | 7 bodies; `led_test.rs:47`'s `![(-a)]` renders as `( - a )`, which no operator symbol reproduces |
 | NativeDemo | `![a.pow(b as u32)]` — outside the alphabet, and a Rust cast |
 | OptSmoke | a braced conditional over an `*opt` parameter |
 | GuardOptSmoke | `![{ k }]` — **and** a `logic{}` block carrying `relation ok(Proc);` |
 | **GuardedRho** | carries **no** native block, but its `logic{}` block carries `relation halts(Proc); relation safe(Proc);` as a **token stream**; `enc` writes the declarative `relations` list, so the identity string differs |
-| **NativeFoldDemo** | carries one fold body, `![a + b]`. It is reachable with `("op", "add")` — which is exactly why it is affected: a rule encoded that way has `rust_code = None`, so the identity string gets `":"` where the macro put `"a + b"` |
+| **NativeFoldDemo** | carries one fold body, `![a + b]`. It is reachable with `["op", "add"]` — which is exactly why it is affected: a rule encoded that way has `rust_code = None`, so the identity string gets `":"` where the macro put `"a + b"` |
 
 Two of those rows are easy to get wrong in opposite directions, so they are
 called out. **GuardOptSmoke must not be counted twice** — it is a native-block
@@ -4092,37 +3681,40 @@ real compiler tokens while runtime reconstruction re-parses them as synthetic
 tokens, and the two render with different inter-token spacing. Its module
 documentation is explicit that a `from_str` round trip is *not* a
 context-independent fixed point. A value-authored specification has no embedded
-token streams at all except under `("src", …)`, so for installation-pure
+token streams at all except under `["src", …]`, so for installation-pure
 specifications the canonicalization `push_tokens` performs is unnecessary — and
-where `("src", …)` is used, it applies unchanged.
+where `["src", …]` is used, it applies unchanged.
 
 ## Part VII — Foreign Language Term Integration
 
-### VII.1 The registration path
+### VII.1 Installation and lexical handle binding
 
-A program uses a Rholang-specified language through the FLT surface with no new
-resolver. The path, end to end:
+A program uses a Rholang-specified language only through an opaque installed
+handle. The path is atomic and fail-closed:
 
-1. A Rholang process constructs — or receives — the specification value $`v`$.
-2. $`\mathcal{E}(v)`$ yields a `LanguageDef`; $`\mathcal{V}`$ validates it;
-   $`\mathcal{F}(\mathcal{E}(v))`$ is its fingerprint.
-3. `lower_language_def` and `plan_rho_default_backend` produce the
-   `rhoapi::Par` driver network and the set-automaton pattern DAG, both keyed
-   by $`\mathcal{F}`$.
+1. A Rholang process constructs or receives a `Module`, `Theory`, or canonical
+   value $`v`$.
+2. Installation resolves the pinned import graph, elaborates and validates
+   $`v`$, lowers it to GrammarCore, derives and verifies its parser image, and
+   checks every requested capability and resource profile.
+3. One commit creates an immutable installed record keyed by the semantic
+   fingerprint $`\mathcal{F}`$ and returns an unforgeable
+   `InstalledLanguageHandle`. A failed operation publishes nothing.
 4. Every constructor $`L`$ of the language acquires the reflected head tag
 
    ```math
    \ulcorner \mathcal{F} \cdot L \urcorner \;=\; \texttt{GPrivate}\bigl(\texttt{"mettail.term."} \Vert\, \mathcal{F} \,\Vert\, \texttt{"."} \,\Vert\, L\bigr).
    ```
 
-5. The FLT resolver binds the **surface tag** — the identifier before the
-   delimiter — to $`\mathcal{F}`$. A tagged FLT `` L`…` `` then parses with that
-   language's grammar and reflects under $`\ulcorner \mathcal{F} \cdot \bullet \urcorner`$.
+5. A lexical Rholang environment binds a local alias to that handle. A tagged
+   FLT resolves the alias at evaluation time, after the handle exists, parses
+   with the handle's grammar, and reflects under
+   $`\ulcorner \mathcal{F} \cdot \bullet \urcorner`$.
 
-Step 5 is the only new binding, and it is a *name-to-fingerprint* map — the
-same map the FLT FIPS's "guest-parser registry lift" future-work item already
-calls for. This FIPS supplies its population path: a language is registered,
-therefore its tag is resolvable.
+A registry record supplies content; it does not create the lexical binding or
+grant authority. Installation and registry publication are separate operations.
+An alias, URI, fingerprint, channel name, or semantic version is never accepted
+where a handle is required.
 
 ### VII.2 The surface, as already used
 
@@ -4180,33 +3772,9 @@ let lambda = free LambdaCalc() in {
 The same shape, with `fooLang` in place of `lambda`, is the FLT-plus-lookahead
 idiom this FIPS assumes throughout, and §XI.5 uses it unchanged.
 
-> **★ Which grammar the Rholang snippets in this document are valid against.**
-> This must be said, because a reviewer who checks will otherwise get a false
-> alarm. The document contains **seven** fenced ` ```rholang ` snippets. Five
-> parse cleanly under the *shipped* Rholang 1.0 tree-sitter grammar
-> (`rholang-rs/rholang-tree-sitter/grammar.js`). Two do not, and the reason is
-> that they exercise **proposed or approved-but-unimplemented syntax** — the very
-> constructs this FIPS's neighbours introduce:
->
-> | Construct | Introduced by | In the shipped grammar? |
-> | --- | --- | --- |
-> | `x!(P)[*]`, `x!(P)[n]` — the lookahead postfix | approved **Lookahead** FIPS | **no** |
-> | `` L`…` `` — the FLT tagged guest term | **Foreign Language Terms** FIPS (under review) | **no** |
-> | `free L()` — freeing a language into scope | approved **Lookahead** FIPS, §Semantics example | **no** |
->
-> Everything else these snippets use — `{\| trace, ..._ \|}` multiset patterns,
-> two-binder receives, `let @r <- e in { … }`, method calls such as
-> `trace.last()`, map and list literals, and URI-bound `new` — **does** parse
-> today, which is worth knowing because it means the notation of §III.4 needs no
-> grammar change at all beyond work item **W-1** (tuples). A reviewer can
-> reproduce the split with:
->
-> checked with `tree-sitter parse` against the grammar cited above.
->
-> The two snippets that do not parse are §VII.2's example — quoted **verbatim in
-> shape** from the approved Lookahead FIPS — and §XI.5's, which follows it. They
-> are correct as illustrations of the target surface and are not proposals to
-> change it.
+All conformance parsing in this campaign is against the nouveau Rholang
+`language!` specification in `languages/src/rholang.rs`. The legacy Rholang 1.3
+tree-sitter grammar is neither an oracle nor an implementation target.
 
 ### VII.3 Behavioral types, the satisfaction predicate, and the modality
 
@@ -4226,7 +3794,7 @@ introduced.
 > `Premise::BehavioralGuard(BehavioralPred)` (`ast/src/language/model.rs:122`)
 > stores the predicate **alone**: the subject of a guard premise is the rule's
 > own redex, fixed by the premise's position, and there is no field in which a
-> different one could be recorded. So the value-form premise `("guard", Pred)`
+> different one could be recorded. So the value-form premise `["guard", Pred]`
 > carries a bare `BehavioralPred` — §III.4.3's productions — and the `⊨` of the
 > surface is the *reading* of that premise, not an extra component of it. A
 > value production carrying an explicit subject would spell something the model
@@ -4250,13 +3818,12 @@ where:
   and the hole — for instance a channel that must be both sent on in the
   context and received on in the hole.
 
-There is no specification for the types beyond this shape. This FIPS therefore
-does **not** fix a value encoding for the modality; it records the target shape,
-and reserves the tag `("modal", K, relies, indices, Pred)` for it, so that the
-notation does not have to be revised when the type theory lands. Recording the
-reservation is the responsible action: the alternative — encoding today's
-$`\langle K \rangle \varphi`$ as if it were the whole story — would bake a
-narrower form into the identity of every language that used it.
+The Hypercube presentation makes these types precise through displayed sites
+with rely, index, and ambient telescopes. The canonical value encoding is
+`["modal", site, relies, indices, ambient, Pred]`. The site must be declared in
+the presentation; every telescope is scope-checked; and the full profile is
+part of the semantic fingerprint. An FLT hole is not a displayed site and
+cannot be substituted for one.
 
 ### VII.4 The No-Injection invariant carries over unchanged
 
@@ -4382,8 +3949,8 @@ Four things, stated as an honest inventory.
      names.
 4. **The native handlers a specification references.** An
    installation-pure specification references none, which is exactly why §V.7
-   measures that subset. A specification using `("handler", urn)` requires the
-   target to have registered that URN; a specification using `("src", "Rust", …)`
+   measures that subset. A specification using `["handler", urn]` requires the
+   target to have registered that URN; a specification using `["src", "Rust", …]`
    requires a Rust toolchain and is therefore **not** installable on a
    bare-metal target at all.
 
@@ -4418,7 +3985,7 @@ Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
 | **G1 Shape** | unknown tag, wrong arity, wrong scalar type, unknown map key, missing `"mettail"`, **a reserved or keyword label** (§IX.5.1) | $`\mathcal{E}`$, §III.6 |
 | **G2 Well-formedness** | undeclared category, dangling constructor reference, freshness variable not in the equation, negation cycle, tier mismatch | $`\mathcal{V}`$ — `validate_language`, stratification |
 | **G3 Identity** | any attempt to make one language's constructors match another's — **sound only under a collision-resistant** $`\mathcal{F}`$ | $`\mathcal{F}`$-keyed `GPrivate` tags, W-7 |
-| **G4 Capability** | `("handler", urn)`, `("extern", urn)`, `"theory": name` naming something unregistered, **or a handler whose code hash does not match its commitment**; and `("src", …)` on any non-local install path | §III.6.4's `⟨G4⟩` |
+| **G4 Capability** | `["handler", urn]`, `["extern", urn]`, `"theory": name` naming something unregistered, **or a handler whose code hash does not match its commitment**; and `["src", …]` on any non-local install path | §III.6.4's `⟨G4⟩` |
 | **G5 Budget** | an oversized specification, an unbounded regex, an over-ambiguous grammar, a non-terminating theory, a divergent guard | §III.6.4's `⟨G5a⟩` at admission; parse fuel and cross-language reduction fuel at runtime |
 
 **These gates run on every elaboration, including one that follows a registry
@@ -4577,8 +4144,9 @@ value, because $`\mathcal{E}`$ cannot compute it: at its input a registry-fetche
 specification and an inline-built one are the same object, and §III.9 forbids the
 receive that would distinguish them. §III.6.4 gives the rule in full.
 
-`Ntir::content_hash` already uses BLAKE3, so the primitive is present in the
-workspace. §IX.2.2 shows the transition is safe.
+The review branch's GrammarCore fingerprint already uses BLAKE3, so the
+primitive and canonical encoding are exercised in the workspace. §IX.2.2
+shows the transition is safe.
 
 **R-2. ★ Resource exhaustion — the exposure is per-input, not per-install.**
 It is natural to read a hostile specification as a denial-of-service vector
@@ -4590,7 +4158,7 @@ rules accepting the same surface produce a multiplicative GLR fork explosion,
 measured at **14 ms → 256 ms → 2.2 s → 15.4 s → 109 s** for `k = 0..4` extra
 `&`-segments of `@Nil<=@Nil&…`
 (`formal/rocq/prattail_wpda_runtime/theories/ForRowPersistentRuleRedundancy.v:23-33`;
-`languages/src/rhocalc.rs:609-619`). That is roughly a **7800× amplification
+`languages/src/rholang.rs`). That is roughly a **7800× amplification
 from four extra input tokens**.
 
 Under this FIPS **the grammar is the attacker's**. So the attacker chooses the
@@ -4646,7 +4214,7 @@ it were. Installing a language:
 - mints system-process `Definition`s into the node's URN map, on channels that
   are addressable by name (§IX.6);
 - rests receivers in RSpace, some of which are `GString`-named today (§IX.6);
-- writes and compiles files, if the specification uses `("src", …)` — which is
+- writes and compiles files, if the specification uses `["src", …]` — which is
   why §V.3.4 bans that form from any non-local install path.
 
 So the worst outcome of installing a hostile *installation-pure* specification
@@ -4967,7 +4535,7 @@ boundary** — §IX.2's class, not §IX.6.2's.
 It is **cheaper to mount than construction 1** and the difference is not
 marginal. Construction 1 needs a shared left-hand-side pattern *text*;
 construction 2 needs only a shared constructor *name*. `PPar` is the actual
-constructor name in `languages/src/rhocalc.rs` and in every AC and Ambient
+constructor name in `languages/src/rholang.rs` and in every AC and Ambient
 example in the corpus, so for two co-installed process calculi the collision is
 not a contrivance — it is the **default outcome**.
 
@@ -5087,7 +4655,7 @@ because a `GString` channel is addressable by anyone who can spell it. Once
 §IX.6.1 lands, the `sa:` and `ac:` families are in the same position — scoped to
 the right language, but still guessable *by that language's users*.
 
-**★ How far the remaining families are fingerprint-confined is UNPROVEN, and for
+**★ How far the remaining families are fingerprint-confined is unproven, and for
 one of them it is provably false.** The tempting claim here — that the residual
 "does not cross a fingerprint boundary, so it does not falsify the cross-language
 claim" — is **not made**, because the derivation does not go through:
@@ -5147,299 +4715,99 @@ registry, not for this notation; §III.6.4's `⟨G4⟩` narrows the blast radius
 requiring a third-party code-hash commitment, but it does not make the URN
 unaddressable.
 
-## Part X — Modules: Specified Here, Implemented Later
+## Part X — Modules and Resolution
 
-**Version 1 implements no module support, and this Part specifies the syntax
-anyway.** The two halves of that sentence are not in tension, and §X.1 gives the
-reason: the extender surface §III.3 adopts was *designed inside a module
-system*, so leaving the spine unspecified does not keep the boundary clean — it
-keeps the boundary **implicit**, and an implicit boundary leaks one construct at
-a time. Specifying the spine is what makes the line between "adopted" and "not
-adopted" derivable instead of decided case by case.
+### X.1 Module meaning
 
-Read this Part as a specification with its implementation deferred. §X.6 states
-precisely which parts exist today and which do not, and **nothing in version 1
-depends on anything in this Part**: no module construct appears in §XIII.4's
-sequencing graph.
+A `Module` is the unit of naming, import resolution, visibility, and registry
+publication. It contains theory declarations and one or more `theory` entry
+expressions. Each entry elaborates to a separately fingerprinted language
+specification that may be installed into a separate handle. A `Theory` is a
+functor from presentations and structure-preserving morphisms to a presentation
+and morphism. Evaluation is lexical and source ordered:
+parameters are bound first, each `let` binding is evaluated once, and builders
+transform their input presentation from left to right.
 
-### X.1 ★ The layer this belongs to, and the transplant it explains
+Module syntax is specified in §III.3. Resolution must complete before
+canonicalization, validation, fingerprinting, or backend generation. Names
+that escape a module do so only through its exported registry record; lexical
+scope is never serialized into the canonical `language/2` value.
 
-**Mike Stay's module design is a module system for the Rust macro DDL.** It
-organises `language!` definitions in Rust source: `import` reads another
-compilation unit from the **filesystem**, `module` namespaces the declarations
-inside a file, resolution happens at **macro-expansion time**, and the
-prototype's artifacts are `.module` files on disk
-([Prototype], `GSLT/src/test/module/`). Every one of those is a compile-time,
-host-side notion, and each is entirely appropriate there.
+The canonical module value is ordinary Rholang data:
 
-**§III.3 lifts the extender fragment of that design and uses it as an
-in-Rholang authoring surface.** That is a **layer transplant**, and naming it as
-one explains an otherwise puzzling observation: the
-adopted surface keeps reaching for module machinery — the `export` modifier is
-in the grammar and §II.1's worked example uses it, yet §III.3 has to gloss its
-*meaning* as out of scope — because `export` is only meaningful relative to a
-module boundary that the transplanted fragment does not carry with it.
-
-Naming the transplant makes the split derivable rather than case-by-case:
-
-| Construct | Transplants to the in-Rho form? | Why |
-| --- | --- | --- |
-| `extender`, `language`, `\/`, the eight `Content` suffixes, `semantics` | **Yes** | They compose *presentations*. They mention no host, no file, and no compilation unit. |
-| `import` | **No** | Its meaning is "read another compilation unit from the filesystem". A deployed Rholang process has no filesystem. |
-| `module`, `export` | **No** (as a spine) | They partition and expose *compilation units*. The in-Rho analogue of "another unit I can name" is already a **registry entry** (§VI.2), which carries a version and a fingerprint that a path does not. |
-| `space` | **No** (and separately out of scope) | Q-3; a Reifying-RSpaces question. |
-
-**Therefore the module layer is macro-side.** The in-Rho form gets the
-**composition algebra** and reaches other specifications through §VI.2's
-versioned registry; it does not get file-based module resolution, and it does
-not need an in-Rho `import`. This is a cleaner story than inventing an in-Rho
-meaning for `import`, and it is the one this FIPS adopts.
-
-It is also the honest resolution of the `export` question. §III.3 gives `export`
-a production (`Export ::= "export"`) because the branch parser accepts it and
-§II.1's example writes it, and says its *meaning* is a module-system question.
-Under this Part that is no longer a deferral: `export` is a **macro-side module
-construct**, specified in §X.2, with **no in-Rho counterpart** — an in-Rho
-specification's visibility is the registry's, not a module's.
-
-> **★ Two different `export`s, and the stem is a readability hazard.** The
-> `modules` branch has both, and they are unrelated:
->
-> - **`export`** — a *declaration modifier* (`exported: bool` on `ExtenderDecl`,
->   `LanguageDecl`, `SpaceDecl`; `mettail-spec/src/parser.rs:124`), controlling
->   whether a module member is visible to an importer. **Macro-side only.**
-> - **`exports { A => B }`** — a *content suffix* (`SuffixKind::Exports`,
->   `surface.rs:96`), renaming categories on the way out of an extender. **Part
->   of the presentation, has a value form** (§III.4.2's `"exports"` key), and
->   fully in scope for v1.
->
-> The prototype has only the second. Anywhere this document says "exports"
-> without qualification it means the suffix.
-
-### X.2 The module spine, normatively
-
-The productions below extend §III.3's grammar upward. They are given in the
-**branch's spelling**, because §III.3 already adopted that spelling for the
-extender fragment and a document that switched case conventions half way up its
-own grammar would be worse than one that records the divergence — which §X.7
-does.
-
-```ebnf
-(* ══ THE MODULE SPINE — macro-side, compile-time ════════════════════════
-   A source file is a sequence of imports followed by exactly ONE module.
-   (`SurfaceFile { imports, module }`, mettail-spec/src/surface.rs:7-11.) *)
-
-File            ::= {Import} Module ;
-
-(* ── IMPORT ────────────────────────────────────────────────────────────
-   The path is a QUOTED STRING resolved against the filesystem, relative
-   to the importing file.  `as` binds an ALIAS.  A braced group is sugar
-   for a run of imports.
-
-   The two sources say different things about `as`, and both are recorded
-   because only one of them motivates it.  [Prototype] uses it once, and
-   only as a shorthand — `Rholang.module`'s single
-   `import "UnivAlg.module" as u`, thereafter `u.CommutativeMonoid`.  The
-   MOTIVATION is in [Sketch], which writes two imports whose paths differ
-   but whose BASENAMES collide, the second aliased for exactly that reason:
-
-     import "path/to/Module1.module"
-     import "path/to/another/Module1.module" as M1
-
-   so `as` is a name-collision remedy and not a convenience.  Nothing in
-   the prototype exercises that case. *)
-
-Import          ::= "import" ( ImportDescriptor
-                             | "{" {ImportDescriptor} "}" ) ;
-ImportDescriptor::= String ["as" Ident] ;
-
-(* ── MODULE ────────────────────────────────────────────────────────────
-   A namespace over declarations.  Modules NEST. *)
-
-Module          ::= "module" Ident "{" {ContentItem} "}" ;
-
-ContentItem     ::= ExtenderDecl        (* III.3 *)
-                  | LanguageDecl        (* III.3 *)
-                  | SpaceDecl
-                  | Module              (* nested *)
-                  | Island ;            (* III.3's tagged foreign region *)
-
-(* ── SPACE ─────────────────────────────────────────────────────────────
-   Declares an RSpace TYPED BY a language.  Its identity question is
-   Q-3 and this FIPS does not settle it; the SYNTAX is fixed here. *)
-
-SpaceDecl       ::= {DocComment} [Export] "space" Ident ":" LanguageExpr ;
-
-(* ── QUALIFIED NAMES ───────────────────────────────────────────────────
-   III.3 already gives these, and they are what makes an aliased import
-   USABLE: after `import "UnivAlg.module" as u`, the name `u.Monoid`
-   denotes that file's exported `Monoid`.  This is also what makes
-   `semantics M1.Go` resolvable — the semantics target is a LanguageExpr,
-   hence a qualified name, hence subject to exactly this resolution. *)
-
-LanguageExpr    ::= PathElement {"." PathElement}
-                    [ "(" [ LanguageExpr {"," LanguageExpr} ] ")" ] ;
-PathElement     ::= Ident ;                        (* an alias, a module, or a member *)
+```text
+{
+  "mettail":      "module/1",
+  "name":         Str,
+  "dependencies": [ { "uri": Str, "commitment": Bytes }, ... ],
+  "exports":      [ { "name": Str, "spec": LanguageValue }, ... ]
+}
 ```
 
-**Visibility, stated as a rule rather than left to the modifier's name.** A
-`ContentItem` marked `export` is visible to any file that imports the module
-containing it; an unmarked one is visible only within that module and its
-nested modules. An importer names an exported member by a qualified
-`LanguageExpr` rooted at the import's alias, or at the module's own name where
-the import supplied no alias. **Referencing an unexported member is an error,
-not a silent miss** — the same fail-closed discipline §III.6 applies to an
-unknown key, and for the same reason: a lookup that quietly returns nothing
-turns a typo into a different program.
+Dependencies and exports retain source order in the value; canonical binary
+serialization uses length-prefixed fields and deterministic map-key order. Each
+`theory e` must elaborate to a named language, and that language name becomes
+the export name. If a compound expression has no stable name, the author wraps
+it in `Theory N() { e }` and writes `theory N()`. Duplicate export names are an
+error. Local declarations and aliases are absent from the value because only
+their elaborated results affect downstream semantics.
 
-### X.3 What the prototype REJECTS — two normative well-formedness rules
+### X.2 Import schemes
 
-The prototype ships a rejected-module corpus, and it is worth more than the
-accepted one: a negative case is a constraint stated in the only form that
-cannot be misread. Both cases are **post-composition** checks, and both are
-adopted normatively.
+The resolver classifies a reference before performing I/O.
 
-| Case | [Prototype] `bad/` | Rule |
-| --- | --- | --- |
-| **Duplicate term label** | `RepeatLabel.module` declares `Foo . T ::= "Foo1";` and `Foo . T ::= "Foo2";` in one theory | **Term labels are unique within a presentation.** Two rules may share a category; they may not share a label. |
-| **Replacement shadows a live label** | `ReplacementShadows.module` has `[] Foo . T => Bar . T ::= "Oh-no!";` where `Bar` is already declared in the base | **A replacement's NEW label must not collide with a label already present in the presentation being modified.** Renaming onto a live name is a conflict, not a merge. |
-
-**★ The second case independently corroborates §III.6's gate ordering, and that
-is the most valuable thing in the corpus.** §III.6 argues at length that the
-name-and-label gate must run **after composition**, because `exports { A => B }`
-and `replacements { … }` introduce names the raw value never contained — the
-worked hazard being `"exports": [("Foo", "^gnd")]`, which lands a reserved
-marker as a live category. `ReplacementShadows` is that same argument, reached
-independently, by an implementation, and recorded as a test: the prototype
-cannot detect its defect before composition either, because before composition
-`Bar` and the replacement live in different theories. An ordering decision this
-FIPS derived from the reserved-namespace hazard turns out to be forced a second
-time by an ordinary well-formedness hazard.
-
-### X.4 Resolution, and the internal registry
-
-**Modules are registered and retrieved the same way language definitions are.**
-A `module` declaration adds its exported members to the same internal registry
-that `language!` populates and that `apply_extends` / `apply_includes` /
-`apply_mixins` consult (`ast/src/registry.rs`); an `import` makes another file's
-exported members reachable under the importing file's alias. There is no second
-lookup mechanism and no second namespace implementation — which is the whole
-content of "like the language definitions".
-
-**★ Where W-11 does and does not bite, stated precisely, because the obvious
-reading is wrong in both directions.**
-
-- **It does not bite here.** `ast/src/registry.rs:51-55` is a
-  `thread_local! { RefCell<HashMap<…>> }`, and thread-locality is *defensible*
-  for a compile-time construct: macro expansion of a compilation unit happens on
-  the thread that expands it, and a module system that never leaves compile time
-  never observes the defect. Framing W-11 as an obstacle to macro-DDL modules
-  would be wrong.
-- **It bites on the runtime path, hard.** The same registry is consulted at
-  **runtime** by the replay path — `reconstruct_language_def` re-runs
-  `apply_extends` / `apply_includes` / `apply_mixins`, which call
-  `registry::lookup_language_def` directly (`ast/src/merge.rs:764`, `:792`,
-  `:824`; each takes **only** `&mut LanguageDef`, so there is no seam to inject
-  a resolver through). A node elaborating on a worker thread sees an **empty
-  map** and gets a *compile-time-shaped diagnostic surfacing at runtime*. That
-  is **W-11**, and it is a precondition for §VI.2's network-scoped composition
-  whether or not modules are ever implemented.
-
-So the layering claim is: composition targets are *names to be resolved by the
-caller* — on the macro frontend by the internal registry, and for
-value-authored specifications by an **injected** resolver over the versioned
-registry, with the elaborator unchanged in both cases. §VI.2's path is the one
-that needs W-11.
-
-### X.5 Nothing in the value form encodes a scope, and nothing needs to
-
-A specification value carries names as strings; it does not carry a resolved
-reference, a module path, or a namespace. That is not an omission to be
-repaired — it is what makes the value form **independent of whichever resolution
-scheme sits above it**. A module-qualified `LanguageExpr` is resolved at L0
-*before* a value is produced, so `M2.Nested.SomeExtender` never reaches
-$`\mathcal{E}`$ as a path; what reaches $`\mathcal{E}`$ is the composed
-presentation.
-
-Should a qualified reference ever need to survive into L1 — it does not today —
-it is additive as a `("path", [Str, …])` tag, which §III.4.2 already reserves
-for the `semantics` target. **Adding modules therefore changes no value, no
-elaborator arm, and no fingerprint.**
-
-> **★ The discriminator of §III.2 applies here unchanged, and this Part must be
-> read against it.** Modules add *naming and composition above the surfaces*.
-> They add **no arrow terminating on `LanguageDef`**: a module resolves names,
-> `ExtenderExpr` composes presentations, and the result reaches `LanguageDef`
-> through the arrows that already exist. If a module design ever required its
-> own elaborator, that would be a fork and this FIPS would forbid it.
-
-### X.6 Status: what exists, what is specified, what is deferred
-
-| Layer | Status |
+| Reference | Required behavior |
 | --- | --- |
-| The **extender fragment** — `extender`, `language`, `\/`, the eight `Content` suffixes, `semantics`, `context` | **[Branch]**, and in v1 scope. Implemented on `mettail-spec`; §III.3 adopts it and §III.2 Refinement 1 extends it. |
-| The **module spine** — `import`, `module`, `export`, `space`, qualified resolution, visibility | **Specified here (§X.2), NOT implemented in v1.** The `modules` branch parses it; nothing in the verification base does. Landing it is **W-13**. |
-| **Import-graph resolution and cycle detection** | Deferred with the spine. `mettail-spec/src/resolve.rs` on the branch is the starting point. |
-| **Cross-module evaluation order** | Deferred. Undesigned. |
-| **`space` identity** | Deferred to Q-3, which this FIPS narrows but does not settle. |
-| **An in-Rho `import`** | ★ **Not deferred — not proposed.** §X.1 gives the reason: the in-Rho analogue is a registry reference. |
+| `rho:...` | Resolve through the injected Versioned Registry capability. |
+| `file:relative/path.module` | Classify as a filesystem reference and return `FileIoUnavailable` until the File I/O capability exists. |
+| bare relative path | Classify as a filesystem reference and return the same stable unavailable error. |
+| any other explicit scheme | Return `UnsupportedScheme`; never fall back to another resolver. |
 
-> **W-13 — implement the module spine.** Land `import` / `module` / `export` /
-> `space` and their resolution for the **macro DDL**, taking
-> `mettail-spec/src/{parser,resolve,assemble}.rs` as the starting point and
-> adopting §X.3's two well-formedness rules as tests. **It is deliberately
-> absent from §XIII.4's sequencing graph**: no v1 work item depends on it, and
-> it depends on no v1 work item except the extender fragment W-9 already lands.
-> It is a v2 item and is recorded so that "modules follow later" names a piece
-> of work rather than an intention.
+Registry imports must use explicit `rho:` references. The resolver must retain
+the full import chain and report missing members, visibility failures, cycles,
+version mismatches, and commitment mismatches deterministically. Imports are
+content-addressed; a supplied commitment must match the BLAKE3 digest of the
+resolved module source before that source is parsed.
 
-### X.7 Divergences, flagged rather than resolved
+### X.3 Versioned Registry records
 
-The prototype ([Prototype], branch `dev`, commit `3343fbe`) and the `modules`
-branch (`mettail-spec`) are both real artifacts by different hands, and they
-**do not agree**. This FIPS follows the branch, because §III.3 already adopted
-the branch's extender spelling and internal consistency beats fidelity to
-either source alone — but the divergences are Mike's and Greg's to settle, not
-this document's, so they are recorded rather than smoothed over.
+A registry module record has this logical form:
 
-| Aspect | Prototype (`.module` files) | `modules` branch — followed here |
-| --- | --- | --- |
-| Declaration keyword | `Theory Name(p: T) { … }` | `extender Name(p) { … }` |
-| Content suffixes | `Terms`, `Equations`, `Rewrites`, `Exports`, `Replacements` (capitalised) | `terms`, `equations`, `rewrites`, `exports`, `replacements` |
-| Comments | `-- line` and `{- block -}` (Haskell-style) | `//`, `/* */`, `///` (Rust-style) |
-| Empty presentation | `Empty` | `empty` |
-| Parameter types | typed: `Theory T(cm: u.CommutativeMonoid)` | untyped: `extender T(cm)` |
-| Local binding | `let x = E in ( E )`, used for instantiation chains | **absent** |
-| Module entry point | a trailing bare `theory Expr` naming the theory the module denotes | **absent** — every member is named by a `language` or `extender` declaration |
-| Replacement | carries an **argument permutation**: `[0, 1] Mult . Elem => Plus . Elem ::= …` | `Replacement` has `label` / `keep` / `rename` and **no permutation** |
-| Export items | structured categories allowed — a list category (`Exports { … [Digit]; … }`, `List.module:6`) and an arrow category (`Exports { T1; T2; T3; T4; (T1 -> T2); }`, `ArrowCats.module:4`); no single file writes both | plain identifiers and `A => B` renames |
+```text
+{
+  "schema":       "mettail-registry-module/1",
+  "module":       <required canonical module value>,
+  "exports":      { <export name>: <canonical language/2 value>, ... },
+  "dependencies": [ <exact URI + content commitment>, ... ],
+  "images":       { <language fingerprint>: <optional parser-image bytes>, ... },
+  "signatures":   <registry trust metadata>
+}
+```
 
-Three of those are substantive rather than cosmetic, and are the ones worth a
-decision:
+`module`, `exports`, and the exact dependency graph are authoritative content.
+Every image is an untrusted cache. Installation must resolve and verify the
+signed graph, decode and elaborate the selected export, lower it to GrammarCore,
+compute its fingerprint, and verify the matching image against that result. A
+rejected image may be discarded and rebuilt from the export; it must never
+become semantic authority. A one-language publication is the same record with
+one export, not a second registry schema.
 
-1. **`let … in`** is the prototype's mechanism for building an instantiation
-   chain (`FreeRholang` in `Rholang.module` is an eight-deep nest of it). The
-   branch has no equivalent, so the same construction must be written as nested
-   applications. If extender application is to be usable at that depth, some
-   binding form is wanted.
-2. **The replacement permutation** `[0, 1]` reindexes a constructor's arguments
-   as part of the rename. §III.4.2's `Replacement` production cannot express it.
-   If the permutation is load-bearing — `UnivAlg.module` uses it to turn
-   `Mult(x,y)` into `Plus(x,y)` and `Inv(x)` into `Neg(x)` — then `Replacement`
-   needs a fourth key, and it is a value-form change rather than a surface one.
-3. **Structured export items** (`[Digit]`, `(T1 -> T2)`) export a *derived*
-   category — a list category and an arrow category — not a declared one.
-   §III.4.2's `"exports"` is a list of string pairs and cannot express either.
-   `ArrowCats.module`'s trailing commentary shows the arrow case is meant to
-   *generate* productions (`AppT1T2`, `LamT1T2`, `IdentT1`), which is a
-   presentation-level feature, not an export-level one.
+### X.4 Filesystem capability boundary
 
-One further observation, recorded so it is not mistaken for a specified feature:
-`ArithmeticOperations.module`'s `Module` body contains **no theory at all** — it
-is a sequence of parenthesised expressions exercising an expression grammar. It
-reads as a parser fixture rather than a module-system construct, and no
-production above admits it. If it is meant to be a module-level form, the
-grammar here is wrong and that is worth knowing early.
+Filesystem loading will be supplied by the future Rholang File I/O FIPS. The
+adapter must implement the same resolver interface, provenance, source-byte
+limit, cycle detection, commitment check, canonicalization rules, and error
+taxonomy as the registry adapter. Neither module elaboration nor the registry
+resolver may call `std::fs`, infer a process working directory, or grant ambient
+path authority.
+
+### X.5 Well-formedness
+
+Resolution must reject import cycles, duplicate visible names or export names,
+inaccessible members, zero entry expressions, forward local references,
+unshared names at a join, replacement shadowing, and inconsistent commitments.
+Diagnostics must identify both declarations involved and retain their source
+provenance. No partially resolved module may enter the registry.
 
 ## Part XI — Worked Example: Lambda, Side by Side
 
@@ -5494,89 +4862,85 @@ language! {
   "terms"     : [
     { "label"   : "Lam",
       "category": "Term",
-      "context" : [ ("binder", "x", "body", ("arrow", "Term", "Term")) ],
-      "syntax"  : [ ("lit", "lam "), "x", ("lit", "."), "body" ] },
+      "context" : [ ["binder", "x", "body", ["arrow", "Term", "Term"]] ],
+      "syntax"  : [ ["lit", "lam "], "x", ["lit", "."], "body" ] },
 
     { "label"   : "App",
       "category": "Term",
-      "context" : [ ("param", "fun", "Term"), ("param", "arg", "Term") ],
-      "syntax"  : [ ("lit", "("), "fun", ("lit", ","), "arg", ("lit", ")") ] }
+      "context" : [ ["param", "fun", "Term"], ["param", "arg", "Term"] ],
+      "syntax"  : [ ["lit", "("], "fun", ["lit", ","], "arg", ["lit", ")"] ] }
   ],
 
   "equations" : [],
 
   "rewrites"  : [
     { "name" : "Beta",
-      "left" : ("App", ("Lam", "fun"), "arg"),
-      "right": ("eval", "fun", "arg") },
+      "left" : ["App", ["Lam", "fun"], "arg"],
+      "right": ["eval", "fun", "arg"] },
 
     { "name"    : "AppCongL",
-      "premises": [ ("~>", "M0", "M1") ],
-      "left"    : ("App", "M0", "N"),
-      "right"   : ("App", "M1", "N") },
+      "premises": [ ["~>", "M0", "M1"] ],
+      "left"    : ["App", "M0", "N"],
+      "right"   : ["App", "M1", "N"] },
 
     { "name"    : "AppCongR",
-      "premises": [ ("~>", "N0", "N1") ],
-      "left"    : ("App", "M", "N0"),
-      "right"   : ("App", "M", "N1") },
+      "premises": [ ["~>", "N0", "N1"] ],
+      "left"    : ["App", "M", "N0"],
+      "right"   : ["App", "M", "N1"] },
 
     { "name"    : "LamCong",
-      "premises": [ ("~>", "S", "T") ],
-      "left"    : ("Lam", ("^", "x", "S")),
-      "right"   : ("Lam", ("^", "x", "T")) }
+      "premises": [ ["~>", "S", "T"] ],
+      "left"    : ["Lam", ["^", "x", "S"]],
+      "right"   : ["Lam", ["^", "x", "T"]] }
   ]
 }
 ```
 
-### XI.3 As an extender declaration (L0 surface, value content)
+### XI.3 As a `Module` / `Theory` declaration (L0 surface)
 
-Both `extender LambdaExt()` and `language Lambda = LambdaExt()` are sentences of
-the §III.3 grammar: the empty argument list is derivable because both the
-`ExtenderDecl` declaration form and the `LanguageExpr` / `ExtenderExpr` call
-forms wrap their argument lists in `[ … ]`. Note also that this presentation
-carries **no `equations` suffix**: canonicalization rule 2 omits a block whose
-value equals the model default, and an empty equation list is that default.
+`Theory Lambda()` is the human-facing spelling of the same presentation as
+§XI.2's value. The empty parameter list is explicit, and the module's trailing
+`theory Lambda()` selects the presentation to normalize and install. This declaration is the complete human-facing spelling.
 
 ```text
-extender LambdaExt() {
-  empty
-    types = ["Term"]
-    terms = [
-      { "label": "Lam", "category": "Term",
-        "context": [ ("binder","x","body",("arrow","Term","Term")) ],
-        "syntax" : [ ("lit","lam "), "x", ("lit","."), "body" ] },
-      { "label": "App", "category": "Term",
-        "context": [ ("param","fun","Term"), ("param","arg","Term") ],
-        "syntax" : [ ("lit","("), "fun", ("lit",","), "arg", ("lit",")") ] }
-    ]
-    rewrites = [
-      { "name": "Beta",
-        "left": ("App",("Lam","fun"),"arg"), "right": ("eval","fun","arg") },
-      { "name": "AppCongL", "premises": [("~>","M0","M1")],
-        "left": ("App","M0","N"), "right": ("App","M1","N") },
-      { "name": "AppCongR", "premises": [("~>","N0","N1")],
-        "left": ("App","M","N0"), "right": ("App","M","N1") },
-      { "name": "LamCong", "premises": [("~>","S","T")],
-        "left": ("Lam",("^","x","S")), "right": ("Lam",("^","x","T")) }
-    ]
-}
+Module LambdaCalculus {
+  Theory Lambda() {
+    Types { Term; }
 
-language Lambda = LambdaExt()
+    Terms {
+      Lam . ^x.body:[Term -> Term] |- "lam " x "." body : Term;
+      App . fun:Term, arg:Term |- "(" fun "," arg ")" : Term;
+    }
+
+    Rewrites {
+      Beta : (App (Lam fun) arg) ~> (subst fun arg);
+      AppCongL : if M0 ~> M1 then (App M0 N) ~> (App M1 N);
+      AppCongR : if N0 ~> N1 then (App M N0) ~> (App M N1);
+      LamCong : if S ~> T then (Lam ^x.S) ~> (Lam ^x.T);
+    }
+  }
+
+  theory Lambda()
+}
 ```
+
+Elaboration produces the exact map/list value in §XI.2; the table in §XI.4
+shows that normalization field by field. An empty `Equations` block is omitted
+because it equals the model default.
 
 ### XI.4 A line-by-line reading of the correspondence
 
 | `language!` | Value form | Note |
 | --- | --- | --- |
 | `types { Term }` | `"types": ["Term"]` | A bare string is a structural category with no carrier. |
-| `Lam . ^x.body:[Term -> Term] \|- …` | `("binder","x","body",("arrow","Term","Term"))` | The binder names, then the type. `^x.body` names two things — the bound variable and the body parameter — so the tuple carries both. |
-| `"lam " x "." body` | `[("lit","lam "), "x", ("lit","."), "body"]` | Quoting is inverted: a *terminal* is tagged, a *parameter* is a bare string. |
-| `App . fun:Term, arg:Term` | `[("param","fun","Term"), ("param","arg","Term")]` | Order is the argument order and is preserved by the list. |
+| `Lam . ^x.body:[Term -> Term] \|- …` | `["binder","x","body",["arrow","Term","Term"]]` | The binder names, then the type. `^x.body` names two things — the bound variable and the body parameter — so the node carries both. |
+| `"lam " x "." body` | `[["lit","lam "], "x", ["lit","."], "body"]` | Quoting is inverted: a *terminal* is tagged, a *parameter* is a bare string. |
+| `App . fun:Term, arg:Term` | `[["param","fun","Term"], ["param","arg","Term"]]` | Order is the argument order and is preserved by the list. |
 | `equations { }` | `"equations": []` | An empty block and an absent key are equivalent; canonicalization prefers absent. |
-| `(App (Lam fun) arg)` | `("App", ("Lam","fun"), "arg")` | The S-expression is preserved exactly; only the commas are new. |
-| `(eval fun arg)` | `("eval","fun","arg")` | `eval` is the one reserved head, in both forms. |
-| `\| M0 ~> M1 \|-` | `"premises": [("~>","M0","M1")]` | The turnstile becomes a key; the rewrite premise becomes a tagged node. |
-| `(Lam ^x.S)` | `("Lam", ("^","x","S"))` | The binder pattern `^x.` is `("^", binder, body)`. |
+| `(App (Lam fun) arg)` | `["App", ["Lam","fun"], "arg"]` | The S-expression is preserved exactly; only the commas are new. |
+| `(eval fun arg)` | `["eval","fun","arg"]` | `eval` is the one reserved head, in both forms. |
+| `\| M0 ~> M1 \|-` | `"premises": [["~>","M0","M1"]]` | The turnstile becomes a key; the rewrite premise becomes a tagged node. |
+| `(Lam ^x.S)` | `["Lam", ["^","x","S"]]` | The binder pattern `^x.` is `["^", binder, body]`. |
 
 ### XI.5 Using it
 
@@ -5602,18 +4966,18 @@ new lambdaSpec,
 
     // 3. INSTALL — elaborate, validate, fingerprint, install. Fail-closed.
     install!(spec, *ret) |
-    for (@fingerprint <- ret) {
+    for (@{"ok": lambda} <- ret) {
 
-      // 4. USE — the FLT tag now resolves against `fingerprint`.
+      // 4. USE — `lambda` is the opaque installed handle in lexical scope.
       //    `[*]` runs the guest term to completion along every rewrite path.
-      out!( Lambda`((lam x.x), (lam y.y))` )[*] |
+      out!( lambda`((lam x.x), (lam y.y))` )[*] |
 
       // Lookahead places the names of the `success` and `failure` PathMaps on
       // `out`, so the receive has TWO binders; `trace` is a whole trace and the
       // beta-normal form is its LAST element.
       for (@{| trace, ..._ |}, _ <- out) {
         let @result <- trace.last() in {
-          stdout!(["normal form under", fingerprint, result])
+          stdout!(["normal form under", lambda, result])
         }
       }
     }
@@ -5621,8 +4985,9 @@ new lambdaSpec,
 }
 ```
 
-The specification is a value on a channel; installing it returns its
-fingerprint; the FLT tag then resolves against that fingerprint. That
+The specification is a value on a channel; installing it returns an opaque
+handle; the lexical FLT alias then resolves that handle. The fingerprint remains
+inside the handle and reflected identity and is not execution authority. That
 round trip — *specify, send, install, use* — is the whole point of the proposal,
 and it is not expressible with a Rust macro.
 
@@ -5642,7 +5007,7 @@ The worked example of §XI shows a finished specification. This is the order to
 `"types": ["Term"]` — bare strings, no carriers. A category with no carrier is a
 purely structural sort, and every other block refers to categories, so nothing
 else can be written until they exist. Add carriers only when a category must be
-backed by a machine type; `("vec", "Proc")` and friends require the matching
+backed by a machine type; `["vec", "Proc"]` and friends require the matching
 `"collection"` key, and the elaborator rejects one without the other.
 
 **Step 2 — write the term rules in the order you want them to bind.** This is
@@ -5655,13 +5020,13 @@ loosest operator first.
 
 **Step 3 — add native evaluation last, and choose the form by the decision
 procedure of §V.3**, not by preference. If the body is one operator over the
-declared parameters, `("op", name)`. If it is a `literals{}` parse, `("carrier",
-kind, params)`. If it is anything else and the node registers an evaluator,
-`("handler", urn)`. Only if none of those applies, and only for a specification
-that will never leave the machine that wrote it, `("src", "Rust", text)`.
+declared parameters, `["op", name]`. If it is a `literals{}` parse, `["carrier",
+kind, params]`. If it is anything else and the node registers an evaluator,
+`["handler", urn]`. Only if none of those applies, and only for a specification
+that will never leave the machine that wrote it, `["src", "Rust", text]`.
 
 **Step 4 — equations, then rewrites.** Equations are the structural congruence;
-rewrites are the reduction relation. A premise `("~>", "M0", "M1")` is admissible
+rewrites are the reduction relation. A premise `["~>", "M0", "M1"]` is admissible
 only in a rewrite.
 
 **Step 5 — canonicalize before you compare anything.** Two specifications that
@@ -5697,11 +5062,11 @@ new merged in {
 }
 ```
 
-If a real merge policy is wanted rather than concatenation, that is what the L0
-extender union `\/` is for (§III.3): it is right-biased with a **strict conflict
-policy**, so overlapping term labels are an error unless a `replacements` block
-resolves them. Silent shadowing of a constructor would silently change a
-fingerprint, and therefore silently change every reflected tag.
+For algebraic composition, use theory join `\/` (§III.3). It is a pushout
+over shared ancestry: common inherited declarations keep one identity, while
+independently introduced collisions are errors. Apply `Replacements` explicitly
+before the join when a contribution must be retargeted. Silent shadowing would
+silently change the fingerprint and every reflected tag derived from it.
 
 **A checklist before installing.**
 
@@ -5711,8 +5076,8 @@ fingerprint, and therefore silently change every reflected tag.
 | every label matches `[A-Za-z_][A-Za-z0-9_]*` | §IX.5.1; also required for the generated Rust identifiers |
 | no label is a Rust keyword, and none begins with `^` | §IX.5.1 — `^` is the reserved reflect namespace, and the check is that prefix |
 | `"terms"` is in precedence order, loosest first | declaration order is binding power |
-| every `("op", …)` rule has an operator terminal in its syntax | the lowering reads the terminal, not the tag |
-| no `("src", …)` if the specification will be published | §V.3.4 — it is a local-authoring form only |
+| every `["op", …]` rule has an operator terminal in its syntax | the lowering reads the terminal, not the tag |
+| no `["src", …]` if the specification will be published | §V.3.4 — it is a local-authoring form only |
 | the value is canonical | §III.5, so identity comparisons mean what you expect |
 
 ### XII.2 A debugging workflow
@@ -5802,18 +5167,18 @@ One diagnostic that a reader may look for and will not find is
 | `WrongArity` | G1 | a tagged node has the wrong number of components | §III.4.2 |
 | `SyntaxItemsExclusive` | G1 | a term rule carries both `"syntax"` and `"items"` | pick the judgement form or the BNF form, not both |
 | `CarrierCollectionMismatch` | G1 | a collection carrier without a `"collection"` key, or the reverse | supply the missing half |
-| `OpWithoutTerminal` | G1 | `("op", …)` on a rule with no operator terminal | the lowering derives meaning from the terminal; add one, or use another form |
+| `OpWithoutTerminal` | G1 | `["op", …]` on a rule with no operator terminal | the lowering derives meaning from the terminal; add one, or use another form |
 | `DuplicateType` / `DuplicateToken` | G1 | two declarations share a name, or a `(name, pattern)` pair | rename |
-| `UnknownTokenKind name` | G1 | a `("tok", name, …)` syntax item names a kind no `tokens{}` or `mode` declared | declare the token, or the item is a nonterminal reference and should be a bare `Str` (§III.6.1) |
-| `NonLinearComparison` | G1 | a `("cmp", …)` refinement predicate is not linearizable and is not an `eq` / `ne` between `PredArg`s | the model has `Linear`, `TermEq`, and `TermNeq` and nothing else; rewrite the constraint (§III.4.3) |
+| `UnknownTokenKind name` | G1 | a `["tok", name, …]` syntax item names a kind no `tokens{}` or `mode` declared | declare the token, or the item is a nonterminal reference and should be a bare `Str` (§III.6.1) |
+| `NonLinearComparison` | G1 | a `["cmp", …]` refinement predicate is not linearizable and is not an `eq` / `ne` between `PredArg`s | the model has `Linear`, `TermEq`, and `TermNeq` and nothing else; rewrite the constraint (§III.4.3) |
 | `RuleBodiesNotInV1` | G1 | a `"relations"` entry carries a non-empty `"rules"` list | gap **G-1**; relation *declarations* are fine |
 | `SemanticsTargetNotInV1` | G1 | `"semantics"` names a target other than `"Rust"` | v1 has no MeTTaIL-specified semantics language; §V.5 is the path |
-| `ModalityNotInV1` | G1 | a `("modal", …)` behavioral predicate | the tag is **reserved** for Meredith's indexed form and its type theory is unspecified (§VII.3) |
+| `ModalityNotInV1` | G1 | a `["modal", …]` behavioral predicate | the tag is **reserved** for Meredith's indexed form and its type theory is unspecified (§VII.3) |
 | `UnregisteredHandler urn` | G4 | no evaluator is registered under the URN | register it on the node, or change the form |
 | `HandlerArityMismatch urn` | G4 | the registered evaluator's arity differs from the rule's | fix whichever is wrong |
 | `HandlerCodeMismatch urn` | G4 | the node's evaluator does not match the URN's third-party code commitment | the node is running a different handler build (§III.6.4's `⟨G4⟩`, and §V.3.3's second qualification) |
-| `UnregisteredCarrier urn` / `UnregisteredTheory t` | G4 | `("extern", …)` or `"theory"` names something absent | gap **G-3**: these reference, they do not define |
-| `SrcNotPublishable` | G4 | `("src", …)` on a non-local install path | §V.3.4 — it is a local-authoring form only |
+| `UnregisteredCarrier urn` / `UnregisteredTheory t` | G4 | `["extern", …]` or `"theory"` names something absent | gap **G-3**: these reference, they do not define |
+| `SrcNotPublishable` | G4 | `["src", …]` on a non-local install path | §V.3.4 — it is a local-authoring form only |
 | `SpecTooLarge` / `TooManyRules` / `TooManyTokens` | G5 | an admission bound exceeded | the bound is the node's; a legitimate specification this large needs an operator decision |
 | `UnboundedRegex` | G5 | a token pattern contains a backtracking construct | rewrite it as a true regular expression (§IX.3 R-2) |
 | `TooAmbiguous` | G5 | the alternation count exceeds the admission bound | two rules probably accept the same surface; that is the 7800× amplification class |
@@ -5823,15 +5188,15 @@ and are documented there; W-2 only re-homes their *location*, from a Rust `Span`
 to a value path. The seventeenth, `ReservedReflectLabel`, is §IX.5.1's fence and
 is the one G2 diagnostic this FIPS caused to exist.
 
-## Part XIII — Migration and Work Items
+## Part XIII — Migration and Conformance Requirements
 
 ### XIII.1 Both frontends coexist; `language!` is not removed
 
 This is normative. The macro remains the frontend for:
 
-- languages that need `("src", "Rust", …)` bodies — Calculator, RhoCalc,
+- languages that need `["src", "Rust", …]` bodies — Calculator, Rholang,
   LedTest today;
-- languages that need `relations` rules with host bodies — RhoCalc today;
+- languages that need `relations` rules with host bodies — Rholang today;
 - `compose_languages!` composites;
 - anything that introduces a new carrier or theory implementation.
 
@@ -5933,28 +5298,23 @@ version bump; and **no specification whose call site passed
 `Provenance::NonLocal` is installed until W-7, W-10, and W-12 have all landed**
 (§XIII.4).
 
-### XIII.3 Named work items
+### XIII.3 Required deliverables
 
 | # | Item | Depends on | Why |
 | --- | --- | --- | --- |
-| **W-1** | Add a tuple category to `languages/src/rhocalc.rs` | — | The value form uses tuples for tagged nodes. Justified independently: official Rholang has a `tuple` production (`grammar.js:453,464`) and `RhoCalc` has none (`rg -c -i tuple languages/src/rhocalc.rs` returns 0). The obstacle is the `(a, b)` versus grouping-`(a)` ambiguity, which the WPDA must disambiguate. |
-| **W-1b** | Rename `languages/src/rhocalc.rs` → `rholang.rs` and the identifier `RhoCalc` → `Rholang` | ordered after W-1 | The Abstract's second objective calls Rholang "itself a MeTTaIL language", and the file name should say so. |
-| **W-2** | Generalize `ValidationError` over `Location ::= RustSpan \| ValuePath \| Inherited` | — | **17** variants carry `proc_macro2::Span` as a struct field; a value-authored specification has none, and a *composed* declaration has neither a span nor a value path — hence the third variant (§III.7). The *shape* is additive; every construction site and both consumers (`::span()`, `quote_spanned!`) change. |
-| **W-3a** | Extend `NativeKind` with the collection and extern kinds, then replace $`\bigstar_1`$ and $`\bigstar_5`$ with closed alphabets | **W-7** | Removes two `syn::Type` fields. ⚠ The extension is a **prerequisite**, not a detail: `NativeKind` has 20 variants and **none** is `vec`/`bag`/`set`/`map`/`pathmap`/`extern`, and `from_syn_type` collapses all of them to `Other` (§III.4.2). It is also an **ABI break** for 14 of the 31 shipped languages, which is why it depends on W-7. |
-| **W-3b** | Replace `LanguageDef::name : syn::Ident` with a validated `String`, excluding Rust keywords | — | The `[A-Za-z_][A-Za-z0-9_]*` gate is necessary but not sufficient: `proc_macro2::Ident::new` accepts `match`, `crate`, `self`, `Self` without panicking, and generated code cannot use them (§I.4). |
-| **W-4** | ★ Serializable WPDA parse tables interpreted by the existing `WpdaWalker` | — | The single structural blocker for a compiler-free parser. `prattail` already depends on `serde` + `postcard`. |
-| **W-5** | Carry $`\mathcal{F}`$ on the NTIR alongside `content_hash`; make every FLT-facing surface use $`\mathcal{F}`$ only | W-9 | Two hashes exist; only one may key the ABI. |
-| **W-6** | The `LangSpec` metacircular schema and its fixpoint test | W-1 | Catches drift between the elaborator and the notation. A conformance test, not a v1 blocker. |
-| **W-7** | ★ `mettail-langdef-v2:` fingerprint over BLAKE3, **plus** a length-prefixed identity encoding over **all ≥10** free-form sites, **plus** the normative reflected-tag grammar of §IX.5.2, **plus** exposing `language_identity_string` for §XIII.2's comparator | — | FNV-1a is **invertible**, so v1 admits a targeted preimage in roughly $`2^{11}`$ operations, not $`2^{32}`$ trials, and attacker bytes already enter the identity string raw at **≥10** sites — including `identity.rs:515` / `:611`, the literal text of every grammar terminal, which makes the preimage reachable from the pure-declarative subset with no `tokens{}` block (§III.8, §IX.3 R-1). **Must precede W-3a and any non-local install.** |
-| **W-8** | Rename `logic` → `relations`, with `logic` retained as a deprecated alias | — | Matches Stay's mockup and `SuffixKind::Relations`. |
-| **W-9** | Land `mettail-spec` from the `modules` branch onto `main`, rebased onto the current `ast/` crate layout | — | The L0 surface, resolution, assembly, NTIR, and projection already exist there. ⚠ **Not a zero-dependency leaf.** It is a fork reconciliation: the branch adds its own `mettail-ast/` — a duplicate of the specification model, forked at merge-base — while `main`'s `ast/` has moved on substantially, and `mettail-spec` uses ~124 distinct `mettail_ast::` paths. Scope it as a merge, not an import. |
-| **W-10** | ★ The four §IX.5 requirements: the reserved-label fence, the reflected-tag grammar, fingerprint-scoped **native handler** channels, and canonical reflected-collection encoding. **The fence leg is [Implemented]** — the prefix predicate at the pin, the `^Z` / `^S` rename at `39e523cb`; **three legs remain** | W-7 (for the tag grammar) | The three remaining legs are exploitable only by a hostile specification. The fence's Peano case was the one that **needed no attacker at all** — reachable from the macro frontend, fail-closed rather than wrong-answer, but making reduction depend on a constructor's *name* (§IX.5.1) — and it is now closed. Gates any non-local install. |
-| **W-11** | Add a resolver parameter to `apply_extends` / `apply_includes` / `apply_mixins` | — | §VI.2's network-scoped composition requires an injectable environment; today all three take only `&mut LanguageDef` and read a `thread_local!` registry directly, with no seam. ★ The defect is on the **runtime** path, not the macro path: `reconstruct_language_def` re-runs all three at runtime, where the thread-local is empty and the failure is a compile-time-shaped diagnostic surfacing on a worker thread (§X.4). Thread-locality is defensible for macro expansion and is *not* an obstacle to §X's macro-side module system. |
-| **W-12** | ★ Establish §IX.6.1's **invariant**: every **firing-visible** (`sa:`) and every **carrier** (`ac:`) channel name contains $`\mathcal{F}`$ — `sa:pattern/{F}/lhs:{H}`, `sa:scalar/{F}/{label}`, `ac:{F}/{op}`, `ac:{F}/{loc}/{op}` | — | Stated as an **invariant with a sweep**, not an edit list, for the reason §III.8 gives for the `push_str` census: an enumeration reads as complete and goes stale silently. The site census at the verification base is **20 production sites** — 5 `sa:` (`rho_net.rs:72`, `:256`, `:281`, `:324`, `:919`) and 15 `ac:` (12 in `rho_net_lower.rs`, 3 in `rho_net_drive.rs`) — reproduced by the two `git grep` commands in §IX.6.1. Every channel stays `GString`; no `Par` shape, receiver arity, or bind count changes. Closes **both** §IX.6.1 constructions of a cross-fingerprint wrong firing — the σ-receiver one, which needs a shared LHS pattern text, and the AC-carrier one, which needs only a shared constructor **name** and is therefore the default outcome of co-installing two process calculi — and retires the second 64-bit FNV bottleneck in the tree. Same edit class §IX.5.3 already accepts as normative for the native channel. **Gates any non-local install.** |
-| **W-13** | ☾ **v2 — not sequenced here.** Implement §X.2's module spine for the **macro DDL**: `import` / `module` / `export` / `space`, qualified resolution, and visibility | W-9 (the extender fragment) | Specified in §X.2, implemented nowhere in the verification base; `mettail-spec/src/{parser,resolve,assemble}.rs` on the `modules` branch is the starting point, and §X.3's two rejection rules are its acceptance tests. **Deliberately absent from §XIII.4's graph**: no v1 item depends on it and it gates nothing. Listed so that "modules follow later" names a piece of work rather than an intention. |
-
-☾ marks an item that is **specified but not scheduled for v1**. There is exactly
-one, and it is the only row below that does not appear in the figure of §XIII.4.
+| **W-2** | Generalize `ValidationError` over `Location ::= RustSpan \| ValuePath \| Inherited` | — | A value-authored specification has no Rust span, and a composed declaration may instead have inherited provenance. |
+| **W-3a** | Extend `NativeKind` with collection and external kinds, then replace the Rust-bearing carrier and theory fields with closed alphabets | W-7 | Removes two `syn::Type` fields and makes capability requirements explicit. |
+| **W-3b** | Replace `LanguageDef::name : syn::Ident` with a validated `String`, excluding Rust keywords | — | Removes a frontend-specific name type from the shared model. |
+| **W-4** | Complete the serializable parser-image pipeline: deterministic lexer tables, PraTTaIL WPDA adapter, verified micro-operation VM, and typed-vs-image parity suite | W-9 | Enables compiler-free parsing without moving existing typed parsers off their hot path. |
+| **W-5** | Use the canonical GrammarCore BLAKE3 fingerprint for FLT identity and parser-image verification | W-7, W-9 | One semantic identity keys the ABI; source and image hashes remain non-authoritative cache metadata. |
+| **W-6** | Implement the `LangSpec` metacircular schema and its fixpoint test | — | Catches drift between the elaborator and the notation. |
+| **W-7** | Replace the FNV-1a identity with a length-prefixed BLAKE3-256 identity and the reflected-tag grammar of §IX.5.2 | — | The current digest is not collision-resistant and must not identify network-published specifications. |
+| **W-8** | Normalize `logic` declarations to the canonical `relations` field while retaining macro compatibility | — | Existing compile-time grammars continue to build while the Rholang value has one field name. |
+| **W-9** | Land `mettail-grammar-core` and `mettail-elab`: `Module` / `Theory` parsing, value normalization, validation, and GrammarCore lowering | — | Implemented on `feature/rholang-mettail-modules`; merge after corpus and parity gates pass. |
+| **W-10** | Complete the §IX.5 reserved-label, reflected-tag, native-channel, and canonical-collection requirements | W-7 | These gates are required before any non-local installation. |
+| **W-11** | Inject a resolver into composition and runtime reconstruction | — | Runtime registry resolution must not depend on a thread-local macro registry. |
+| **W-12** | Ensure every firing-visible and carrier channel name contains the language fingerprint | W-7 | Prevents cross-language wrong firings when constructor names or patterns coincide. |
+| **W-13** | Integrate the Rholang source hook and Versioned Registry installation contract; add filesystem resolution only through the future File I/O capability | W-4, W-9 | Registry resolution exists on the review branch; executable image installation and the source-language hook remain. |
 
 ### XIII.4 Sequencing
 
@@ -5985,182 +5345,774 @@ Two orderings in that graph are **hard constraints**, not preferences.
     Two constructions do it, and the cheaper needs only a shared constructor
     **name** (§IX.6.1).
 
-Only **W-1b**, **W-8**, and **W-11** are independently green-gatable with no
+Only **W-8** and **W-11** are independently green-gatable with no
 identity consequences. **W-12** is not on that list — it moves consensus-visible
-goldens, and its site census is 20 emitters rather than the two the earlier
-statement of it named.
+goldens, and its site census covers 20 emitters.
 
-### XIII.5 The fallback if W-1 slips
+### XIII.5 The value form reuses literals; the DDL extends `Proc`
 
-If tuples do not land in `languages/src/rhocalc.rs` in time, a **list-only
-encoding profile** is a mechanical substitution: a tagged node
-$`(\mathit{tag}, x_1, \ldots, x_n)`$ becomes
-$`[\mathit{tag}, x_1, \ldots, x_n]`$, with the discriminant rule "a list in a
-variant position whose head is a string is a tagged node." §III.6.5
-gives `to_list_profile` and `from_list_profile` as literate pseudocode. The
-elaborator is schema-driven, so the position always determines which reading
-applies and there is no ambiguity to resolve. The cost is purely legibility:
-`[["lit","lam "], "x"]` is harder to read than `[("lit","lam "), "x"]`. The
-profile is recorded here so the fallback does not require a redesign.
+The canonical value uses maps, lists, strings, integers, booleans, and `Nil`,
+all of which the Rholang grammar already parses. A tagged node is
+`[tag, x, …]` under §III.6.5's head-tag discriminant. The ergonomic L0 surface
+does require new `Proc` productions, lexer modes, bound-term nodes, and lowering
+in `languages/src/rholang.rs`; it must not be implemented in the legacy
+tree-sitter grammar.
 
-## Part XIV — What Version 1 Does Not Cover
+## Part XIV — Conformance Scope and the File I/O Boundary
 
-Stated explicitly, so that nothing below is mistaken for an oversight.
+The following clauses define the complete implementation boundary. They are not
+a schedule or a list of optional follow-up work.
 
-1. **Modules — implementation, not specification.** §X now specifies `module`,
-   `import`, `export`, `space`, qualified resolution, and visibility
-   normatively, and §X.3 adopts the prototype's two rejection cases as
-   well-formedness rules. What v1 does not cover is **implementing** any of it
-   (**W-13**), together with import-graph resolution, cycle detection, and
-   cross-module evaluation order. §X.1 also settles that the spine is
-   **macro-side**: there is no in-Rho `import`, and none is proposed.
-2. **Datalog rules with host bodies** in `relations`. Relation *declarations*
-   are covered; rule bodies are gap **G-1**. Affects `RhoCalc`.
-3. **`compose_languages!`** composites. Gap **G-2**.
-4. **Introducing** new opaque carriers or theory implementations. Referencing
-   registered ones is covered. Gap **G-3**.
-5. **Six block kinds as L0 extender suffixes.** `options`, `tokens`, `modes`,
-   `sync`, `tree_invariants`, `guards` exist only in the L1 value form, so
-   `RhoCalc` and `GuardedRho` cannot be written as extenders. Gap **G-4**, §III.3.
-6. **`semantics <spec>` with a non-Rust target.** The clause is parsed and
-   fails closed; a MeTTaIL-specified semantics language is §V.5's destination,
-   not v1.
-7. **A dedicated concrete surface syntax for presentation content.** §III.2
-   makes the value form normative and treats DDL text as sugar over it; the L0
-   extender surface is adopted as-is.
-8. **Parsing on a compiler-free target.** W-4. A runtime-authored language can
-   be *reduced* without a compiler once its semantics are installed; it cannot
-   yet be *parsed* without one.
-9. **A value encoding for the full modality** $`\langle K \rangle_{\vec{r}}^{\vec{\imath}} X`$.
-   The tag is reserved; the type theory is not specified. §VII.3.
-10. **`emit_tests` / `emit_blockly` / `emit_simulator`** on the runtime path.
-    Accepted and fingerprinted; the emitters they gate write files at
-    macro-expansion time and are unreachable at runtime. §IV.2.
-11. **Cross-language reduction of composites.** Two co-installed languages
-    reducing a mixed term requires the FLT FIPS's R2 per-child fingerprint
-    dispatch and foreign-inert `^subst`/`^shift` traversal, neither of which
-    this FIPS provides.
-12. **★ Unforgeable machinery channels.** The `sa:` / `loc:` / `cap:` / `ac:` /
-    `ph:` driver-network channels are `GString`s, so a process that can spell
-    one can drive machinery directly. §IX.6.2 states the exposure and what
-    closing it would cost — a change of channel *type*, not of format string.
-    This is the largest scoped open item the FIPS leaves, and §IX.6.2 also
-    withdraws the claim that the residual is fingerprint-confined: for the
-    planner-derived `loc:` names (`loc:scalar/{label}/result`,
-    `loc:term/{index}/{label}/value`) it is provably false, and for the rest it
-    is unproven. They stay out of the v1 blocker because a collision on them is
-    a stuck or non-firing network rather than a wrong firing. **Not** deferred:
-    the §IX.6.1 invariant that every **firing-visible** (`sa:`) and every
-    **carrier** (`ac:`) channel name contain the fingerprint, which is a v1
-    blocker (**W-12**) because without it a cross-fingerprint **wrong firing**
-    is constructible with no collision — via a shared LHS pattern text, or,
-    more cheaply, via a shared constructor **name** — and §IX.2's guarantee
-    would be false rather than merely narrow.
-13. **A `no_std` elaborator and validator.** §VIII.3 item 2: `ast/` depends
-    unconditionally on `proc-macro2`, which is `std`-only. Today $`\mathcal{E}`$
-    and $`\mathcal{V}`$ run off-target.
+1. The Rholang File I/O capability and its filesystem module-resolver adapter.
+2. Arbitrary semantic source execution is forbidden. Runtime grammars use declarative
+   reduction plans and allow-listed capability URNs only.
+3. Unbounded grammar or parse execution is forbidden. Installers and parser images enforce
+   explicit source, graph, table, stack, forest, step, memory, and output limits.
+4. Floating-point ranking is forbidden in consensus execution. Local profiles
+   may use it, but consensus images use exact integer weights.
+5. Existing generated typed-Rust parsers remain on their
+   current hot path unless an individual grammar passes equivalence and
+   performance gates for the parser-image path.
+6. Executable runtime grammar installation requires the deterministic lexer-table
+   compiler, PraTTaIL WPDA adapter, verified image engine, and parity suite in
+   §XVI.8–§XVI.10. Failure of any gate rejects the whole install.
 
-## Part XV — Open Questions
+## Part XV — Resolved Design Decisions
 
-**Q-1. Should the value form or the DDL-text form be canonical for storage?**
-**Answered by §III.2: the value is canonical, and DDL text is surface sugar over
-it.** The one-decoder rule makes this a structural consequence rather than a
-preference — with a single arrow into `LanguageDef`, "which encoding is
-canonical" is no longer a choice that can be made two ways. The argument against
-the value ("DDL text is what a human diffs") is satisfied by a **generated
-view**: a renderer from the value to DDL text is a display function, not a second
-source of truth. What remains open is only the *ergonomics* of that renderer.
+**D-1. The value form is canonical for storage.** `Module` / `Theory` syntax
+elaborates to the value. A renderer back to surface syntax is non-authoritative
+presentation tooling, not another source of truth.
 
-**Q-2. Should `("src", "Rust", …)` be permitted in a registry-published
-specification?** **This is not a user decision; it is forced, and the answer is
-no.** §V.3.4 establishes that the form is **build-time remote code execution on
-the installer** — Rust source in a network-transportable artifact, compiled with
-the installer's privileges, with an attacker-supplied `context { … }` preamble
-spliced into it and no sandbox anywhere in the design. A published
-**installation-purity flag** is not an adequate middle option, and is inadequate
-by a category rather than by degree: it is *derived from the attacker* and tells
-a client only that compilation will be required, not that it is safe. The
-elaborator rejects `("src", …)` unconditionally on any non-local install path.
+**D-2. `["src", "Rust", …]` is forbidden in a registry-published
+specification.** Compiling network-supplied source with installer privileges is
+remote code execution. A non-local install rejects the form unconditionally.
+Compile-time languages that still contain source bodies remain on the trusted
+macro path until those bodies become declarative plans or approved handlers.
 
-The genuine residual question is narrower and is a scheduling one: Calculator
-and RhoCalc cannot be published until §V.5 lands or until their bodies move to
-`("handler", …)`. That is a consequence to plan around, not a decision to take.
+**D-3. A language-typed space is fingerprint-scoped.** `space s: L` must include
+$`\mathcal{F}_L`$ in its identity; an upgraded language cannot silently
+reinterpret stored terms. This requirement depends on the collision-resistant
+identity in §VI.
 
-**Q-3. How should `space` interact with a language's identity?** `space s: L`
-declares a tuplespace typed by a language. This FIPS does not settle it — it is a
-Reifying-RSpaces question — but it does **narrow** it: a space's identity
-**must** include $`\mathcal{F}_L`$, because otherwise a space typed by an
-upgraded language reinterprets old data under new rewrites with no version
-signal. Note that this requirement is only meaningful once $`\mathcal{F}`$ is
-collision-resistant (W-7): under v1 an adversary can hold $`\mathcal{F}`$ fixed
-while changing semantics, by padding a token regex to restore the old digest, so
-including a forgeable fingerprint in a space's identity buys nothing.
+**D-4. Compatibility is certificate-based, not inferred from a version label.**
+A claimed compatibility edge must include machine-checkable constructor,
+translation, rewrite, and observation preservation evidence. Without it, two
+handles are incompatible even if their semantic-version strings suggest
+otherwise.
 
-**Q-4. Does semantic versioning of a language have a checkable definition?**
-§VI.2 proposes "the constructor set and arities must extend, not alter" for
-minor and patch bumps. Two limitations: it is sufficient for existing terms to
-remain *well-formed* but not for their *reductions* to be preserved — adding a
-rewrite rule can change a normal form — and it is a property of the **declared
-specification**, not of $`\mathcal{F}`$, so nothing enforces it. A stronger,
-checkable criterion is wanted, and it must be checkable *from the value*.
+**D-5. An unknown `"mettail"` version is not installable.** A read-only decoder
+may preserve its opaque bytes for inspection, but it must not elaborate,
+normalize, translate, fingerprint under a known schema, or install them.
 
-**Q-5. Should the elaborator accept a specification whose `"mettail"` version
-is newer than it understands?** Rejecting is fail-closed and consistent with
-G1. Accepting-and-ignoring would break the invariant that a fingerprint
-determines the installed machinery. This FIPS rejects; the question is whether
-a *read-only* mode (inspect but do not install) should be permitted.
+**D-6. FLT aliases are lexical capabilities, not global tags.** The current
+deploy or contract environment maps an alias to an opaque handle. The registry
+supplies committed content and explicit publication records; it does not grant
+ambient execution authority. A space stores fingerprinted handle identity,
+never an unqualified alias.
 
-**Q-6. Where should the tag-to-fingerprint map for FLT resolution live?** §VII.1
-requires one but does not site it. Candidates: per-deploy, per-space, or in the
-registry. The choice interacts with R-3.
 
-**Q-7. ★ Should there be a bespoke specification syntax, and should both forms
-be supported?** This is a decision for Mike and Greg, and **this FIPS is
-designed so that either answer is cheap.** §III.2's "Surfaces are plural by
-design" states the property: the value form is the **programmatic substrate**
-and is not optional — a contract that transforms a specification transforms a
-*value* — while the **human authoring surface** is open, and a bespoke syntax
-$`S`$ joins it by supplying
-$`\mathrm{parse}_S : \mathrm{Text} \rightharpoonup \mathrm{Value}`$
-with a stated domain and a parity obligation of RT4's shape.
-It adds **no arrow terminating on `LanguageDef`**, so it is sugar rather than a
-fork. Supporting **both** — a friendly syntax for people, the value for
-programs — is therefore not a compromise; it is the arrangement the layering
-already describes, and is what `parse_ddl` does for the DDL surface today.
 
-What is *not* free is accepting a bespoke surface **over a network**: that puts
-a parser back on the install path, which §IX deliberately removed, and §IX.3
-R-2 measures what an attacker-supplied grammar costs (14 ms → 109 s over five
-values of $`k`$). Doing it requires `⟨G5a⟩` to move ahead of *parsing* rather
-than ahead of decoding, a backtrack-free parser, and runtime parse fuel.
-**Recommendation: make the surface authoring-only** — author in it, desugar
-locally, publish the value — which removes the exposure entirely and makes the
-choice local tooling rather than a consensus decision. The open part is the
-surface's design; the recommendation is about where it runs.
+## Part XVI — Generalized Runtime Grammar Backend
 
-**Q-8. ★ Which module syntax, where the prototype and the branch disagree?**
-§X.2 specifies the spine in the `modules` branch's spelling for internal
-consistency with §III.3, and §X.7 tabulates nine divergences from Mike's
-prototype ([Prototype]). Three are substantive rather than cosmetic and this
-FIPS does not decide them:
+This Part specifies the shared runtime backend. Normative requirements use
+**must**, **must not**, and **required**. The validation, identity, capability,
+and security requirements elsewhere in this FIPS apply unchanged.
 
-1. **a local binding form.** The prototype's `let x = E in ( E )` is how it
-   writes an instantiation chain — `Rholang.module`'s `FreeRholang` is eight
-   deep in it — and the branch has no equivalent.
-2. **the replacement argument permutation.** `[0, 1] Mult . Elem => Plus . Elem`
-   reindexes arguments as part of the rename. §III.4.2's `Replacement` cannot
-   express it, so adopting it is a **value-form** change (a fourth key), not a
-   surface one.
-3. **structured export items.** `List.module:6` exports the list category
-   `[Digit]` and `ArrowCats.module:4` exports the arrow category `(T1 -> T2)`
-   — *derived* categories in both cases, where
-   §III.4.2's `"exports"` is a list of string pairs. `ArrowCats.module`'s
-   commentary indicates the arrow case is meant to **generate** productions,
-   which makes it a presentation feature rather than an export feature.
+### XVI.1 Architecture decision
 
-Items 2 and 3 are the ones that touch the value form and therefore the
-fingerprint; item 1 is purely a surface convenience. All three are Mike's and
-Greg's call.
+The design supports two surfaces and one meaning.
+
+1. Greg Meredith's capitalized `Module` / `Theory` syntax is the
+   human-facing surface embedded in Rholang source.
+2. The ordinary Rholang `language/2` map/list value is the canonical,
+   programmatically constructible surface.
+3. Surface elaboration must produce that value before backend generation.
+   No backend may consume the surface abstract syntax tree directly.
+4. A value constructed by a Rholang program and the value obtained by
+   elaborating equivalent `Module` / `Theory` text must have identical
+   canonical bytes, fingerprints, validation results, and backend input.
+5. When a surface spelling and the value schema disagree, the value schema is
+   authoritative for semantics and Greg's syntax is authoritative for the
+   spelling. The remedy is a desugaring change, never a second semantic arm.
+
+A person can author a theory with names, builders, imports, and local bindings;
+a program can inspect, transform, synthesize, compare, and publish the
+resulting ordinary Rholang value. The two capabilities share one semantic
+boundary without choosing ergonomics over analyzability.
+
+### XVI.2 Terms used in this Part
+
+| Term | Definition |
+| --- | --- |
+| **data definition language (DDL)** | A notation that declares syntactic categories, productions, equations, and rewrites for a language. |
+| **surface DDL** | The `Module` / `Theory` text accepted as Rholang source. It is authoring syntax, not stored authority. |
+| **canonical value** | The ordinary Rholang `language/2` map/list value produced by desugaring, or constructed directly by a program. |
+| **presentation** | The elaborated set of categories, constructors, equations, rewrites, and exports after theory composition and replacement. |
+| **resolver** | A capability supplied to elaboration that maps a module reference to source bytes plus provenance. |
+| **GrammarCore** | A versioned, serializable, host-language-neutral intermediate representation with stable integer identifiers for categories, tokens, modes, productions, reductions, capabilities, limits, and weights. |
+| **parser image** | A versioned cache artifact derived from a validated GrammarCore: lexer tables, parser tables, semantic-reduction plans, and verified instructions. |
+| **weighted pushdown automaton (WPDA)** | The generalized parser machine used by PraTTaIL, with every transition carrying a semiring weight. |
+| **graph-structured stack (GSS)** | A shared representation of many pushdown stacks with common prefixes. |
+| **shared packed parse forest (SPPF)** | A compact graph that shares common subparses and packs ambiguous alternatives. |
+| **virtual machine (VM)** | The bounded interpreter that executes parser-image micro-operations. It is not a general-purpose bytecode runtime. |
+| **application binary interface (ABI)** | The versioned binary contract among GrammarCore, parser-image compiler, verifier, and VM. |
+| **authority** | The artifact from which meaning is derived. The canonical value is authority; a parser image is only a cache. |
+| **consensus profile** | The exact, deterministic weight and resource policy permitted in consensus execution. |
+| **local profile** | An explicitly non-consensus policy that may use floating-point log weights for experiments or diagnostics. |
+
+### XVI.3 Surface-to-core boundary
+
+The normative `Module` / `Theory` grammar is in §III.3. Surface elaboration
+must produce the canonical `language/2` value before lowering to GrammarCore.
+Parser-image compilation accepts validated GrammarCore only; it cannot consume
+surface syntax or bypass canonical validation.
+
+### XVI.4 Elaboration and normalization
+
+Elaboration is deterministic and fail-closed. It proceeds in source order,
+with local bindings evaluated once and shared. A join over two descendants of
+the same theory parameter is a pushout over the shared presentation, not a
+bag union that duplicates the common base. Meet is presentation intersection;
+difference removes the right presentation's named contributions. A builder is
+a left-to-right function on the presentation produced before it.
+
+After evaluation, the surface constructs normalize as follows.
+
+| Surface construct | Canonical `language/2` result |
+| --- | --- |
+| `Types { C; }` | append `C` to `"types"` |
+| `Exports { A; A => B; }` | append `["A","A"]` or `["A","B"]` to `"exports"` |
+| `L . context \|- syntax : C;` | append a map with `label`, `category`, `context`, and `syntax` to `"terms"` |
+| `x:C` | context item `["param","x","C"]` |
+| `^x.p:[A -> B]` | context item `["binder","x","p",["arrow","A","B"]]` |
+| `xs:HashBag(C)` | context item `["param","xs",["bag","C"]]` |
+| string terminal | syntax item `["lit", text]` |
+| `xs.*sep(s)` | syntax item `["sep","xs",s]` |
+| equation | append a map with `premises`, `left`, and `right` to `"equations"` |
+| named rewrite | append a map with `name`, `premises`, `left`, and `right` to `"rewrites"` |
+| abstraction `^x.p` | AST value `["^","x",p]` |
+| substitution `(subst f a)` | AST value `["eval",f,a]` |
+| collection with remainder | AST value `["coll", elements, remainder-or-Nil]` |
+| theory application, `let`, join, meet, difference, replacement | no residual tag; they determine the resulting presentation before normalization |
+
+The required parity law is:
+
+```math
+\operatorname{canonical}(\operatorname{elaborate}(S))
+=
+\operatorname{canonical}(V),
+```
+
+where $`S`$ is surface text and $`V`$ is the equivalent directly constructed
+Rholang value. The equality is byte equality after map-key ordering, integer
+normalization, Unicode normalization, and length-prefixed encoding. A source
+renderer may be supplied for review, but its output is a view and never a
+second authority.
+
+### XVI.5 One generalized backend layer
+
+Both the existing compile-time frontend and the runtime value frontend lower
+to GrammarCore. The compile-time projection represents a Rust semantic action
+only as a stable capability name; it must never copy Rust source into
+GrammarCore. Runtime-published grammars may reference only capabilities
+permitted by the installation policy.
+
+![Greg's surface and the ordinary Rholang value converge on GrammarCore; validated parser images run in the WPDA VM while existing compile-time parsers retain their typed-Rust path](diagrams/12-runtime-grammar-pipeline.svg)
+
+PlantUML source:
+[diagrams/12-runtime-grammar-pipeline.puml](diagrams/12-runtime-grammar-pipeline.puml).
+Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
+
+GrammarCore version 1 must carry, at minimum:
+
+- dense stable identifiers for categories, tokens, lexer modes, productions,
+  constructors, and reductions;
+- token patterns, priorities, channels, mode transitions, and declarative
+  token decoders;
+- nested syntax items for categories, binders, collections, repetition,
+  optionals, zips, captured tokens, and guards;
+- precedence, associativity, production classification, source provenance,
+  semantic dependencies, declared capabilities, weight profile, and resource
+  limits;
+- a canonical BLAKE3 fingerprint over the complete versioned structure.
+
+The parser-image compiler consumes only validated GrammarCore. Its output is
+a compact table artifact containing deterministic lexer tables, WPDA query
+tables, reduction plans, and small acyclic decision programs. The instruction
+set is deliberately a parser-specific micro-operation set: test a token, text,
+or binding-power threshold; return a fused stack/input action; reduce; accept;
+or fail. It has no allocation instruction, arbitrary branch target, host call,
+memory address, loop, filesystem operation, network operation, or embedded
+source language.
+
+This is more principled than introducing a general bytecode. A general
+instruction set creates another compiler target, optimizer, sandbox, cost
+model, and security boundary. Parser micro-operations instead preserve the
+existing WPDA abstraction and admit linear-time structural verification:
+
+```text
+verify_image(image, authoritative_core):
+    require image.magic and image.image_abi are supported
+    require image.core_fingerprint == fingerprint(authoritative_core)
+    require image.compiler_abi and image.unicode_version are supported
+    require every table index is in range and every identifier is dense
+    require every decision edge points strictly forward
+    require every decision program ends in a return
+    require exact weights and declared resource bounds in consensus mode
+    require every capability is authorized
+    otherwise reject the image; never partially execute it
+```
+
+The VM must reuse the existing GSS/SPPF walker and its ambiguity-sharing
+machinery. It must not replace the typed-Rust parser generated for an existing
+compile-time grammar. A future optimizer may select the image path for such a
+grammar only behind per-grammar equivalence and performance gates.
+
+### XVI.6 Weighted parsing and transducers
+
+Semiring weights are useful at three boundaries: ambiguous lexical analyses,
+generalized parser alternatives, and recovery/diagnostic ranking. They give
+all three one algebra rather than three unrelated score conventions. This is
+the same abstraction used by semiring parsing and weighted-automata shortest
+distance algorithms; it permits a parser to change the weight domain without
+changing its recognition logic [Goodman 1999; Mohri 2002].
+
+The consensus profile is an exact lexicographic tropical semiring. For a fixed
+dimension $`d`$, let $`K = \mathbb{N}_{\infty}^{d}`$. Define:
+
+```math
+a \oplus b = \min_{\mathrm{lex}}(a,b), \qquad
+a \otimes b = a+b, \qquad
+\mathbf{0}=(\infty,\ldots,\infty), \qquad
+\mathbf{1}=(0,\ldots,0).
+```
+
+Components encode declared costs such as recovery, lexical evidence,
+structural complexity, and finally declaration ordinal. Component-wise
+addition accumulates a path; lexicographic minimum ranks complete paths. Every
+component is an exact bounded integer. Addition checks for overflow and maps
+it to that component's $`\infty`$ value; it never wraps. Floating point is
+forbidden in consensus parsing.
+
+Weights rank alternatives; they must not decide grammatical membership and
+must not prune a finite viable alternative merely because it is expensive.
+Hard removal requires proof from grammar feasibility, resource exhaustion, or
+an explicit policy gate. This keeps `language(G)` independent of its ranking
+profile and makes profile changes observationally limited to election among
+already valid parses.
+
+A local profile may use negative-log floating-point weights for experiments,
+telemetry, or probabilistic diagnostics. Such an image must be marked
+non-consensus and rejected by the consensus verifier. Weighted transducers are
+therefore beneficial, but as compositional ranking and transformation layers;
+they are not a license to approximate consensus recognition.
+
+### XVI.7 Registry resolution now; filesystem resolution later
+
+The resolver classifies references before performing I/O.
+
+| Reference | Required behavior |
+| --- | --- |
+| `rho:...` | Read through an injected Versioned Registry resolver. Implemented integration target. |
+| `file:relative/path.module` | A filesystem module reference. Recognized, but returns the stable `FileIoUnavailable` error until the File I/O FIPS lands. |
+| bare relative path | Classified as a filesystem reference and follows the same unavailable path. |
+| any other explicit scheme | Rejected as `UnsupportedScheme`; there is no registry/filesystem fallback. |
+
+Registry imports must use explicit `rho:` references. A registry module cannot
+silently reinterpret a relative import as another registry key. The resolver
+must report the full import chain on a missing member, visibility failure,
+cycle, version mismatch, or commitment mismatch.
+
+The future filesystem resolver must be supplied as a capability conforming to
+the File I/O FIPS. This FIPS neither implements nor anticipates a direct
+`std::fs` call. The future adapter must preserve the same resolver contract,
+provenance, byte limit, cycle detection, canonicalization rules, and error
+taxonomy as the registry adapter. It must not change elaboration semantics.
+
+A Versioned Registry record has the module/export shape in §X.3. The canonical
+module graph and selected `language/2` export are authoritative; every image is
+an untrusted cache. An installer must lower the selected export to GrammarCore,
+compute the core fingerprint, and verify the corresponding image against that
+result. An image with an unknown ABI, mismatched compiler ABI,
+mismatched Unicode version, mismatched fingerprint, excessive limits, bad
+index, unauthorized capability, non-exact consensus weight, or invalid
+decision graph is discarded. The installer may then recompile from `spec`; it
+must never fall back to trusting the image.
+
+### XVI.8 Backend-generation complications and gates
+
+Generating a backend from a Rholang-specified grammar is feasible, but it moves
+work formerly protected by Rust compilation into an adversarial runtime input
+boundary. The following gates are required.
+
+| Complication | Required design |
+| --- | --- |
+| arbitrary semantic code | declarative reduction plans plus an allow-listed capability registry; never source text |
+| regex and Unicode drift | pinned regex semantics, Unicode version in the image header, deterministic normalization |
+| grammar amplification | limits for source bytes, imports, categories, tokens, productions, states, transitions, GSS nodes, SPPF nodes, steps, memory, and output alternatives |
+| ambiguous or cyclic imports | graph-wide cycle detection, explicit commitments, provenance-preserving diagnostics |
+| dynamic abstract syntax | tagged `DynamicTerm` values and declarative field-source reduction plans |
+| cache poisoning | authoritative-spec fingerprint check plus complete image verification |
+| ABI evolution | independent GrammarCore, image, compiler, Unicode, and capability ABI fields with fail-closed version negotiation |
+| reproducibility | exact weights, stable identifier assignment, canonical serialization, deterministic table construction |
+
+The lexer should use deterministic Unicode-range tables and contextual token
+admission from live parser states. Tree-sitter demonstrates the practical
+benefit of GLR plus on-demand context-aware lexing, while this design retains
+PraTTaIL's weighted lattice so overlapping tokenizations remain representable
+rather than committed too early [Tree-sitter Grammar Documentation]. The
+generalized parser retains GSS/SPPF sharing in the style of GLL-family parsers
+instead of cloning a complete stack and syntax tree per ambiguity [Scott and
+Johnstone 2010].
+
+### XVI.9 Performance contract
+
+No unconditional speed claim is part of this FIPS. The architectural
+expectations and the acceptance gates are distinct:
+
+- A cache hit should make installation of a runtime-authored grammar much
+  faster than generating Rust and invoking `rustc`, because it performs decode,
+  fingerprint, verification, and table installation only.
+- A cache miss still runs lexer/parser generation, but does not invoke the Rust
+  compiler or linker.
+- Existing compile-time grammars retain their generated typed-Rust parser and
+  therefore do not take VM dispatch in their parse hot path.
+- Projecting an existing `language!` specification to GrammarCore adds a small
+  compile-time validation cost. It must be measured and cached; it is not a
+  runtime-parser cost.
+- A runtime-authored parser may pay VM dispatch and dynamic-term construction
+  overhead relative to typed Rust. Fused micro-operations, compact indices,
+  structure-of-arrays tables, GSS/SPPF sharing, and verified cache reuse are the
+  intended mitigations, not a promise that the overhead is zero.
+
+The feature cannot become the default for an existing grammar until its
+benchmark row passes all gates below on pinned corpora and hardware:
+
+| Measurement | Required comparison |
+| --- | --- |
+| existing parser throughput and tail latency | typed path before vs typed path after; no statistically significant regression beyond the project's agreed noise budget |
+| existing build time | before vs GrammarCore projection enabled, cold and incremental |
+| dynamic cold install | parser-image compile vs Rust source generation plus `rustc` and link |
+| dynamic warm install | image decode + verify + install |
+| dynamic parse | VM vs an equivalent typed generated parser on deterministic, ambiguous, collection-heavy, and error corpora |
+| memory | peak lexer tables, GSS, SPPF, dynamic terms, and registry cache |
+| adversarial behavior | bounded growth at every declared grammar and parse limit |
+
+### XVI.10 Conformance gate matrix
+
+Implementation status is intentionally not recorded here; Git and the review
+branch carry that history. Acceptance requires every row below.
+
+| Deliverable | Requirement |
+| --- | --- |
+| `GrammarCoreV1`, validation, canonical BLAKE3 fingerprint, dynamic terms, reductions, limits, capabilities, exact/local weight profiles | unit, property, canonicalization, and identity tests |
+| exhaustive `language!` / PraTTaIL projection without moving the typed parser off its hot path | macro/core parity over every shipped grammar |
+| exact integer lexicographic semiring | algebraic laws, overflow, witness-coupling, and consensus determinism tests |
+| `Module` / `Theory` syntax inside `languages/src/rholang.rs` | positive/negative corpus and L0/L1 canonical-byte parity |
+| complete §III.4 decoder and `Data(v)` merge semantics | exhaustive schema closure, unknown-field rejection, and metacircular fixpoint |
+| injected Versioned Registry resolver | graph, commitment, cycle, visibility, rollback, freeze, and equivocation tests |
+| parser-image ABI and verified DFA/WPDA tables | bounds, decoder fuzzing, image/core equivalence, and corrupt-image rejection |
+| staged FLT and installed-handle integration | same-deploy language creation, parse, match, reduce, reflection, revoke, and race tests |
+| Reified RSpace compatibility seam | theorem-indexed typing, proof-checker soundness, match-free invariant, qualifier/replay preservation, capability separation, and comparison of adaptation, coexistence, and FLT-supersession designs |
+| existing parser performance isolation | byte-equivalent typed hot path and no statistically significant throughput/tail regression |
+| filesystem module references | stable `FileIoUnavailable` boundary until the authorized File I/O resolver is injected |
+
+## Part XVII — Categorical, Behavioral, and Security Semantics
+
+This Part is normative. It supplies the mathematical interface that module
+composition, runtime parser generation, FLTs, and bridges must preserve. It is
+also the boundary between claims justified by executable checks and hypotheses
+that require proof. An installer must reject a requested feature when its proof
+obligation is unavailable; it must not treat an unproved annotation as a
+certificate.
+
+### XVII.1 Presentations form a category
+
+A validated language presentation $`L`$ is a finite many-sorted binding theory
+with the following components:
+
+```math
+L = (S, \Sigma, B, E, R, O, D, H, \epsilon, \kappa).
+```
+
+- $`S`$ is the finite set of categories or sorts.
+- $`\Sigma`$ is the constructor signature.
+- $`B`$ gives every constructor its binding arity and scope transition.
+- $`E`$ is the structural-equation theory.
+- $`R`$ is the labelled rewrite theory.
+- $`O`$ is the family of observations at base sorts.
+- $`D`$ is the admissible observer subcategory.
+- $`H`$ is the set of displayed Hypercube sites and their profiles.
+- $`\epsilon`$ is the effect and capability grade.
+- $`\kappa`$ is the deterministic resource and weight profile.
+
+For a variable context $`\Gamma`$, binder telescope $`\Delta`$, and result sort
+$`s`$, terms are written $`T_L(\Gamma;\Delta\vdash s)`$. Alpha-equivalent
+representatives denote the same scoped term. Substitution is capture-avoiding
+and preserves both the telescope and the result sort.
+
+A morphism $`F:L\to M`$ maps sorts, constructors, variables, displayed sites,
+observations, and rewrite labels. It is valid only if it satisfies all of these
+laws:
+
+1. constructor arity and binding scope commute with $`F`$;
+2. $`t =_E u`$ implies $`F(t) =_{E'} F(u)`$;
+3. $`t \mathrel{R} u`$ implies $`F(t) \mathrel{R'} F(u)`$, with the declared
+   label translation;
+4. substitution and reindexing commute with $`F`$;
+5. displayed-site profiles and observer-context maps commute with plugging;
+6. $`F`$ is monotone in effects and cost: it may preserve or require more of a
+   caller-supplied budget, but cannot grant a capability or weaken a hard bound;
+7. the requested observation relation is preserved and, when the morphism is
+   declared an embedding, reflected.
+
+Identities and composition are pointwise. Validation checks the finite
+syntactic obligations; proof-carrying declarations discharge semantic ones.
+The resulting category is written $`\mathbf{Pres}`$.
+
+### XVII.2 The three frontend maps are functorial
+
+The implementation has three transformations and no fourth semantic path:
+
+```math
+\mathbf{RhoDDL}
+\xrightarrow{\;\mathsf{Elab}\;}
+\mathbf{ValueSpec}
+\xrightarrow{\;\mathsf{Decode}\;}
+\mathbf{Pres}
+\xrightarrow{\;\mathsf{Lower}\;}
+\mathbf{GrammarCore}.
+```
+
+Each arrow maps objects and morphisms. Equivalent L0 syntax and an explicitly
+constructed `language/2` value must therefore lower to byte-identical canonical
+GrammarCore. `language!` has a separate trusted compile-time frontend, but its
+projection into GrammarCore must agree on the common declarative fragment.
+
+Canonicalization is a reflector $`C`$ from validated specifications into a
+full subcategory of canonical specifications. It must satisfy:
+
+```math
+C(C(x)) = C(x), \qquad C(f\circ g)=C(f)\circ C(g), \qquad
+\llbracket C(x)\rrbracket=\llbracket x\rrbracket.
+```
+
+The last equality is required only on the validator's meaning-preserving
+domain. A transformation that drops an unknown field, changes declaration
+order, chooses one ambiguous parse, or weakens a policy is not canonicalization
+and must fail.
+
+### XVII.3 Module algebra
+
+A module is a finite diagram in $`\mathbf{Pres}`$ plus imports, local bindings,
+exports, bridge bindings, provenance, and commitments. A module is not itself an
+FLT and does not become executable merely by being decoded.
+
+- `Empty` denotes the initial presentation.
+- A rename is an isomorphism and must have a verified inverse.
+- Meet $`A /\ B`$ is an explicitly checked common subpresentation.
+- Join $`A \/ B`$ is a pushout over that common subpresentation, not a
+  right-biased record merge.
+- Difference $`A \ B`$ is defined only when deleting the selected declarations
+  leaves a well-formed closed presentation and all dependent declarations are
+  removed or remapped explicitly.
+- Theory application is functor application; parameters are morphisms with the
+  declared source and target theories.
+
+For a join span $`A \leftarrow K \rightarrow B`$, the elaborator constructs a
+candidate cocone and verifies its universal property within the supported
+finite presentation fragment. Name, arity, binder, equation, rewrite,
+observation, effect, or site-profile conflicts are errors. In particular, an
+equation such as associativity or commutativity can make strict syntactic
+pushouts unsound. Such a join is admitted only under a proved canonical-normal-
+form verifier; otherwise composition uses the bicategorical relative-pushout or
+groupoidal-relative-pushout account and retains the proof witness [Leifer and
+Milner 2000; Sassone and Sobociński 2005].
+
+Module elaboration is deterministic over the entire resolved import graph.
+Resolution pins exact content commitments before composition. Alias order,
+registry traversal order, hash-map iteration order, and cache state must not
+affect the result.
+
+### XVII.4 Hypercube sites, FLT holes, and observers are distinct
+
+The Hypercube design factors an operational presentation into constructors and
+displayed sites, equips sites with index, rely, and ambient telescopes, and
+generates contextual modal types. This fits MeTTaIL's signature/equation/rewrite
+presentations, but it adds structure that current presentations do not yet
+carry. This FIPS adds that structure explicitly rather than identifying it with
+an existing placeholder.
+
+| Structure | Variance and purpose | Authority |
+| --- | --- | --- |
+| FLT construction hole | positive substitution site in $`T_L(X)`$ | `Construct` for the goal handle and sort |
+| FLT pattern hole | negative binding or capture site | `Match` for the observation profile |
+| Hypercube displayed site | distinguished source occurrence generating a contextual modality | proof-governed site/profile access |
+| observer context | admissible contextual experiment | `Observe`; raw syntax is not implied |
+
+All four may reuse one context-indexed representation, but their identifiers,
+typing judgments, substitution operations, and capabilities are distinct.
+Structural equations transport rewrites; they must not silently relocate holes
+or displayed profile slots.
+
+### XVII.5 Behavior and admissible observation
+
+The behavioral model follows *Behavior in Higher-Order Languages*: base sorts
+carry an observation relation, products and functions lift it logically, and
+process behavior is a greatest fixed point. The admissible observer category
+$`D_L`$ contains exactly the contexts proved to preserve that relation.
+
+This matters for reflective Rholang. If names are compared by the behavior of
+the quoted process, unrestricted quotation of a hole can distinguish processes
+that are behaviorally equivalent. Therefore `@[-]` is not generally an
+admissible observer. A larger composite such as dereference-after-quotation may
+be admissible, but admissibility is proved for the whole context and observation
+profile, never inferred from one operator name.
+
+Raw AST reflection is a separate `ReflectAst` right. `Match` grants only the
+observer and capture operations committed by the handle. The language
+fingerprint commits to $`O`$, $`D`$, displayed sites, structural equations, the
+relative-pushout profile, effects, resource costs, history policy, and weight
+profile. A cache key for parser tables may omit semantic fields only when it is
+explicitly a narrower, non-authoritative image key.
+
+### XVII.6 Installation is an atomic capability transaction
+
+Installation is the following partial operation:
+
+```text
+install(candidate, requested_profile, injected_grants, resolver):
+    resolve and pin the complete import graph
+    decode the canonical schema under source and graph limits
+    validate names, binding, composition, observations, effects, and limits
+    canonicalize and lower to GrammarCore
+    derive deterministic lexer and WPDA tables
+    verify the image against the authoritative GrammarCore fingerprint
+    intersect requested rights with injected grants
+    allocate an unforgeable handle identity
+    atomically publish the complete local installed record
+    return the handle
+```
+
+Every line before publication is side-effect free with respect to the installed
+table. Any error, panic boundary, cancellation, resource exhaustion, revocation,
+or competing install leaves no partial aliases, images, channels, handlers, or
+rights. Concurrent identical installs are single-flight and return handles for
+one immutable record. Local installation and registry publication are separate
+operations requiring separate rights.
+
+The handle carries independent rights at minimum: `Parse`, `Construct`,
+`Match`, `Observe`, `ReflectAst`, `Reduce`, `Bridge`, `Publish`, and
+`Introspect`. A specification requests rights and handlers; it never grants
+them. The installer intersects requests with authority injected by the host.
+Revocation prevents new operations and cache acquisition without changing the
+meaning of already immutable values.
+
+![A Rholang DDL value passes through bounded validation, canonical GrammarCore, verified image construction, and an atomic language-capability commit; FLTs use the installed handle, and theorem-checked FLT values and patterns may operate on a separately authorized Reified RSpace](diagrams/13-categorical-installation.svg)
+
+PlantUML source:
+[diagrams/13-categorical-installation.puml](diagrams/13-categorical-installation.puml).
+Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
+
+### XVII.7 WPDA and semiring-enriched transduction
+
+The generalized layer is a declarative weighted pushdown-automaton pipeline,
+not a general bytecode machine. The lexer produces a bounded token lattice. The
+WPDA consumes that lattice and produces a shared packed parse forest (SPPF).
+Reduction plans turn forest alternatives into scoped dynamic terms.
+
+Recognition and ranking are separated. A semiring weight is attached to an
+entire derivation witness:
+
+```math
+\mathsf{parse}_L : \mathsf{Input}
+\longrightarrow
+\mathcal{P}_{K}\bigl(\mathsf{Witness}\times T_L(\Gamma;\Delta\vdash s)\bigr).
+```
+
+An implementation must not take componentwise minima across unrelated
+alternatives and then attach the resulting vector to a witness that never had
+that weight. The SPPF retains each packed alternative and its exact witness
+weight. Consensus execution uses bounded checked integer lexicographic weights;
+floating point is local-only. A semiring may rank valid alternatives but may
+not change recognition, spend gas, grant a capability, or erase a viable parse.
+[Goodman 1999] supplies the semiring parsing abstraction; the runtime's
+security and cost algebra remains a separate effect grade.
+
+The image format contains declarative DFA/WPDA tables and bounded acyclic
+decision programs. There is no general parser instruction set. A small fused
+micro-operation encoding may be used for serialization only when every edge is
+range-checked, forward-only, total, and reducible to the declarative semantics.
+
+### XVII.8 Consensus and registry profiles
+
+Consensus installation pins a signed, exact module graph. Filesystem, network,
+wall clock, randomness, floating-point ranking, external bridges, ambient
+handler discovery, and iteration-order dependence are forbidden. Registry
+records need rollback, freeze, mix-and-match, and equivocation protections in
+the style of The Update Framework. The canonical specification is authority;
+an image is an untrusted derived cache and is always verified.
+
+The registry key, URI, semantic version, alias, and fingerprint are identifiers,
+not capabilities. Loading bytes grants no `Install`, `Publish`, `Reduce`, or
+`Bridge` right. Filesystem syntax uses only the future File I/O resolver
+capability and returns `FileIoUnavailable` while it is absent.
+
+### XVII.9 Formal verification obligations
+
+The implementation must ship machine-checked models with no admissions for the
+supported fragment. The proof boundary is explicit:
+
+| Model | Required theorem or invariant |
+| --- | --- |
+| schema and canonicalization | decode uniqueness, idempotence, semantic preservation, stable bytes |
+| indexed syntax | well-scoped construction, weakening, reindexing, alpha, capture-avoiding substitution |
+| free-monad templates | left identity, right identity, associativity, sort and context preservation |
+| module category | identity/composition laws, rename isomorphisms, checked pushout cocones |
+| WPDA and image | image/core equivalence, soundness, completeness, termination under limits |
+| semiring | semiring laws, witness/weight coupling, overflow-to-infinity |
+| observation | admissible contexts preserve the declared relation; reflection requires authority |
+| bridge morphisms | plugging equivariance and transition/observation preservation |
+| capability algebra | no authority amplification; composition joins required grades |
+| installation | atomicity, single-flight equivalence, fail-closed cancellation and revocation |
+| reified spaces | judgment and certificate-checker soundness, bounded proof search, theorem-based matcher soundness, match-free post-operation state, qualifier and replay preservation, language/factory/space authority separation |
+| consensus | determinism across allocation, traversal, cache, and scheduling variations |
+
+The concurrent lifecycle is also modeled as a transition system covering
+install/install, install/revoke, parse/revoke, alias publication, receive-match
+atomicity, and bridge cancellation races. Executable property tests,
+differential tests against compile-time parsers, fuzzers, adversarial grammars,
+stack/allocation bounds, and performance gates complement but do not replace
+the proofs.
+
+### XVII.10 Reified RSpaces are a near-term indexed integration layer
+
+The approved *Reifying RSpaces* FIPS leaves the theory carried by a space
+constructor to a separate design. This FIPS supplies that missing index: a
+space may be parameterized by an installed language handle whose presentation
+declares the channel, datum, pattern, judgment, proof-rule, matching,
+observation, and effect profiles required by that space. A raw DDL value,
+module URI, semantic fingerprint, lexical alias, or reflected term is not an
+installed theory and cannot instantiate storage.
+
+In the approved factory notation, `free Theory(args)` is a structural reference
+and instantiation request, not embedded theory source. It must resolve in the
+current capability environment to the exact installed theory handle and checked
+arguments before the factory runs. The name, argument syntax, or reflected
+`EFree` representation alone conveys neither language nor space authority.
+
+Categorically, reified spaces form a family over installed presentations rather
+than another presentation constructor. Write the projection as:
+
+```math
+\pi_{\mathsf{Space}} : \mathsf{ReifiedSpace} \longrightarrow \mathsf{InstalledLanguage}.
+```
+
+The fiber over a handle $`h`$ contains space states, storage/collection
+strategies, judgments and their evidence, a theorem-based matcher justified by
+$`h`$, qualifier and effect grades, and checkpoint/replay evidence. An FLT is
+immutable syntax in the language fiber; a reified-space handle is a stateful
+capability in the corresponding space fiber. Sharing $`h`$ relates their types
+but never identifies their authority.
+
+The stored payload is therefore conceptually proof-indexed rather than a bag of
+untyped FLTs. For a channel theorem $`c : \mathsf{Channel}(A)`$, an admitted
+datum has dependent-pair shape:
+
+```math
+\sum_{d : \mathsf{FLT}_h(A)} \mathsf{Proof}_h(\Gamma \vdash d : A).
+```
+
+Likewise, a successful synchronization returns both a capture environment and
+checked evidence that the theory admits the pattern/datum match. Parsing proves
+only that a term belongs to the installed syntax; it does not discharge the
+theorem needed to store, consume, observe, or synchronize that term.
+
+The approved construction is initially **space-wide**: the factory receives one
+installed theory handle and one theorem/admission profile, and every channel in
+the resulting space inherits that index. A channel may refine the space theorem
+only when it carries checked implication evidence. With $`q`$ the qualifier,
+$`\varphi_s`$ the space theorem, and $`\varphi_c`$ the channel theorem, the
+formation obligations are:
+
+```math
+\Gamma \vdash s : \mathsf{Space}(h,\varphi_s,q)
+\qquad
+\Gamma \vdash c : \mathsf{Channel}(s,h,\varphi_c)
+\qquad
+h \vdash \varphi_c \Rightarrow \varphi_s.
+```
+
+Admission of $`d`$ on $`c`$ additionally requires checked evidence
+$`\pi : h \vdash \varphi_c(d)`$. A verified WPDA derivation can supply this
+evidence when $`\varphi_c`$ states only grammar or category membership. A
+behavioral, dependent, refinement, or other stronger theorem instead requires
+an explicit certificate, or separately authorized bounded deterministic proof
+search whose result is checked before the transaction commits.
+
+This campaign makes **no choice** among three viable public-interface designs:
+
+1. the generalized FLT interface supersedes the proposed `SpaceAgent` /
+   `SpaceFactory` surface;
+2. FLTs adapt to that surface while it remains public; or
+3. both coexist over one capability-checked storage kernel.
+
+The future Reified RSpaces branch revival must compare those designs. The seam
+here keeps the comparison honest: every choice receives the same opaque
+installed theory handle, structural FLT values and patterns, host-injected
+factory authority, transactional match/guard/commit boundary, and deterministic
+resource profile. `SpaceAgent` is therefore a possible backend adapter, not an
+assumption baked into GrammarCore or the DDL syntax.
+
+The layer itself is not optional to the architecture. The near-term integrated
+stack has three distinct objects sharing one installed theory index:
+
+1. the **DDL layer** constructs, composes, verifies, and installs the theory;
+2. the **FLT layer** supplies its scoped terms, patterns, observations, and
+   reductions; and
+3. the **Reified RSpace layer** stores and synchronizes those terms only when
+   the theory proves the relevant communication judgments.
+
+What remains open is the Rholang-facing API between layers two and three, not
+whether their identities, proofs, scopes, effects, and capabilities compose.
+
+For any successfully completed `produce` or `consume` transition from $`S`$ to
+$`S'`$, the approved FIPS's invariant is preserved in theorem-indexed form:
+
+```math
+\forall d \in \mathsf{Data}(S').\;\forall k \in \mathsf{Waiting}(S').\;
+\neg\,\exists\theta,\pi.\;\mathsf{match}_{h}(k,d)\Downarrow(\theta,\pi).
+```
+
+Proof checking is total, deterministic, and bounded and occurs inside the same
+atomic match/guard/commit boundary. Optional proof search is a separately
+authorized, metered operation; it is never an ambient consequence of owning an
+FLT or an installed-language handle. An untrusted DDL may declare proof rules
+but cannot install native proof code or enlarge the host's proof-search limits.
+
+A proof-cache entry is a pure optimization keyed at least by the installed
+language identity, theorem/profile identity, canonical term hash, checker ABI,
+and limit profile. A hit may reuse checked mathematical evidence, but it never
+supplies `Produce`, `Consume`, proof-search, factory, checkpoint, or replay
+authority. The transaction revalidates the live capability and revocation epoch
+after preparation and immediately before commit.
+
+If the committed matcher admits multiple eligible synchronizations, its
+selection rule, ordering, weights, and tie policy are part of the space profile
+and the replay commitment; iteration order is never semantic. `default`,
+`temp`, and `seq` qualifiers become checked persistence and effect grades. In
+particular, `seq` names cannot cross an FLT hole, bridge, registry value, or
+foreign child unless the receiving profile proves the approved linear-use
+restrictions.
+
+Language-handle authority remains separate from space-factory and live-space
+authority. Creating a space requires an injected factory capability; operating
+one requires an opaque space capability; checkpoint and replay require their
+own rights. A language morphism never transports live state automatically. A
+separate verified space morphism must preserve matching, qualifier restrictions,
+transition order, checkpoint roots, and replay evidence. This prevents a
+grammar import or apparently harmless FLT translation from escalating into
+ambient storage access.
 
 ## Implementation Evidence
 
@@ -6170,6 +6122,12 @@ Non-normative. The implementation facts this proposal is constrained by.
 | --- | --- |
 | `language!`'s full pipeline and its eight generator calls | `mettail-rust/macros/src/lib.rs`; `parse_macro_input!` at `:44` |
 | `LanguageDef` is the sole backend input | `mettail-rust/ast/src/language/model.rs` |
+| Reified RSpace storage foundation: agents, qualifiers, collection/storage variants, factories, runtime routing, tests, and Rocq models | `f1r3node-reified-rspaces/rholang/src/rust/interpreter/spaces/`; `f1r3node-reified-rspaces/formal/rocq/reified_rspaces/` |
+| Reified RSpace theory integration is not yet the MeTTaIL theorem interface required by §XVII.10 | `spaces/types/theory.rs::Theory::validate(&str)` and `SimpleTypeTheory` are explicitly transitional; `spaces/factory/theory.rs` rejects MeTTaIL file, inline, and URI theory specifications as not implemented |
+| Current theory admission is representation-unsafe and non-structural | `spaces/generic_rspace.rs::GenericRSpace::produce` identifies `ListParWithRandom` through `TypeId`, performs an unsafe pointer cast, converts it to a validation string, and falls back to `Debug` text for other payload types |
+| Current matching cannot carry typed captures or theorem evidence | `spaces/matcher.rs::Match::matches` returns `bool`; `Match::extract_bindings` returns an untyped `HashMap<String, A>` and its default successful case returns an empty map |
+| Existing nouveau FLTs are not yet connected to Reified RSpace theory handles | `mettail-rust/runtime/src/flt_node.rs` carries a string tag and source; `rholang-runtime/src/rholang_ast.rs::flt_body_to_guest_syntax` performs source rewriting; `repl/src/registry.rs::FltResolver` dispatches compile-time reflectors |
+| Reified RSpace proofs contain useful safety models but do not yet close the integrated theorem boundary | `formal/rocq/reified_rspaces/theories/GenericRSpace.v` leaves values unindexed and reduces matching to Boolean predicates; `Checkpoint.v` and `PathMapQuantale.v` declare documented parameters/axioms; `Substitution.v` and `ChannelStore/PathMapStore.v` identify simplified or placeholder portions |
 | Five specification fields carry Rust, and the sweep that returns them | `grammar.rs:247` ($`\bigstar_2`$), `language/model.rs:918` ($`\bigstar_1`$), `:1689` ($`\bigstar_3`$), `:68` ($`\bigstar_4`$), `:637` ($`\bigstar_5`$); payload at `types.rs:192`; the command is in §I.4 |
 | Two further `syn` couplings, not caught by a type predicate | `language/model.rs:28` (`LanguageDef::name : Ident`), `compose.rs:38` (`LanguageRef::module_path : syn::Path`) |
 | `ValidationError` has **17** variants, all `Span`-bearing | `ast/src/validation/error.rs`; reproduce with the variant-head sweep of §I.4, not by grepping `span: Span` (which also matches `Span::call_site()` constructions inside `impl` blocks) |
@@ -6197,8 +6155,6 @@ Non-normative. The implementation facts this proposal is constrained by.
 | `HashBag` iteration order is a property of the map instance, not of the multiset | `runtime/src/hashbag.rs:39-43`: `HashMap<T, usize, BuildHasherDefault<FxHasher>>`. Measured in §III.9 — two bags equal as multisets iterate differently when built by different insertion orders, and again when built at different pre-reserved capacities |
 | Auto-injection cannot emit a `^`-prefixed label | `ast/src/auto_inject.rs`, production region `< :611`: thirteen `format!("…")` sites, partitioning into six new-label templates (`:287`, `:297`, `:322`, `:475`, `:509`, `:546`), four references to existing labels (`:478`, `:479`, `:481`, `:513`), and three diagnostic strings (`:134`, `:136`, `:138`). Every label hole is a gated category name; every literal fragment is ASCII alphanumeric (§III.6) |
 | The three name families the gate union omitted | `ast/src/language/model.rs:1743` (`TreeInvariant.name : Ident`), `:1726-1735` (`SyncConstraint::{Align{stream_a, stream_b}, Track{auxiliary, primary}}`), `:636` (`TheoryRegistration.name : Ident`). Not a name and correctly absent: `ConnectiveDecl.role : ConnectiveRole`, a closed eight-variant enum (`:493-518`) |
-| Mike Stay's module prototype, and its rejected corpus | [Prototype] (`F1R3FLY-io/MeTTaIL`, branch `dev`, `3343fbe`, `GSLT/src/test/module/`): six accepted `.module` files and `bad/{RepeatLabel,ReplacementShadows}.module`. §X.3 adopts the two rejections as normative rules; §X.7 tabulates nine divergences from `mettail-spec` |
-| The `modules` branch's module spine, which §X.2 specifies | branch `modules` at `cc36a0d8`: `mettail-spec/src/surface.rs:7-11` (`SurfaceFile { imports, module }` — imports then exactly **one** module), `:14-17` (`Import { path, alias }`), `:20-23` (`Module`), `:26-32` (`ContentItem`, including `Nested(Module)`), `:43-47` (`LanguageDecl`), `:50-54` (`SpaceDecl`); `mettail-spec/src/parser.rs:78-108` (`parse_imports` / `parse_import_descriptor`, including the braced group and `as`), `:124` (the `export` modifier), `:162` (`space Ident : LanguageExpr`) |
 | Validation now HAS a reserved-label check, added in response to §IX.5.1 | `ast/src/validation/validator.rs:57-145` (`validate_reserved_reflect_names`), called as `validate_language`'s first statement at `:147-150`; `ValidationError::ReservedReflectLabel` at `error.rs:123-130` |
 | Fingerprint derivation, and the raw-string injection points | `ast/src/identity.rs:20-24` (`mettail-langdef-v1:{:016x}`), `:69-76` (`fnv1a64`, prime `0x100000001b3`); raw `push_str` at **≥10** sites — `:153`, `:256` (option key and value), `:263` (token regex), `:302` (sync boundary), **`:515` and `:611` (grammar-terminal and syntax-expression literal TEXT — reachable with no `tokens{}` block)**, `:126`/`:128`/`:402`–`:409`/`:541`–`:546`/`:652` (collection delimiters), `:236`/`:319`/`:333`/`:340`/`:445`/`:1061` (relation params, tree-invariant symbols, predicate text, connective keywords). The sweep rule is in §III.8 |
 | The parse-time amplification incident | `formal/rocq/prattail_wpda_runtime/theories/ForRowPersistentRuleRedundancy.v:23-33` — 14 ms → 109 s for `k = 0..4`; the CI fence is `languages/tests/rhocalc_semantic_predicate_ambiguity.rs:99` (`PARSE_BUDGET = 2 s`) |
@@ -6206,14 +6162,7 @@ Non-normative. The implementation facts this proposal is constrained by.
 | Safe-arithmetic rewriting of native bodies | `macros/src/gen/native/rust_code_rewrite.rs::safeify` |
 | `extends` reverses base order | `ast/src/merge.rs:764-784`: `merge_language_defs(&base, def)` folded over `extends_names`, base-first |
 | The composition resolver has no injectable seam | `ast/src/merge.rs:764`, `:792`, `:824` take only `&mut LanguageDef`; `ast/src/registry.rs:51-55` is a `thread_local!` |
-| The `.rho` extender surface, assembly, NTIR, islands, projection | `mettail-rust` branch `modules`: `mettail-spec/src/{surface,parser,resolve,assemble,ntir,semantics,island,parity,project}.rs` |
-| The branch's parity harness compares **sorted name lists only** | branch `modules`: `mettail-spec/src/parity.rs` (`LanguageSnapshot`, 7 fields), `tests/parity_test.rs` — never calls `language_definition_fingerprint` |
-| Fragment parsers shared with the macro | branch `modules`: `mettail-ast/src/fragments.rs` (`language_def_from_parts` at `:56`, called from `mettail-spec/src/ntir.rs:96`) |
-| `SuffixKind::Relations` (the `logic` rename) | branch `modules`: `mettail-spec/src/surface.rs` |
-| Strict union conflict policy | branch `modules`: `mettail-spec/src/assemble.rs::ensure_no_unresolved_term_conflicts` |
-| Module-system design and EBNF | branch `modules`: `docs/design/exploring/module-system-design-v1.md` |
-| Official Rholang has tuples | `rholang-rs/rholang-tree-sitter/grammar.js:453` (`collection`), `:464` (`tuple`) |
-| MeTTaIL's `RhoCalc` does not | `rg -c -i tuple languages/src/rhocalc.rs` returns **0** |
+| Nouveau Rholang's `language!` specification | `languages/src/rholang.rs` |
 | `(Q 0u32)` does not parse in `language!` | `ast/src/language/parse.rs:2836-3006` (`parse_pattern` has no literal alternative); `languages/tests/omnibus_turing.rs:51` records the workaround |
 | Corpus measurements — **31** flat language blocks (35 recursive), **245** fold/step bodies, **42** carrier declarations, **14** mode-less blocks (13 of them `literals{}` evals), **144** braced `![{` blocks of which **130** carry a mode | `mettail-rust/languages/src/*.rs`; the counting rule is §V.2.1 and the **script that produces every one of these figures** is given in full in §V.2.2 |
 | `options` is carried by **18 of 31** flat specs; `guards` by **one** | `rg -l '^\s*options\s*\{' languages/src/*.rs \| wc -l` returns 18; `rg -l '^\s*guards\s*\{' languages/src/*.rs` returns `guarded_rho.rs` alone — `guardoptsmoke.rs`'s `?g:Guard` is a `terms{}` parameter slot, not a `guards{}` block |
@@ -6246,30 +6195,11 @@ Non-normative. The implementation facts this proposal is constrained by.
 - File I/O FIPS — the Stream-agent shape a future specification-loading API
   should match:
   [`../2026-02-06-File-IO/2026-02-06-File-IO.md`](../2026-02-06-File-IO/2026-02-06-File-IO.md)
-> **★ Provenance of the next two entries, stated because they do not resolve
-> from this branch.** The Foreign Language Terms FIPS and its sibling Virtual
-> Host Bridges FIPS are **not present on this repository's default branch** and
-> the relative paths below therefore do not resolve here. They live on the
-> `feature/foreign-language-terms-fips` branch of this same
-> `FIPS-mettail-in-rholang-specs` repository, at commit `2a86c97`, under
-> `under-review/`. They are rendered as code spans rather than links for exactly
-> that reason: a link that 404s is worse than a path with its branch named.
->
-> This matters more than a formatting note, because the FLT FIPS is
-> **load-bearing** here: it anchors §II.1's central thesis (a tag names a
-> handler), the whole of §VII, §IX.4's No-Injection composition argument, and
-> §XIV item 11's R2 per-child fingerprint dispatch. A reviewer who cannot find
-> it cannot check any of them. Retrieve it with
-> `git show feature/foreign-language-terms-fips:under-review/2026-06-26-Foreign-Language-Terms/2026-06-26-Foreign-Language-Terms.md`,
-> or check the branch out.
-
 - Foreign Language Terms FIPS — tagged terms, typed `${x}` holes, the reflected
-  tagged-`Par` ABI, and the No-Injection invariant. **Branch
-  `feature/foreign-language-terms-fips` @ `2a86c97`:**
+  tagged-`Par` ABI, installed handles, scoped matching, and the No-Injection invariant:
   `under-review/2026-06-26-Foreign-Language-Terms/2026-06-26-Foreign-Language-Terms.md`
 - Virtual Host Bridges for FLTs FIPS — the bridge type algebra for
-  externally hosted guest semantics. **Branch
-  `feature/foreign-language-terms-fips` @ `2a86c97`:**
+  externally hosted guest semantics:
   `under-review/2026-06-26-Virtual-Host-Bridges-for-FLTs/2026-06-26-Virtual-Host-Bridges-for-FLTs.md`
 - McCarthy, John. "Recursive Functions of Symbolic Expressions and Their
   Computation by Machine, Part I." *Communications of the ACM* 3(4), 1960,
@@ -6311,6 +6241,72 @@ Non-normative. The implementation facts this proposal is constrained by.
   $`\langle K \rangle \varphi`$ that §VII.3 extends, and the λ-calculus
   presentation §XI reproduces. It contains **no** Rholang representation of a
   presentation, which is the novelty claim of the Abstract.
+- **[Goodman 1999]** Goodman, Joshua. "Semiring Parsing."
+  *Computational Linguistics* 25(4), 1999, pp. 573–606.
+  [ACL Anthology J99-4004](https://aclanthology.org/J99-4004/). Establishes
+  the semiring abstraction used by §XVI.6 to separate recognition logic from
+  the weight domain.
+- **[Mohri 2002]** Mohri, Mehryar. "Semiring Frameworks and Algorithms for
+  Shortest-Distance Problems." *Journal of Automata, Languages and
+  Combinatorics* 7(3), 2002, pp. 321–350.
+  [Author's publication page](https://cs.nyu.edu/~mohri/distance.html) and
+  [paper](https://cs.nyu.edu/~mohri/pub/jalc.pdf). Supplies the generic
+  weighted-automata shortest-distance framework cited in §XVI.6.
+- **[Scott and Johnstone 2010]** Scott, Elizabeth, and Adrian Johnstone.
+  "GLL Parsing." *Electronic Notes in Theoretical Computer Science* 253(7),
+  2010, pp. 177–189. DOI:
+  [`10.1016/j.entcs.2010.08.041`](https://doi.org/10.1016/j.entcs.2010.08.041).
+  Grounds §XVI.8's use of graph-structured stacks and shared packed parse
+  forests for generalized parsing.
+- **[Fiore, Plotkin, and Turi 1999]** Fiore, Marcelo; Gordon Plotkin; and Daniele
+  Turi. "Abstract Syntax and Variable Binding." *Proceedings of the 14th Annual
+  IEEE Symposium on Logic in Computer Science*, 1999. DOI:
+  [`10.1109/LICS.1999.782615`](https://doi.org/10.1109/LICS.1999.782615).
+  Grounds §XVII's presheaf-indexed treatment of binding and substitution.
+- **[Miller 1991]** Miller, Dale. "A Logic Programming Language with Lambda-
+  Abstraction, Function Variables, and Simple Unification." *Journal of Logic
+  and Computation* 1(4), 1991, pp. 497–536. DOI:
+  [`10.1093/logcom/1.4.497`](https://doi.org/10.1093/logcom/1.4.497).
+  Grounds the decidable higher-order pattern fragment required for scoped FLT
+  pattern holes.
+- **[Urban, Pitts, and Gabbay 2004]** Urban, Christian; Andrew Pitts; and Murdoch
+  Gabbay. "Nominal Unification." *Theoretical Computer Science* 323(1–3), 2004,
+  pp. 473–497. DOI:
+  [`10.1016/j.tcs.2004.06.016`](https://doi.org/10.1016/j.tcs.2004.06.016).
+  Grounds alpha-aware name and freshness constraints.
+- **[Leifer and Milner 2000]** Leifer, James, and Robin Milner. "Deriving
+  Bisimulation Congruences for Reactive Systems." *CONCUR 2000*. DOI:
+  [`10.1007/3-540-44618-4_19`](https://doi.org/10.1007/3-540-44618-4_19).
+  Supplies relative pushouts and relative-pushout transitions.
+- **[Sassone and Sobociński 2005]** Sassone, Vladimiro, and Paweł Sobociński.
+  "Reactive Systems over Cospans." *Theoretical Computer Science* 333(1–2),
+  2005, pp. 203–232. DOI:
+  [`10.1016/j.tcs.2004.10.025`](https://doi.org/10.1016/j.tcs.2004.10.025).
+  Supplies the groupoidal relative-pushout account used when structural
+  equations make strict pushouts fragile.
+- **[Thompson 1968]** Thompson, Ken. "Programming Techniques: Regular
+  Expression Search Algorithm." *Communications of the ACM* 11(6), 1968,
+  pp. 419–422. DOI:
+  [`10.1145/363347.363387`](https://doi.org/10.1145/363347.363387).
+  Grounds compilation of regular token patterns to bounded automata rather than
+  backtracking matchers.
+- **[TUF Security]** The Update Framework contributors. "Security." Official
+  documentation: [theupdateframework.io/docs/security](https://theupdateframework.io/docs/security/).
+  Enumerates rollback, freeze, mix-and-match, and equivocation attacks addressed
+  by §XVII.8.
+- **[Hypercube]** Stay, Michael, *et al.* *Hypercube* presentation and paper
+  drafts: `publications-hypercube/drafts/Hypercube/hypercube_beamer_deck.tex`
+  and `hypercube_v6.tex`. The displayed-site, profile, index, rely, ambient, and
+  contextual-modal structure refined in §XVII.4 comes from this work.
+- **[Behavior in Higher-Order Languages]** Meredith, L. G., and Michael Stay.
+  `publications/behavior-in-higher-order-languages/main.tex`. Supplies the
+  observation relation, admissible observer category, context multicategory,
+  relative-pushout transition theory, and structure-preserving translations
+  used in §XVII.
+- **[Tree-sitter Grammar Documentation]** Tree-sitter contributors. "Writing
+  the Grammar." [Official Tree-sitter documentation](https://tree-sitter.github.io/tree-sitter/creating-parsers/3-writing-the-grammar.html).
+  Documents Tree-sitter's GLR basis and on-demand context-aware lexing, the
+  comparison used in §XVI.8. A living project document has no DOI.
 
 ### Personal communications
 
@@ -6320,49 +6316,31 @@ labelled as such so a reader can weigh them accordingly. Each is used only for a
 on an unpublished source alone.
 
 - **Michael Stay**, design discussion on in-Rholang language specifications,
-  2026-07 (personal communication) — the `semantics` clause and its bootstrap
-  rationale (§V.1), the extender mockup adopted as L0 (§III.3), the `relations`
-  rename (§IV.10), the `where x |= <behavioral type>` guard spelling (§VII.3),
-  and the "both frontends" answer (§III.2, §XIII.1).
-- **[Sketch]** **Michael Stay**, module-syntax sketch, 2026-07 (personal
-  communication) — the `import` / `module` / `export` spine as written out in
-  discussion, including the aliased-import example whose two paths share the
-  basename `Module1.module`, which is the sole stated motivation for `as`
-  (§X.2). ★ It is a **sketch, not a running artifact**, and is cited only where
-  the prototype is silent; where the two disagree, §X.7 records both. Keeping
-  the two apart is load-bearing rather than pedantic — the basename example is
-  the sketch's and no `Module1` exists anywhere in [Prototype], so attributing
-  it to the prototype would put a citation on a file a reviewer cannot open.
+  2026-07 (personal communication) — the bootstrap rationale for semantic
+  targets (§V.1), the `relations` field
+  (§IV.10), the `where x |= <behavioral type>` guard spelling (§VII.3), and the
+  requirement that human and programmatic surfaces coexist (§III.2, §XIII.1).
+- **Greg Meredith and Michael Stay**, MeTTaIL module-syntax design and
+  executable prototype, 2026-08 (personal communication and implementation) —
+  the `Module` / `Theory` grammar, typed theory parameters, imports, local
+  binding, theory algebra, ordered builders, and well-formedness corpus used in
+  §III.3 and §X.
 - **L. G. Meredith**, modality shape
   $`\langle K \rangle_{\vec{r}}^{\vec{\imath}} X`$, 2026-07 (personal
-  communication) — one-hole process contexts with *relies* and *indices*. §VII.3
-  records the shape and deliberately does **not** fix a value encoding for it,
-  precisely because no specification of the types exists.
+  communication) — one-hole process contexts with *relies* and *indices*.
+  §VII.3 refines the shape with the Hypercube displayed-site and ambient profile.
 - **L. G. Meredith and Michael Stay**, framing of the objective, 2026-07
   (personal communication) — the passage quoted in the Abstract.
 
-### Prior implementation work
+### Design and implementation sources
 
-> **★ Provenance of the module prototype, stated because it resolves from
-> neither this repository nor `mettail-rust`.** [Prototype] is an **unpublished
-> prototype in a sibling repository**, and it is cited here at the same standard
-> as the two FLT FIPSs above: repository, branch, commit, path. It is **not** on
-> `main` of anything, and its syntax is **not settled** — §X.7 tabulates nine
-> points on which it and the `modules` branch disagree. Treat it as evidence of
-> what was actually written and run, not as a specification.
-
-- **[Prototype]** Stay, Michael. *MeTTaIL module prototype* — repository
-  `F1R3FLY-io/MeTTaIL`, branch `dev`, commit `3343fbe`, path
-  `GSLT/src/test/module/`. Six accepted `.module` files
-  (`ArithmeticOperations`, `ArrowCats`, `List`, `RenameRewrite`, `Rholang`,
-  `UnivAlg`) and a `bad/` directory of two **rejected** ones (`RepeatLabel`,
-  `ReplacementShadows`). `Rholang.module` is the artifact closest to this
-  proposal's subject: it presents the ρ-calculus as a chain of theories over
-  `UnivAlg`'s commutative monoid. The rejected pair supplies §X.3's two
-  normative well-formedness rules, and `ReplacementShadows` independently
-  corroborates §III.6's gate-ordering decision. Upstream mirror:
-  [`https://github.com/F1R3FLY-io/MeTTaIL/tree/dev/GSLT/src/test/module/`](https://github.com/F1R3FLY-io/MeTTaIL/tree/dev/GSLT/src/test/module/).
-- `mettail-rust` branch `modules` (Serhii, George) —
-  [`main...modules`](https://github.com/F1R3FLY-io/mettail-rust/compare/main...modules).
-  The `mettail-spec` MUS compiler this FIPS builds on, credited and qualified in
-  §III.1.
+- **Greg Meredith and Michael Stay.** `f1r3node-rust`, branch
+  `feature/module-syntax`, commit
+  `9c57a82b9ceaf798b361918369056312a33b051c`, paths
+  `module-syntax/mettail-elab/` and
+  `module-syntax/documentation/mettail-ddl-and-modules-2026-08-19.md`.
+  This is the source for the `Module` / `Theory` surface and accepted/rejected
+  module corpus.
+- **Meredith, Stay et al.** `MeTTaIL/GSLT/src/main/bnfc/metta_venus.cf`.
+  This exhaustive grammar is the coverage reference for the canonical value
+  schema and normalization tests.

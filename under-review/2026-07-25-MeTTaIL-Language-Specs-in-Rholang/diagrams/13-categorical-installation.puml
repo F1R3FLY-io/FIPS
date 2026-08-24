@@ -1,0 +1,60 @@
+@startuml
+title Rholang DDL to an Installed-Language Capability
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+skinparam ComponentBorderColor #334155
+skinparam NoteBackgroundColor #F1F5F9
+skinparam NoteBorderColor #94A3B8
+
+component "Rholang **Module / Theory**\nAST or **language/2** value" as source #E0E7FF
+component "resolved finite module diagram\nexact commitments · provenance" as diagram #DDD6FE
+component "validated presentation\nscopes · morphisms · observations" as presentation #DBEAFE
+component "canonical **GrammarCore**\nsemantic fingerprint" as core #DCFCE7
+component "DFA / WPDA image\nexact witness weights" as image #BFDBFE
+component "image verifier\nlimits · indices · equivalence" as verifier #A7F3D0
+component "injected grants\npolicy · effects · cost" as grants #DDD6FE
+component "atomic installed record\nopaque language handle" as handle #FBCFE8
+component "FLT construct · match\nobserve · reduce · bridge" as flt #C7D2FE
+component "theorem/profile checker\ntyped channel · datum · pattern · proof" as theorem #A7F3D0
+component "reified RSpace capability\nstorage · synchronize · checkpoint · replay" as space #BFDBFE
+
+source -[#334155]-> diagram : A1 resolve and pin
+diagram -[#334155]-> presentation : A1 elaborate diagram
+presentation -[#7C3AED,dashed]-> core : A4 functor + reflector laws
+core -[#334155]-> image : A1 deterministic compile
+image -[#334155]-> verifier : A1 untrusted derived cache
+core -[#334155]-> verifier : A1 authoritative identity
+grants -[#334155]-> verifier : A1 intersect requested rights
+verifier -[#334155]-> handle : A1 one atomic commit
+handle -[#334155]-> flt : A1 capability-scoped operations
+handle -[#334155]-> theorem : A1 installed theory index
+flt -[#334155]-> theorem : A1 scoped term / pattern + evidence
+grants -[#334155]-> theorem : A1 proof-search and space rights
+theorem -[#334155]-> space : A1 checked atomic operation
+source -[#DC2626,dashed]-> flt : A5 ✗ specifications are not FLTs
+source -[#DC2626,dashed]-> handle : A5 ✗ data cannot grant authority
+source -[#DC2626,dashed]-> space : A5 ✗ a DDL cannot create storage authority
+
+note bottom of verifier
+  Any failure leaves no alias, image, handler,
+  channel, right, or partially installed record.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#E0E7FF> | **P3** Canonical specification value / Rholang DDL node |
+  |<#DDD6FE> | **P11** Resolved modules and externally injected grants |
+  |<#DBEAFE> | **P4** Shared presentation seam |
+  |<#DCFCE7> | **P5** Fully declarative GrammarCore |
+  |<#BFDBFE> | **P8** Runtime parser and reified-space substrate |
+  |<#A7F3D0> | **P9** Fail-closed image and theorem verification gates |
+  |<#FBCFE8> | **P10** Unforgeable installed identity |
+  |<#C7D2FE> | **P13** Usable FLT operations |
+  |<#F1F5F9> | **P14** Verification-scope note |
+  |<#334155> | **A1** Ordinary dataflow |
+  |<#7C3AED> | **A4** Proof / equality obligation (dashed) |
+  |<#DC2626> | **A5** Forbidden authority path (dashed, leading ✗) |
+endlegend
+@enduml

@@ -24,9 +24,11 @@ them in the order below.
 | 9 | `07-security-boundary.puml` | component (trust boundary) | §IX |
 | 10 | `11-debugging-stations.puml` | component (staged failure flow) | §XII.2 |
 | 11 | `10-work-item-dag.puml` | component (dependency DAG) | §XIII.4 |
+| 12 | `12-runtime-grammar-pipeline.puml` | component / dataflow | §XVI.5 |
+| 13 | `13-categorical-installation.puml` | component / trust boundary | §XVII.6 |
 
-The file-number suffix and the "# in document" column **do not agree for the
-last two rows**, and the table is ordered by the second: `11-debugging-stations`
+The file-number suffix and the "# in document" column **do not agree for rows
+11 and 12**, and the table is ordered by the second: `11-debugging-stations`
 is embedded in §XII.2 and `10-work-item-dag` in §XIII.4, so the debugging figure
 is met first. The file names are stable identifiers assigned when each file was
 created; the column is the reading order. [`../verification/13-figure-manifest-order.sh`](../verification/13-figure-manifest-order.sh)
@@ -45,7 +47,12 @@ the thesis. Figures 2 and 5 are class diagrams because they present record
 structure. Figure 7 is a sequence diagram because its subject is an ordering of
 steps over time. Figure 10 pairs an ordered chain of failure stations with a
 fan-out of remedies, which no single ASCII box-drawing can align correctly.
-Figure 11 is a DAG with fan-in and fan-out.
+Figure 11 is a DAG with fan-in and fan-out. Figure 12 is a component/dataflow
+diagram because its subject is authority and delivery-path separation, not an
+execution timeline. Figure 13 is a component/trust-boundary diagram because it
+separates declarative construction, verification, ambient grants, atomic
+installation, capability-scoped FLT use, theorem checking, and stateful Reified
+RSpace operations.
 
 **No figure in this FIPS is ASCII art.** That is a rule, not a preference. Hand-drawn
 box-drawing does not survive editing: interior separators drift out of alignment
@@ -57,7 +64,7 @@ SVG and palette colours from the table below.
 PlantUML is preferred over Mermaid for every diagram type both support: PlantUML's
 output is byte-reproducible (render twice, `cmp` — identical) and it typesets LaTeX
 through the bundled JLaTeXMath into embedded vector SVG. Mermaid does neither. The
-choice of diagram *kind* per figure follows the pgmcp diagramming catalog: PlantUML
+choice of diagram *kind* per figure follows the diagram-selection rules of this FIPS: PlantUML
 covers component, class, sequence, activity, and swimlane figures, which is the whole
 of what this FIPS needs; no figure here required Graphviz, D2, or TikZ.
 
@@ -85,7 +92,7 @@ The invariant is therefore **three-tier**, and every tier is mechanically
 checkable:
 
 1. **Hex → key is global and injective.** Every occurrence of `#DCFCE7` in any
-   figure is P5, and no other key uses `#DCFCE7`. This holds across all eleven
+   figure is P5, and no other key uses `#DCFCE7`. This holds across all thirteen
    figures with no exceptions.
 2. **Every semantic FILL is legended in the figure that uses it.** This tier
    exists because tier 1 alone is unenforceable in practice: a check that reads
@@ -110,8 +117,8 @@ whose fill is still used makes tier 2 report `UNLEGENDED FILL`.
 
 | Key | Concept — stated to cover every use in the set | Hex | Tailwind name |
 | --- | --- | --- | --- |
-| **P1** | The **L0 layer** — Stay's extender authoring surface, its clauses, and work on it | `#FDE68A` | amber-300 |
-| **P2** | The **existing Rust-embedded path** — the `language!` frontend, its DDL-text sugar, work on that lane, and (in an anatomy figure) a record that is declarative itself but composes a Rust-bearing member | `#FEF3C7` | amber-100 |
+| **P1** | The **L0 layer** — the human-facing `Module` / `Theory` authoring surface, its clauses, and work on it | `#FDE68A` | amber-300 |
+| **P2** | The **existing Rust-embedded path** — the `language!` frontend, work on that lane, and (in an anatomy figure) a record that is declarative itself but composes a Rust-bearing member | `#FEF3C7` | amber-100 |
 | **P3** | The **value layer** — specification values, the productions they are built from, the encoder/decoder pair over them, and a value under diagnosis | `#E0E7FF` | indigo-100 |
 | **P4** | The **shared specification datatype** — `LanguageDef`, the L2 seam, and the layer a repair at that seam acts on | `#DBEAFE` | blue-100 |
 | **P5** | **Fully declarative — carries no Rust**: a backend generator emitting installable DATA, a record or grammar production with no host code in it, and the outcome that lane delivers | `#DCFCE7` | green-100 |
@@ -120,7 +127,7 @@ whose fill is still used makes tier 2 report `UNLEGENDED FILL`.
 | **P8** | Runtime substrate — Rho machine, RSpace, FLT resolver, and an existing runtime implementation reached unchanged | `#BFDBFE` | blue-200 |
 | **P9** | **Fail-closed gate**, and the fail-closed property it buys | `#A7F3D0` | emerald-200 |
 | **P10** | **Unforgeable identity** — the fingerprint, the reflected tags derived from it, and the work and diagnoses that rest on it | `#FBCFE8` | pink-200 |
-| **P11** | **Capability reference resolved against a registry** (handler / carrier / theory), the one production that may name one, and work on that registry | `#DDD6FE` | violet-200 |
+| **P11** | **External capability input** — a handler / carrier / theory resolved against a registry, an injected grant set, a production naming such an input, and work on its resolution | `#DDD6FE` | violet-200 |
 | **P12** | **The adversarial dimension** — an adversary and the data it supplies, the silent hazard that creates, and the work that closes it | `#FDBA74` | orange-300 |
 | **P13** | **The end asset** — what an attack would damage (a victim language's terms, host Rholang state) and what a compiler-free target must be able to run | `#C7D2FE` | indigo-200 |
 | **P14** | An **out-of-band note** — verification, measurement, methodology, scoping, or design rationale | `#F1F5F9` | slate-100 |
@@ -191,7 +198,7 @@ were adopted because the alternative failed silently:
 
 1. **A4 is dashed everywhere it appears.** A violet *solid* arrow would be an
    unpinned style that happens to share A4's colour, which is exactly how a reader
-   comes to distrust the whole legend. Figure 4's `parse_ddl` arrow is dashed.
+   comes to distrust the whole legend. Figure 1's `desugar_module` arrow is dashed.
 2. **A5's "crossed" is realized as a leading `✗` glyph in the label,** because
    PlantUML has no crossed-arrow style for component diagrams. A style the table
    names and no figure can draw is a table entry that will never be honoured; naming
@@ -219,7 +226,7 @@ whole set now avoids all three.
    both delimiters literally. Use `<i>…</i>` for any emphasis that might wrap.
 
 The working idiom for a quoted tag literal is the HTML numeric entity inside a creole
-monospace span: `""(&#34;op&#34;, name)""` renders `("op", name)` in a monospace face
+monospace span: `""[&#34;op&#34;, name]""` renders `["op", name]` in a monospace face
 with real ASCII quotes.
 
 **`<latex>` is reserved for genuine mathematical formulae, and hazard 1 makes that a

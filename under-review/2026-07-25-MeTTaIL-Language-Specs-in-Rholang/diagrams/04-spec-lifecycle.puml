@@ -13,10 +13,11 @@ participant "validator\n<latex>\mathcal{V}</latex>\n**G2**" as VAL #A7F3D0
 participant "identity\n<latex>\mathcal{F}</latex>" as FP #FBCFE8
 participant "versioned\nregistry" as REG #DDD6FE
 participant "backend\ngenerators" as BE #DCFCE7
-participant "RSpace /\nFLT resolver" as RS #BFDBFE
+participant "image verifier +\ncapability gate" as IV #A7F3D0
+participant "installed table /\nRSpace" as RS #BFDBFE
 
 == 1. Construction (pure — no COMM) ==
-P -> V : build nested Map / List / Tuple / String literals
+P -> V : build nested Map / List / String literals
 note right of V #E0E7FF
   Constructing a spec is **value construction**: no send,
   no receive, no name creation (§III.9). COMM is Rholang's
@@ -57,29 +58,29 @@ note right of FP #FBCFE8
   not the fingerprint's length (§IX.2.2).
 end note
 
-== 4. Registration — the VALUE is what is stored ==
-FP -> REG : ""insertVersion(ret, &#34;lib&#34;, deployer, id, ver, v)""
-REG --> P : <latex>\texttt{rho:lib:1.*:}\langle\mathit{pk}\rangle\texttt{:}\langle\mathit{id}\rangle\texttt{:}\langle\mathit{ver}\rangle</latex>
+== 4. Build and verify — still no installed state ==
+VAL -> BE : validated presentation + GrammarCore
+BE -> IV : DFA/WPDA image, reductions, drivers, handlers
+FP -> IV : authoritative semantic fingerprint
+IV -> IV : verify tables, bounds, capabilities, effects,\nobservations, and exact consensus weights
+IV --> P : error leaves no partial state
 
-== 5. Retrieval and installation — the gates run AGAIN ==
-P -> REG : fetch by registry URI
-REG --> P : the specification **value** <latex>v'</latex>\n(//not// a ""LanguageDef"": the registry stores data)
-P -> E : <latex>\mathcal{E}(v')</latex> — **G1 and G2 re-run on the retrieved value**
-note right of E #A7F3D0
-  There is **no shortcut** from the registry to the backends.
-  A retrieved specification is an ordinary untrusted value and
-  re-enters the same fail-closed door as a locally constructed
-  one. This is the whole point of §IX: the adversarial input
-  arrives here.
-end note
-E -> VAL : <latex>\texttt{LanguageDef}</latex>
-VAL -> BE : validated, augmented <latex>\texttt{LanguageDef}</latex>
-BE -> RS : <latex>\texttt{rhoapi::Par}</latex> driver network,\nset-automaton pattern DAG
-BE -> RS : reflected head tags <latex>\ulcorner \mathcal{F}\cdot L \urcorner</latex>
+== 5. Atomic local installation ==
+IV -> RS : one commit of the complete immutable record
+RS --> P : opaque installed-language handle <latex>h</latex>
 
-== 6. Use ==
-P -> RS : FLT ""L`term`"" resolved by <latex>\mathcal{F}</latex>
-RS --> P : reduced reflected term
+== 6. Publication is a separate authority ==
+P -> REG : publish signed canonical module graph + exports\n(requires Publish; images are untrusted caches)
+REG --> P : committed registry URI
+
+== 7. Retrieval re-enters the same gates ==
+P -> REG : fetch exact signed module graph
+REG --> P : canonical untrusted values, never a handle
+P -> E : resolve, elaborate, validate, build, verify, install again
+
+== 8. Use ==
+P -> RS : lexical alias for <latex>h</latex> + structural FLT template
+RS --> P : scoped parsed / matched / reduced FLT
 
 legend right
   |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |

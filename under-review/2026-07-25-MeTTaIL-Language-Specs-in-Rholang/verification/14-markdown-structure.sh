@@ -6,9 +6,10 @@
 # FIPS CLAIM  0 math violations; fences balanced; 0 dangling section refs;
 #             0 misaligned table rows; every literate fragment name bound
 # RUN FROM    anywhere (resolves the document relative to this script)
-# LAST RUN    2026-07-25 against the working .md
-# EXPECTED    302 inline math spans / 0 violations; 19 display blocks;
-#             fence balance 0; 26 fragments / 0 unbound; 0 dangling; 0 misaligned
+# LAST RUN    2026-08-02 against the working .md (post tuple->list migration:
+#             XIII.5's two math spans and III.6.5's two profile fragments removed)
+# EXPECTED    304 inline math spans / 0 violations; 21 display blocks;
+#             fence balance 0; 24 fragments / 0 unbound; 0 dangling; 0 misaligned
 # TEETH TEST  (a) let an inline math span wrap across a line break. CommonMark
 #                 code spans cannot contain a newline, so the span is inert.
 #                 FIRED TWICE FOR REAL during drafting.

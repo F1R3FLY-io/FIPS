@@ -10,10 +10,13 @@
 # compared against the EXPECTED line in each header.
 # ═══════════════════════════════════════════════════════════════════════════
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+STATUS=0
 for f in "$HERE"/0*.sh "$HERE"/1*.sh; do
   case $(basename "$f") in run-all.sh) continue;; esac
   printf '\n════ %s ════\n' "$(basename "$f")"
-  sh "$f" "$@"
+  sh "$f" "$@" || STATUS=1
 done
-printf '\n════ 01-corpus-census.py ════\n'; python3 "$HERE/01-corpus-census.py"
+printf '\n════ 01-corpus-census.py ════\n'
+python3 "$HERE/01-corpus-census.py" || STATUS=1
 printf '\n(15-hashbag-order-probe is built and run by hand; see its README.)\n'
+exit "$STATUS"

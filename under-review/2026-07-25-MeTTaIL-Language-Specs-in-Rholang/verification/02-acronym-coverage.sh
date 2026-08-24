@@ -5,8 +5,8 @@
 # CHECKS      that no all-caps prose token used as an acronym lacks a definition
 # FIPS CLAIM  Terminology's scope statement: every acronym this document uses is defined there
 # RUN FROM    anywhere (resolves the document relative to this script)
-# LAST RUN    2026-07-25 against the working .md
-# EXPECTED    no output; 42 acronyms detected over ~5250 lines of prose
+# LAST RUN    2026-08-02 against the working .md
+# EXPECTED    no output; 48 acronyms detected over the prose
 # TEETH TEST  delete the AST or LHS row from Terminology — it prints that acronym.
 #             VERIFIED FIRES.
 #             
@@ -55,7 +55,7 @@ sed 's/^> //' "$doc" | awk -f /tmp/defence.awk |
 # An ACRONYM is an all-caps prose token never occurring lower-cased in the prose,
 # excluding this document's own structured identifiers (W-7, G1, RT4, numerals).
 grep -oE '\b[A-Z][A-Z0-9]+(-[A-Z0-9]+)?\b' /tmp/prose | sort -u |
-  grep -vE '^([A-Z]-?[0-9]+[a-z]?|RT[0-9]|I{1,3}|IV|VI{0,3}|IX|XI{0,3}V?|XIV|XV)$' |
+  grep -vE '^([A-Z]-?[0-9]+[a-z]?|RT[0-9]|I{1,3}|IV|VI{0,3}|IX|XI{0,3}V?|XIV|XV|XVI|XVII)$' |
   while read -r t; do
     grep -qE "\b$(printf '%s' "$t" | tr 'A-Z' 'a-z')\b" /tmp/prose || printf '%s\n' "$t"
   done | sort -u > /tmp/acronyms
@@ -70,10 +70,13 @@ cat > /tmp/allowed <<'EOF'
 ACM        venue abbreviation inside a reference entry — out of scope
 ASCII      assumed universal — out of scope
 BLAKE3-256 width variant, defined in the BLAKE3 row
+CONCUR     venue abbreviation inside a reference entry — out of scope
 EPTCS      venue abbreviation inside a reference entry — out of scope
 FNV        defined by the FNV-1a row
 HOPL       venue abbreviation inside a reference entry — out of scope
+IEEE       venue abbreviation inside a reference entry — out of scope
 LR         expanded inline in the GLR row
+LL         expanded inline in the GLL row
 RFC        assumed universal; used only as a document number — out of scope
 RISC-V     expanded at first use in the Abstract
 UAX        expanded inline in the NFC / NFD / NFKC / NFKD row

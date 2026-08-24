@@ -61,7 +61,7 @@ re-checkable, and its teeth test *is* that mistake.
 | # | File | Checks | Expected |
 | --- | --- | --- | --- |
 | 01 | `01-corpus-census.py` | native-block census (§V.2) | 245 / 42 / 14 / 144-130 |
-| 02 | `02-acronym-coverage.sh` | every acronym has a Terminology row | no output (42 detected) |
+| 02 | `02-acronym-coverage.sh` | every acronym has a Terminology row | no output (48 detected) |
 | 03 | `03-grammar-closure.sh` | §III.4.2 nonterminal closure | `NativeEval` only |
 | 04 | `04-ident-field-derivation.sh` | the gate union's derivation rule | 64 rows incl. `JoinPatternDecl` |
 | 05 | `05-auto-injection-labels.sh` | no auto-injected label starts with `^` | 13 sites |
@@ -72,12 +72,14 @@ re-checkable, and its teeth test *is* that mistake.
 | 10 | `10-palette-tiers.sh` | palette tiers 1 and 2 | no output |
 | 11 | `11-palette-latex-quotes.sh` | no quote inside `<latex>` | `clean` |
 | 12 | `12-diagram-reproducibility.sh` | SVGs reproducible **and** committed copies current | no output |
-| 13 | `13-figure-manifest-order.sh` | manifest order = embed order | 22 lines |
-| 14 | `14-markdown-structure.sh` | fences, math, tables, fragments, `§` refs | 302/0, 19, 0, 26/0, 0, 0 |
+| 13 | `13-figure-manifest-order.sh` | manifest order = embed order | 24 lines |
+| 14 | `14-markdown-structure.sh` | fences, math, tables, fragments, `§` refs | 304/0, 21, 0, 24/0, 0, 0 |
 | 15 | `15-hashbag-order-probe/` | `HashBag` order is per-instance | orders differ |
 | 16 | `16-corpus-counts.sh` | 31/35 languages, 18 options, 1 guards | 31 / 35 / 18 |
 
-`run-all.sh` runs every instrument in order.
+`run-all.sh` runs every instrument in order and returns nonzero if any instrument
+fails. Diagram rendering is forced into Java headless mode so an unavailable
+display cannot masquerade as a reproducibility result.
 
 ## ★ The teeth tests, and why they are the point
 

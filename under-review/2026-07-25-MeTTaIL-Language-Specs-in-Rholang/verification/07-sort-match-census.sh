@@ -30,7 +30,10 @@ echo "── the invocation sites (6; the two ParSortMatcher ones first) ──"
 grep -rn '::sort_match(' rholang/src/rust/interpreter/
 
 echo "── the three places a produced Par could be re-sorted before hashing (expect NOTHING) ──"
-grep -rln 'sort_match\|ParSortMatcher\|Sortable' \
-     rspace++/src/ \
-     rholang/src/rust/interpreter/reduce.rs \
-     rholang/src/rust/interpreter/rho_runtime.rs
+if grep -rln 'sort_match\|ParSortMatcher\|Sortable' \
+        rspace++/src/ \
+        rholang/src/rust/interpreter/reduce.rs \
+        rholang/src/rust/interpreter/rho_runtime.rs; then
+  echo "unexpected produce-path sort reference" >&2
+  exit 1
+fi

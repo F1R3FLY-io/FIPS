@@ -6,7 +6,7 @@
 #             AND that the committed SVG matches a fresh render
 # FIPS CLAIM  'all 11 SVGs byte-reproducible'
 # RUN FROM    anywhere (resolves diagrams/ relative to this script)
-# LAST RUN    2026-07-25 against the working .puml set
+# LAST RUN    2026-08-02 against the working .puml set
 # EXPECTED    no output
 # TEETH TEST  edit a .puml without re-rendering -> 'STALE COMMITTED'. FIRED FOR REAL
 #             during this document's revision, on 08-three-layers.puml.
@@ -18,9 +18,30 @@
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$(dirname "$HERE")/diagrams" || exit 2
 A=$(mktemp -d); B=$(mktemp -d)
+STATUS=0
+JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-Djava.awt.headless=true"
+export JAVA_TOOL_OPTIONS
 for f in *.puml; do
-  plantuml -tsvg -o "$A" "$f"; plantuml -tsvg -o "$B" "$f"
-  cmp -s "$A/${f%.puml}.svg" "$B/${f%.puml}.svg" || echo "NON-REPRODUCIBLE: $f"
-  cmp -s "${f%.puml}.svg"    "$A/${f%.puml}.svg" || echo "STALE COMMITTED: $f"
+  if ! plantuml -tsvg -o "$A" "$f" 2>"$A/render.err"; then
+    echo "RENDER FAILED: $f"
+    cat "$A/render.err"
+    STATUS=1
+    continue
+  fi
+  if ! plantuml -tsvg -o "$B" "$f" 2>"$B/render.err"; then
+    echo "SECOND RENDER FAILED: $f"
+    cat "$B/render.err"
+    STATUS=1
+    continue
+  fi
+  if ! cmp -s "$A/${f%.puml}.svg" "$B/${f%.puml}.svg"; then
+    echo "NON-REPRODUCIBLE: $f"
+    STATUS=1
+  fi
+  if ! cmp -s "${f%.puml}.svg" "$A/${f%.puml}.svg"; then
+    echo "STALE COMMITTED: $f"
+    STATUS=1
+  fi
 done
 rm -rf "$A" "$B"
+exit "$STATUS"

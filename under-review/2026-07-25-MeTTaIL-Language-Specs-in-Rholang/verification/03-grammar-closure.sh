@@ -5,7 +5,7 @@
 # CHECKS      that every nonterminal used on a right-hand side has a production
 # FIPS CLAIM  'the grammar has no dangling symbol, and exactly one forward reference: NativeEval'
 # RUN FROM    anywhere (resolves the document relative to this script)
-# LAST RUN    2026-07-25 against the working .md
+# LAST RUN    2026-08-02 against the working .md
 # EXPECTED    exactly one line: NativeEval
 # TEETH TEST  drop the bare-identifier / ::= continuation join (the second awk) and it
 #             also reports BehavioralPred, RefinementPred and TreeConstraint — all

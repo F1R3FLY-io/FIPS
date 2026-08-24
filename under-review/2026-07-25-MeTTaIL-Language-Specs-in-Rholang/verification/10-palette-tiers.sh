@@ -5,7 +5,7 @@
 # CHECKS      hex<->key bijection, and that every semantic fill is legended in its own figure
 # FIPS CLAIM  PALETTE's three-tier invariant; tier 3 is a reading, not a grep
 # RUN FROM    anywhere (resolves diagrams/ relative to this script)
-# LAST RUN    2026-07-25 against the working .puml set
+# LAST RUN    2026-08-02 against the working .puml set
 # EXPECTED    no output from either tier
 # TEETH TEST  TIER 1: re-key one figure's #DCFCE7 to P99 -> 'HEX->MANY KEYS'.
 #             TIER 2: delete a legend row whose fill is still used -> 'UNLEGENDED FILL'.
