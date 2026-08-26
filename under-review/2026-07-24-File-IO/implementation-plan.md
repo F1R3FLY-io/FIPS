@@ -403,7 +403,7 @@ If any of these are missing, stop and coordinate with the prerequisite-FIP owner
 - Slice 22 — CLI-flag parsers.  **Delivered** in `node/src/rust/configuration/commandline/cli_static_provisioning.rs` (19 parser tests) + four `Vec<CliStatic{File,Dir}Arg>` fields on `RunOptions` in `options.rs` (6 clap integration tests via `Options::try_parse_from`).  CLI dir default is `"rw"` (spec §1252); file default is `"r"`.  Parsers exposed via `ValueParser::new(parse_cli_static_file)` / `parse_cli_static_dir`, `ArgAction::Append` for repetition.  Merge with config-file entries + duplicate detection = slice 24; bundle handoff to genesis = slice 25.
 - Slice 23 — Boot-time tree walk validators.  **Delivered 2026-08-03** in `node/src/rust/configuration/boot_validation.rs`.  Public entry point `validate_provisioning_boot(&FileIoProvisioning) -> Result<(), Vec<FileIoConfigError>>`.  Error variants: `IsSymlink`, `AbsolutePrefixSymlink`, `HardLinked`, `PathNotFound`, `StatFailed`, `BucketOverlapSamePath`, `BucketOverlapPrefix`, `KindMismatch`.  All errors batched into a single `Vec` (plan §370 constraint).  18 tests including symlink-as-entry, symlink-descendant, hard-linked file, ancestor-symlink diagnostic, bucket disjointness (same-path + prefix overlap in both directions), same-bucket overlap allowed, string-prefix-only doesn't overlap, kind mismatch both directions, multi-error batching, Display coverage.  Slice 24 will merge CLI entries into the validator's input.
 - Slice 24 — Merge + duplicate detection + batched errors.  **Delivered 2026-08-03** in `node/src/rust/configuration/provisioning_merge.rs`; **review-driven fixes landed same day.**  Public entry points: `merge_cli_into_config(...) -> (FileIoProvisioning, Vec<FileIoConfigError>)` (merge-only, errors sorted) and `merge_and_validate(...) -> Result<FileIoProvisioning, Vec<FileIoConfigError>>` (boot-integration surface, errors from both stages combined and sorted).  Three new `FileIoConfigError` variants: `DuplicateLogicalNameAcrossSources` (**hard reject per M-24-2 option c**: config entry REMOVED from merged map, CLI not inserted, boot fails on any error — no silent precedence), `DuplicateLogicalNameInCli` (first-wins intra-source), `DuplicatePathAcrossSources` (uses lexical normalization so `/etc/foo` and `/etc/./foo` compare equal, checks ALL CLI entries including those dropped by hard-reject).  Identical duplicates silently deduped.  Pre-merge size cap (`MAX_PROVISIONING_ENTRIES`) short-circuits to bound cost against hostile inputs.  Path-dedup is O(N+M) via HashMap indexed on normalized paths.  **42 tests**, all pass; full node lib 291/291 green.  Slice 25 will call `merge_and_validate` from the boot pipeline; must also synthesize `(kind, consensusMode)` per plan §369 (documented as TODO in module preamble).
-- Slice 25 — Bundle handoff to genesis.  **Delivered 2026-08-03; review fixes landed 2026-07-29.**  New types in `casper/src/rust/genesis/contracts/fs_genesis.rs`: `pub struct BundleEntry { logical_name, canon_path, kind, mode }` and `pub enum BundleEntryKind { File, Dir }`.  New function `format_bundle_for_rholang(&[BundleEntry]) -> String` produces the Rholang map literal for the `Fs!?(0, 1, 2, <bundle>)` position; entries sorted by logical name for byte-identical composed source across validators (consensus requirement).  `compose_fs_genesis_source` and `fs_generator` gained a `bundle: &[BundleEntry]` parameter; `Genesis` struct gained `fs_bundle: Vec<BundleEntry>`; `default_blessed_terms` / `create_genesis_block` thread it through.  Node-side: `provisioning_merge::project_bundle(&FileIoProvisioning) -> Vec<BundleEntry>` walks the merged four buckets and synthesizes `BundleEntryKind` from map type.  Rholang string escaping (backslash, quote, newline, tab — **NOT `\r`**, which the Rholang lexer rejects) applied defensively despite slice-21/22 rejecting NUL and control chars.  All existing genesis callers updated to pass empty bundle (preserves pre-slice-25 behavior); `BlockApproverProtocol` gained a matching `fs_bundle` field/parameter so validator-side genesis composition is byte-identical to the proposer's; node's boot pipeline populates from `merge_and_validate` at `CasperLaunchImpl::new` construction.  **Deferred to a follow-up slice:** PB-B-3 `insertVersion` call for `rho:io:fs:1.0.0` / `rho:io:fs:1.*` (versioned-registry mechanics separate concern) and the `consensusMode` 5th tuple field (slice 26 will add both to the tuple and thread through Fs.rho / File.rho / native dispatch).  **Review fixes (2026-07-29):** C-25-2 `rholang_string_escape` now panics on any C0/C1 control char instead of emitting `\r` (the composed source would fail genesis with a lexer error on legitimate Windows-CRLF operator input); H-25-1 manual `Hash` impl on `Genesis` sorts `fs_bundle` by `logical_name` before hashing so reordered bundles hash identically (matches the sort-then-emit invariant in `format_bundle_for_rholang` — required for `DashMap` semantics + downstream consensus keys); H-25-2 hex validation on `pk_hex`/`sig_hex` promoted from `debug_assert!` to `assert!` for release builds; H-25-3 `BundleEntry::try_new` fallible constructor validates UTF-8, absolute-path, and forbidden-chars invariants as defense-in-depth against programmatic bypass (slice 24's `project_bundle` now uses it exclusively, panicking on projection-path failure); H-25-4 `format_bundle_for_rholang` panics on non-UTF-8 `canon_path` rather than emitting U+FFFD (which would silently open a different file at runtime); M-25-6 dedup assertion in `format_bundle_for_rholang` (would otherwise silently overwrite in the Rholang map); M-25-7 boot validation gained `LogicalNameConflictAcrossOracleConsensus` variant + cross-source name-conflict check (Fs.rho's `bMap` is a single namespace, so same key across oracle+consensus buckets would silently collapse); node-side `file_io_provisioning::reject_forbidden_chars` extended to reject NUL, C0/C1 controls, DEL, BOM, RTL overrides (U+200E/F, U+202A-E, U+2066-9), and line separators (U+2028/9) at HOCON deserialization, with the mirror set duplicated in `fs_genesis::reject_char_set` (casper cannot depend on node).  **Tests:** 4 `project_bundle` tests + boot-validation cross-source-conflict tests (node), 6 `format_bundle_for_rholang` tests + 15 review-driven regression tests (dedup panic, non-hex pk/sig panic, control-char escape panic, 10 `BundleEntry::try_new` validation cases, 2 composed-source-compiles-through-Rholang-parser cases) + 2 `Genesis::hash` order-insensitivity tests (casper), all 9 existing `standard_deploys_spec` genesis-integration tests still pass.  Full node lib 295/295; casper lib 274/274; genesis integration 9/9.
+- Slice 25 — Bundle handoff to genesis.  **Delivered 2026-08-03; review fixes landed 2026-07-29.**  New types in `casper/src/rust/genesis/contracts/fs_genesis.rs`: `pub struct BundleEntry { logical_name, canon_path, kind, mode }` and `pub enum BundleEntryKind { File, Dir }`.  New function `format_bundle_for_rholang(&[BundleEntry]) -> String` produces the Rholang map literal for the `Fs!?(0, 1, 2, <bundle>)` position; entries sorted by logical name for byte-identical composed source across validators (consensus requirement).  `compose_fs_genesis_source` and `fs_generator` gained a `bundle: &[BundleEntry]` parameter; `Genesis` struct gained `fs_bundle: Vec<BundleEntry>`; `default_blessed_terms` / `create_genesis_block` thread it through.  Node-side: `provisioning_merge::project_bundle(&FileIoProvisioning) -> Vec<BundleEntry>` walks the merged four buckets and synthesizes `BundleEntryKind` from map type.  Rholang string escaping (backslash, quote, newline, tab — **NOT `\r`**, which the Rholang lexer rejects) applied defensively despite slice-21/22 rejecting NUL and control chars.  All existing genesis callers updated to pass empty bundle (preserves pre-slice-25 behavior); `BlockApproverProtocol` gained a matching `fs_bundle` field/parameter so validator-side genesis composition is byte-identical to the proposer's; node's boot pipeline populates from `merge_and_validate` at `CasperLaunchImpl::new` construction.  **Deferred to a follow-up slice:** ~~PB-B-3 `insertVersion` call for `rho:io:fs:1.0.0` / `rho:io:fs:1.*` (versioned-registry mechanics separate concern)~~ **RESOLVED 2026-08-24 — insertVersion wired under `rho:serve:1.0.0:<hex>:fs:1.0.0`**; FIP-canonical `rho:io:*` bare-alias shape still pending a URN-parser extension slice and the `consensusMode` 5th tuple field (slice 26 will add both to the tuple and thread through Fs.rho / File.rho / native dispatch).  **Review fixes (2026-07-29):** C-25-2 `rholang_string_escape` now panics on any C0/C1 control char instead of emitting `\r` (the composed source would fail genesis with a lexer error on legitimate Windows-CRLF operator input); H-25-1 manual `Hash` impl on `Genesis` sorts `fs_bundle` by `logical_name` before hashing so reordered bundles hash identically (matches the sort-then-emit invariant in `format_bundle_for_rholang` — required for `DashMap` semantics + downstream consensus keys); H-25-2 hex validation on `pk_hex`/`sig_hex` promoted from `debug_assert!` to `assert!` for release builds; H-25-3 `BundleEntry::try_new` fallible constructor validates UTF-8, absolute-path, and forbidden-chars invariants as defense-in-depth against programmatic bypass (slice 24's `project_bundle` now uses it exclusively, panicking on projection-path failure); H-25-4 `format_bundle_for_rholang` panics on non-UTF-8 `canon_path` rather than emitting U+FFFD (which would silently open a different file at runtime); M-25-6 dedup assertion in `format_bundle_for_rholang` (would otherwise silently overwrite in the Rholang map); M-25-7 boot validation gained `LogicalNameConflictAcrossOracleConsensus` variant + cross-source name-conflict check (Fs.rho's `bMap` is a single namespace, so same key across oracle+consensus buckets would silently collapse); node-side `file_io_provisioning::reject_forbidden_chars` extended to reject NUL, C0/C1 controls, DEL, BOM, RTL overrides (U+200E/F, U+202A-E, U+2066-9), and line separators (U+2028/9) at HOCON deserialization, with the mirror set duplicated in `fs_genesis::reject_char_set` (casper cannot depend on node).  **Tests:** 4 `project_bundle` tests + boot-validation cross-source-conflict tests (node), 6 `format_bundle_for_rholang` tests + 15 review-driven regression tests (dedup panic, non-hex pk/sig panic, control-char escape panic, 10 `BundleEntry::try_new` validation cases, 2 composed-source-compiles-through-Rholang-parser cases) + 2 `Genesis::hash` order-insensitivity tests (casper), all 9 existing `standard_deploys_spec` genesis-integration tests still pass.  Full node lib 295/295; casper lib 274/274; genesis integration 9/9.
 - Slice 26 — `ConsensusMode` **per-cap** setter plumbing.  **Delivered 2026-08-03; review fixes landed 2026-08-04.**  **Review fixes (2026-08-04):** C-26-F1 `resolve_cmode` fails **closed** — any non-`"oracular"`/`"consensus"` Par returns `None` and the handler surfaces `FSERR_BAD_ARG` instead of silently defaulting to Oracular (which would have been a network-fork tripwire: two validators seeing different bad-parse Par shapes would produce divergent stat/entries records).  H-26-F1 `stat_record` under Consensus now masks mode to `& 0o0777` (perm bits only), dropping setuid/setgid/sticky which can vary across validator hosts (umask, install(1), overlayfs) — Oracular keeps the full 12 bits for host-level ergonomics.  H-26-F3 `ConsensusMode::default()` flipped from `Oracular` to `Consensus` — the more restrictive mode — so any future refactor that lands a handler consulting `self.mode` fails closed by default.  M-26-1 stale docstrings in Fs.rho updated to describe the 5-tuple bundle shape and the (canonRoot, rel, mode, kind, cmode) cache key.  M-26-2 File and Dir constructors validate `cmode` at mint time — a bogus string / Nil / non-String value REVOKES the agent's state (stateP = "closed", rootP = "REVOKED") so every subsequent method surfaces `FSERR_CLOSED` or `FSERR_IO` instead of silently accepting attacker-chosen mode.  M-26-3 the `"oracular"` / `"consensus"` string constants moved to `rholang/interpreter/io/mod.rs` (`CMODE_ORACULAR_STR` / `CMODE_CONSENSUS_STR`) and `BundleConsensusMode` re-exports them — single source of truth; a drift-assertion test pins the pair.  L-26-F1 `meta_time_ms` uses `i64::try_from(as_millis()).unwrap_or(i64::MAX)` (saturating conversion) instead of `as i64` wrapping.  L-26-F2 fs_chown validates cmode BEFORE the Consensus short-circuit so a garbled cmode never silently reaches the fallback.  **Deferrals from review (not fixed):** H-26-F2 (mutable-file `size` under Consensus) is an operator-invariant issue — the `consensus-static-*` bucket documentation warns to use only frozen paths; a future slice may add mint-time content-hash verification.  H-26-F4 (URN filter removed, MVP #5) is the scheduled slice-31 deliverable.  M-26-F1 (signature scope) is a documentation-only note.  M-26-F3 (NSS PII leakage under Oracular) is an operator-hygiene concern.  M-26-F4 (project_bundle HashMap iteration) is defense-in-depth: the two subsequent sorts already provide determinism, and a slice-26 review-fix test (`compose_fs_genesis_source_is_deterministic_across_runs`) pins the invariant.  H-26-3 (cross-bucket same canon_path) is already covered by slice 23's `check_bucket_disjointness` → `BucketOverlapSamePath`.  **Review-fix tests added (2026-08-04):** 15 `resolve_cmode` unit tests in `handlers.rs` (accepts each valid string; rejects capitalized, whitespace-padded, empty, Int, Bool, ByteArray, Nil, BoundVar, unknown strings; pins `ConsensusMode::default() = Consensus`; asserts CMODE_*_STR constants); 4 `stat_record` unit tests in `stat.rs` (consensus strips setuid/setgid/sticky; oracular preserves them; consensus omits mtime/ctime/atime/owner/group; oracular includes mtime); 2 casper `Genesis` hash tests (`genesis_hash_differs_when_only_cmode_differs`; `bundle_entry_ne_when_only_cmode_differs`); 2 casper composed-source tests (mixed-mode assertion that both strings appear at the 5th tuple position; `compose_fs_genesis_source_is_deterministic_across_runs`); 2 node `project_bundle` tests (same-name-across-oracle-consensus produces both entries; empty-bucket variant); 9 Rholang integration tests (File.chown consensus r-mode / rw-mode denies; Dir.chown consensus r-mode; **nested openDir cmode inheritance** — parent Consensus → child Consensus with chown short-circuit; consensus + bad owner reports BAD_ARG; consensus + Nil/Nil short-circuits; File/Dir constructor validation for bogus cmode; cache-HIT symmetry on same-key openFile).  **Deferred (2026-08-03 delivery notes preserved below).**  New enum `BundleConsensusMode { Oracular, Consensus }` in `casper/src/rust/genesis/contracts/fs_genesis.rs` with `as_str()` / `parse_str()` bracketing the Rholang string boundary (`"oracular"` / `"consensus"`).  `BundleEntry` gained a `consensus_mode: BundleConsensusMode` field; `BundleEntry::try_new` accepts the mode as a required argument.  `format_bundle_for_rholang` now emits 5-tuples `(canonRoot, rel, mode, kind, cmode)` — one extra element after `kind`.  Node-side `provisioning_merge::project_bundle` derives cmode from the source bucket: `oracle-static-*` → `Oracular`, `consensus-static-*` → `Consensus`.  **Rholang side (Fs.rho):** the `bMap.get(n)` match pattern is now 5-arity; `cacheAndOpenFile` / `cacheAndOpenDir` gained a `cmode` param and thread it through to `openFileImpl` / `openDirImpl`; the cache key is 5-tuple `(canonRoot, rel, mode, kind, cmode)` so two logical names pointing at the same physical path but with different modes get SEPARATE cache slots (an oracular cap cannot borrow a consensus cap's slot).  **Dir.rho:** `openFileImpl` / `openDirImpl` take a `cmode` param, pass it to `Dir!(..., cmode, fileCtor)` (child Dir inherits parent's mode) and `@fileCtor!(..., mode, cmode)`; `stat` / `entries` / `chown` methods peek a new `*cmodeP` state cell (persistent non-linear `<<-`, set once at ctor) and forward the string to `fsStat` / `fsEntries` / `fsChown`; internal `openFile` / `openDir` methods also peek and pass the cmode.  **File.rho:** constructor gained a 5th param `@cmode`; a new `*cmodeP` cell holds it alongside `*fdP` and `*stateP` — kept separate rather than appended to the 4-tuple `fdP` state so we don't have to update the ~24 pattern-match sites in File.rho (only `chown`, the sole currently-implemented method that differs by consensus mode, peeks the new cell).  **Rust native handlers (rholang/src/rust/interpreter/io/handlers.rs):** `fs_stat` / `fs_entries` / `fs_chown` signatures now take a `cmode` string arg; a new `resolve_cmode(par, default)` helper parses `"oracular"` / `"consensus"` and falls back to the runtime-wide `self.mode` (still Oracular by default) on unknown / non-String values — so any caller that hasn't been updated preserves legacy behavior.  On a Consensus cap `fs_chown` short-circuits with `FSERR_UNSUPPORTED` without touching the filesystem.  **Tests:** 3 new casper lib tests (`consensus_mode_as_str_round_trips`, `format_bundle_emits_consensus_mode_as_5th_tuple_element`, mixed + consensus-only composed-source parse) + 1 project_bundle assertion extension; 3 new Rholang integration tests (`fs_open_file_consensus_mode_per_cap_chown_routing` — two caps in one deploy route to distinct arms; `fs_open_file_consensus_cache_keyed_on_cmode` — cache slot isolation; `fs_open_dir_consensus_mode_chown_short_circuits` — Dir.chown mirrors File.chown).  Full node lib 295/295; casper lib 277/277; casper integration (fs_generator_spec + standard_deploys_spec + genesis_test + block_approver_protocol_test) 23/23; rholang file_dir_check 411/411.  **Deferred to future slices:** `stat` / `entries` field-omission on Consensus caps is native-side (handlers.rs already reads `mode` via `resolve_cmode`), but reachability requires a genesis-integration test that actually mints a Consensus cap and calls `stat`; the current suite tests `chown` short-circuit and cache-key isolation, and slice 29 (consensus-mode WAL) will add the stat/entries field-omission integration coverage as part of the replay test infrastructure.
 - Slice 28 — Startup fd-watermark PB-M-13.  **Delivered 2026-08-04; review fixes landed same day.**  **Review-refuted findings:** C-28-F1 ("LFS-joining validators fork on their first fs_open") and C-28-F2 ("long-lived vs. restarted validator divergence") assumed a runtime accumulates `next_fd` across blocks — but `RuntimeManager::spawn_runtime` at `casper/src/rust/util/rholang/runtime_manager.rs:263` creates a fresh runtime per compute call, so every block starts from `next_fd=1` before the seed applies.  Both long-running and LFS-joining validators go through identical per-block-fresh paths.  Documented in the reviewer's own security agent output as safe by architecture.  **Review fixes applied (2026-08-04):** H-28-F1 raised entropy from 4 bytes (~65k-block birthday collision) to 8 bytes with 20-bit per-lifetime headroom mask (~4M-block birthday collision, ~130 years at 1 block/sec).  New constant `FD_ENTROPY_HEADROOM_BITS = 20` with a `const _: () = assert!(MAX_OPEN_FDS * 2 < 1 << FD_ENTROPY_HEADROOM_BITS)` compile-time invariant guard (ST-28-4).  H-28-F2 hardened `FileHandleTable::insert` with a wrap guard: pre-fetch check that rejects at `u64::MAX` + post-increment defensive check + counter roll-back on wrap — translated to `FSERR_QUOTA_EXCEEDED` upstream.  L-28-F1 added `debug_assert!(hash.len() >= 8)` in `seed_next_fd_from_state_hash`.  M-28-2 revised the `reset()` docstring to accurately describe the statistical-not-guaranteed cross-block aliasing prevention.  M-28-F2 documented the fd derivation as an explicit consensus commitment (hard-fork implication of any change).  M-28-F1 documented the reset side-effect in the docstring with an inventory of call sites and the "fresh runtime per compute call" containment argument.  **Review-fix tests (2026-08-04) — 9 total:** 4 new unit tests in `handle_table.rs` (`seed_from_state_hash_reserves_low_bits_for_headroom` pins the mask; `insert_returns_err_when_next_fd_at_u64_max` proves wrap-guard behavior; `allocations_within_headroom_budget_stay_in_bucket` verifies 100 alloc+close cycles stay within the same watermark bucket; `seed_from_short_hash_debug_asserts` catches the L-28-F1 regression via `#[should_panic]`).  4 new integration tests in `rholang/tests/fs_next_fd_seed_spec.rs` (`reset_seeds_fs_handles_from_state_hash` MT-28-1 — the ONLY test proving the wiring in `RhoRuntimeImpl::reset`; `two_runtimes_at_same_hash_have_identical_next_fd` MT-28-2 — determinism across runtime instances; `genesis_empty_state_hash_seeds_expected_next_fd` ST-28-5 — golden-value pin for the empty-state hash so a change to `RadixHistory::empty_root_node_hash` trips a test; `reset_does_not_perturb_urn_filter_state` — cross-slice-28/31 invariant).  **Deferrals from review (2026-08-04):** H-28-F3 (play/replay runtimes have separate `fs_handles`) — low-likelihood and requires a bigger refactor; H-28-1 (mid-block reset ordering fragility) — consensus-safe today by construction; L-28-1 (32 bits of state-hash prefix exposed via fd values) — fd values are already public via tuplespace state, no confidentiality issue; NT-28-1..6 (concurrent stress, Rholang-observable fd assertion, three-lifetime chain, etc.) — nice-to-have.  **Green results (post-fixes):** rholang io::handle_table 15/15 (up from 11), rholang fs_next_fd_seed_spec 4/4, rholang fs_native_urn_filter_spec 9/9, rholang file_dir_check 421/421, casper lib 281/281, casper genesis integration 34/34.  Fmt + clippy clean.  Prevents post-restart fd aliasing: pre-restart, Deploy A opens a File with fd=42 and stashes the cap in tuplespace; node restarts; fresh `FileHandleTable::next_fd` starts at 1; Deploy B's 42nd open would allocate fd=42; Deploy A's stashed cap invoked later via `fsRead(42, ...)` would silently read from Deploy B's file.  **Design pivot from the original plan-authors' "rewrite stateP cells at boot" approach:** rewriting Rholang state cells requires either (a) modifying File.rho's state layout with a Rust-scannable marker and touching ~24 pattern-match sites, or (b) publishing `stateP` GPrivate name via a well-known URN and scanning the tuplespace at boot for entries at channels containing that name.  Both approaches are heavy; both are consensus-sensitive.  The alternative that achieves the same safety property with far less surface: seed `FileHandleTable::next_fd` deterministically from the state hash at every `reset()` so post-restart allocations never overlap with any pre-restart fd value.  Stale `stateP` cells still show `"open"` after a restart, but the subsequent `fdP` dereference goes to a fresh fd table where the value is absent → the native handler returns `FSERR_CLOSED` (existing behavior).  Aliasing is prevented at the fd-allocation layer, not by rewriting Rholang state.  **Implementation:** `FileHandleTable` gained two methods — `seed_next_fd_watermark(u64)` (monotonic; CAS loop; multiple calls with the same or smaller value are no-ops) and `seed_next_fd_from_state_hash(&[u8])` (takes first 4 bytes of the hash as u32, left-shifts 32 to place watermark in upper half of u64 — a single runtime lifetime bounded by `MAX_OPEN_FDS = 1024` cannot overflow into the next watermark's range).  `RhoRuntimeImpl::reset` calls `seed_next_fd_from_state_hash(&root.bytes())` after `space.reset()` so every block boundary re-seeds.  Determinism: same state hash → same watermark on every validator; captured leader fd values replay identically on followers.  **Tests:** 5 new in `handle_table.rs`: watermark-raises-next_fd, watermark-monotonic-no-op-on-smaller, seed-deterministic-across-runtimes, seed-differs-for-different-prefixes, post-restart-fd-allocation-does-not-alias-stale-fds (aliasing regression), different-state-hashes-produce-disjoint-fd-ranges (cross-block isolation).  **Green results:** rholang handle_table 11/11 (5 new + 6 preserved), rholang file_dir_check 421/421, rholang fs_native_urn_filter 9/9, casper lib 281/281, casper genesis integration 34/34.  Fmt + clippy clean.  **Deferred:** the plan's original stateP-rewrite variant remains available if a future review shows the fd-watermark approach has gaps (e.g., if fd values ever get consumed by non-fd purposes in tuplespace state, though no such use is expected).
 - Slice 31 — Phase-scoped URN visibility PB-B-1.  **Delivered 2026-08-04; genesis-replay gap fix 2026-08-05.**  **Genesis-replay gap (2026-08-05, discovered during slice 29 round-2 verification):** the original slice 31 delivery only toggled the URN filter around `play_deploys_for_genesis` (leader side) but not `replay_deploys` (follower / block-approver / validate-checkpoint side).  Replaying a genesis block re-executes the FsGenesis ProcessedDeploy which binds `rho:io:fs:native:*` URNs — with the filter left on during replay, every genesis validation failed with `ReplayStatusMismatch { initial_failed: false, replay_failed: true }`.  Fix mirrors the play-side pattern: `replay_deploys` in `replay_runtime.rs` gates on `!with_cost_accounting` (the caller's genesis signal, see line 113) and disables the filter around the user-deploy loop with a try/finally-style wrapper so the filter re-enables even on error.  Fixes 2 previously-failing casper mod tests: `block_approver_protocol_should_successfully_validate_correct_candidate`, `validate_block_checkpoint_recompute_rejects_pre_state_and_rejected_deploy_tampering`.  A third failure (`compute_block_checkpoint_should_merge_histories_in_case_of_multiple_parents_uneven_histories`) has an unrelated root cause — a documented merge-algebra order-dependence (`docs/theory/merge-algebra/merge-algebra-verification.md §6 Finding A`) — and is outside slice 29 / slice 31 scope.
@@ -462,7 +462,7 @@ If any of these are missing, stop and coordinate with the prerequisite-FIP owner
 **Slice 30c correctness-gaps batch — M-29-3 + F-30-8 + F-30b-1/2/3 (delivered 2026-08-05):** the deferred correctness/doc items from slice 29/30/30b now dispatched.
 - **M-29-3 (partial-write correctness):** RESOLVED.  Pre-syscall `journal_write` still records the REQUESTED bytes as a placeholder (preserves cap-check semantics).  Post-syscall, both leader and follower call the new `finalize_write_journal` helper: if `n < requested`, the placeholder is replaced via `Wal::update_last_entry_by_ack_hash(ack_hash, updated)` with `bytes[..n]`.  Leader extracts `n` from the syscall reply; follower extracts it from the cached `previous`.  Deterministic: both sides converge on identical WAL entries even under partial-write divergence.  Partial writes on Consensus caps also log a WARN so operators can surface underlying disk issues.  Pinned by 3 new `wal::tests`: `update_last_entry_by_ack_hash_replaces_matching_entry`, `update_last_entry_by_ack_hash_returns_false_when_no_match`, `update_last_entry_finalize_replaces_only_most_recent_match`.
 - **F-30-8 (system-deploy WAL attribution):** RESOLVED via containment.  `play_system_deploy` (standalone-system-deploy path for CloseBlock, Slash, etc.) is now wrapped with a `WalDeployScope` whose Drop-path discard-drain prevents any Consensus WAL entries a system deploy might produce from leaking into the next user deploy's slice.  Currently no system deploy touches Consensus caps (they dispatch to PoS / vault contracts, none of which invoke fs-native URNs), but if a future system deploy is written to do so its WAL entries will be logged at debug on the discard-drain path.  Full block-level attribution (adding system-deploy WAL to the block aggregator with a proto extension for `ProcessedSystemDeploy`) is deferred as a bounded follow-up.
-- **F-30b-1 (retention formula ratification):** ~~RESOLVED via docs~~ **superseded 2026-08-11**: promoted to explicit required config key.  `storage.consensus-fs-snapshot-retain` becomes a required operator setting alongside `storage.consensus-fs-snapshot-cadence` when any `consensus-static-*` is provisioned; no default, missing value fails boot with a diagnostic pointing at the disk-footprint / late-join-window tradeoff.  Implementation slice (small): change `NodeConfig.storage.consensus_fs_snapshot_retain` from `Option<usize>` to `usize`, remove `#[serde(default)]`, remove the `cadence * 2` fallback in `build_snapshot_writer`, add boot validation that fails if snapshots are configured without an explicit retain value.  See plan §PB-M-15 for the design language.  Original slice-35 override infrastructure is preserved; the schema shift is dropping the option-with-heuristic-default in favor of required-explicit.
+- **F-30b-1 (retention formula ratification):** ~~RESOLVED via docs~~ ~~superseded 2026-08-11~~ **SHIPPED 2026-08-23**: `NodeConfig.storage.consensus_fs_snapshot_retain: Option<usize> → usize`.  `#[serde(default)]` retained so already-shipped HOCON configs that don't set consensus provisioning still parse (get 0, unused when no consensus provisioning is present).  New `SnapshotConfigError::RetainTooSmall { retain }` variant rejects `retain < 2` when consensus provisioning is present with a diagnostic including sizing guidance (`retain = ceil(N / cadence) + 1`).  `build_snapshot_writer` signature promoted: `retain_override: Option<usize> → retain: usize`; the `saturating_mul(2)` fallback branch deleted.  See §PB-M-15.  26/26 snapshot_config tests pass (7 new / 4 deleted).
 - **F-30b-2 (RwLock reconfig semantics):** RESOLVED via docs.  `RuntimeManager::set_fs_snapshot_writer` docstring now explicitly ratifies hot-reload as INTENTIONAL: post-boot operator adjustments (retention tuning, dir migration, snapshot disable) take effect on already-spawned runtimes without a node restart.  Consensus-safety note included: cadence is a Genesis-committed shard param (slice 30c Phase A), so hot-reload of the per-node `dir` / `retain` fields does not fork consensus.
 - **F-30b-3 (BlockData::empty sentinel):** RESOLVED.  `BlockData::empty()` now returns `block_number = -1` instead of `0`.  Pre-fix a runtime spawned before `set_block_data` was called would appear to be at block 0 — a cadence hit for any cadence.  Was harmless only because empty-entries also skipped the write path; now the negative-block-number guard in `SnapshotWriter::maybe_write` deterministically skips the sentinel regardless of accumulated entries.  Pinned by `snapshot_writer_skips_block_data_empty_sentinel` which asserts `BlockData::empty().block_number < 0` AND that `maybe_write` on that value produces no snapshot AND no manifest entry.
 - **Green results:** rholang io lib 118/118 (was 114; +4 new — 3 M-29-3 + 1 F-30b-3), rholang wal 17/17 (was 14; +3 M-29-3), fs_wal_spec 23/23, casper rholang::runtime 16/16.  Clippy clean under `-D warnings`.
@@ -534,7 +534,7 @@ If any of these are missing, stop and coordinate with the prerequisite-FIP owner
 - **Merged-provisioning duplication note.**  `merge_and_validate` runs twice at boot now: once here for snapshot-writer construction, once inside `CasperLaunch` for the bundle handoff.  The two sites are independent (this one panics on validation failure with a snapshot-config-specific message; the CasperLaunch site panics with the bundle-handoff message).  Kept intentionally rather than plumbing the merged bundle through more layers — the merge is cheap (HashMap iteration + char rejection), and independence means a future refactor of either site doesn't break the other.  A follow-up slice may hoist the merge to a single earlier site if the duplication becomes structural noise.
 - **Green results:** node lib 321/321 (was 320+1 ignored; H-30-1 test is now running instead of ignored/panicking).  Workspace build clean.  Fmt clean.
 
-**HIGH-3 (PB-B-3 `insertVersion` for `rho:io:fs:1.0.0`) — DEFERRED (2026-08-05):** the Phase 7 whole-review flagged the missing versioned-registry alias (task #15) as a HIGH FIPS gap.  Discussion 2026-08-05 concluded the fix wants its own workstream: implementing versioned-URN aliases for `new x(`rho:io:fs:1.0.0`)` requires fundamentally changing how `new x(URI){ … }` blocks are processed at normalization time — the current URN-lookup path resolves against a fixed `urn_map` populated at runtime construction, with no version-aware alias layer.  A proper fix needs the normalizer to consult a versioned-registry table (populated by `insertVersion` at genesis) before falling back to `urn_map`, plus a hard-fork story for how the alias table is committed to on-chain state.  Deferring rather than backporting a hack that would need to be re-done.  User deploys can still reach the Fs cap via the `rho:id:<hash>` published by `insertSigned` at genesis (the `fs_generator_spec` test path); the `rho:io:fs:1.0.0` and `rho:io:fs:1.*` aliases stay unwired until the normalizer-side work lands.  Task #15 remains pending as the tracker.
+**HIGH-3 (PB-B-3 `insertVersion` for `rho:io:fs:1.0.0`) — RESOLVED (2026-08-24):** FsGenesis now invokes `insertVersion("serve", "fs", "1.0.0", fs, ...)` at genesis; the fs cap is resolvable via `lookupVersion` on `rho:serve:1.0.0:<FS_GENERATOR_PUB_KEY_HEX>:fs:1.0.0` in addition to the legacy `insertSigned` URI.  The 2026-08-05 concern — that supporting `new x(``rho:io:fs:1.0.0``)` at normalization time requires a normalizer-side alias layer — turned out to be scope-independent: `lookupVersion` (runtime API on the v1 registry) already covers deploy-time lookups without normalizer changes, and callers who want `new`-style URN binding get it via `new x(``rho:serve:1.0.0:<hex>:fs:1.0.0``)`.  The FIP-canonical `rho:io:fs:1.0.0` shape (as a bare alias of the serve URN) still needs the URN-parser extension + normalizer alias layer described in the 2026-08-05 note — that's a separate slice.
 
 **Slice 32 — read-hash journaling (PB-M-14 read side, HIGH-2 FIPS fix from Phase 7 whole-review; delivered 2026-08-05):** the plan's PB-M-14 language (§Consensus-mode filesystem WAL) commits to journaling reads that consume file bytes so replay is byte-identical, but slices 29/30 only journaled MUTATIONS.  Slice 32 closes the gap.
 - **`WalOp::Read` / `WalOp::ReadAt`** added to the enum (tags 10 and 11; op-tag stability preserved — Write/WriteAt/Truncate/Chmod/Chown/Remove*/Rename/CopyFile keep tags 1-9).  `snapshot::op_tag`, `op_tags_are_stable`, and `encode_entry_uses_op_tag_values` extended.  The golden-hex test (`compute_wal_root_golden_hex`) is unchanged because it uses a Write entry — adding new op variants doesn't change existing entries' encoding.
@@ -1027,727 +1027,418 @@ Phase 9's deliverables list should be rewritten to: (i) enumerate per-native `Bi
 - **Spec refresh** — the FIP §Cost accounting section (line 1416+ of `2026-07-24-File-IO.md`) uses "CostManager::charge() (or the equivalent)" future-proofed language, so a minimal edit suffices; §Buffers > Reuse-is-refunded needs the D3 shift described above.
 - **No re-plan of delivered phases** — the code goes through whatever cost frame the interpreter presents.  Port is mechanical.
 
-## Phase 8 slice 8a — implementation progress (2026-08-12)
-
-Live progress tracker for slice 8a (`LockRegistry` MVP, `wait: false` only).
-Commits on `fileio-phase-1-2` branch of `f1r3node-rust`:
-
-**Completed:**
-
-| Step | Commit | Description |
-|---|---|---|
-| Foundation | `9360fd58` | `LockRegistry` module (`rholang/src/rust/interpreter/io/lock.rs`, 46 unit tests) + `RuntimeManager` broadcast wiring mirroring `RootIdentityRegistry` pattern.  Consensus-committed constants (`MAX_RANGES_PER_FILE = 1024`, `LOCK_ID_CEILING = u64::MAX - 2¹⁶`) added to hard-fork catalog item #12 in `snapshot.rs`.  Zero call sites yet.  See `lock.rs` module docstring for full architecture (mode-differentiated semantics, consensus-committed constants, cross-cap forgery safety, wait:true deferral). |
-| Step 3 | `1efeefd5` → `d0343158` → `a03acf80` | Three natives (`fs_lock_range`, `fs_lock_sequential`, `fs_release_lock`) + URN registration + genesis wiring.  Composed-source golden hex rolled from `c7d8d818…` to `cfddec75…`.  Three review rounds: initial commit + fd-based lock keying (post-review-2 fix — deleted `stat_leaf_dev_inode` + 5 tests, added `dev_inode_from_fd` helper) + defensive comments/sentinel guard (post-review-3). |
-
-**Fresh session pickup for step 4 needs to know:**
-
-1. **Native shapes are fd-based, not path-based** (review-round-2 correction).  Signatures:
-    - `fsLockRange(fd, offset, length, mode, holder, cmode, ack)` — arity 7
-    - `fsLockSequential(fd, holder, cmode, ack)` — arity 4
-    - `fsReleaseLock(lockId, ack)` — arity 2
-    - `mode`: `"r"` or `"w"` string
-    - `holder`: opaque Par hashed to 32-byte HolderId (typically `*stateP` GPrivate)
-    - `cmode`: `"oracular"` / `"consensus"` string
-2. **`DeployScope::default() = [0; 32]` placeholder in natives.**  Step 3 passes this to `try_acquire_range` / `try_acquire_sequential` because step 5 (auto-release hook) hasn't wired real per-deploy identities.  **A defensive `debug_assert!` guards `LockRegistry::release_all_for_deploy(&[0; 32])`** — step 5 MUST replace the placeholder before enabling the sweep, or the guard panics.
-3. **URN-filter drift discipline.**  `FS_NATIVE_URN_SUFFIXES` (in `fs_genesis.rs`) has a docstring enumerating 5 places any new fs-native URN must land; the fs_native_urn_filter_spec.rs iteration list is hardcoded (not auto-iterated) so any future URN needs manual add there too.
-4. **`WAL journaling for locks SKIPPED for slice 8a MVP** (X-1 §4 refinement, 2026-08-12).  Consensus safety comes from `is_replay`-cached replies alone; skipping saves the schema extension + version bump + golden-hex churn.  If future analysis surfaces a load-bearing case, add as hard-fork amendment.
-
-**Remaining steps (numbered post-X-1 §4 SKIP):**
-
-- **Step 4** (was 5) — `File.rho` surgery.  ~4-6 hours: (a) inline `LockToken` agent block (single-method `release` + default arm, idempotent second-release returns `FSERR_CLOSED`, `stateP` holds LockId); (b) add `File.lockRange(offset, length, mode) → [true, lockToken] | [false, code, msg]` method; (c) wrap 6 positional methods (`bytesAt`, `writeBytesAt`, `readInto`, `readAtInto`, `writeFrom`, `writeFromAt`) with `fsLockRange!(fd, ...)` acquire + `fsReleaseLock!(lockId)` on completion; (d) wrap 10 sequential-stream constructors (`chars`, `bytes`, `lines`, `readLine`, `writeChars`, `writeBytes`, `writeLine`, `writeLines`, `writeString`, `writeByteArray`) with `fsLockSequential!(fd, ...)` acquire + release on stream close; (e) `File.close` needs to release all locks for its holder — cleanest: add a new native `fs_release_all_for_holder(holder, ack)` calling `LockRegistry::release_all_for_holder`, or extend `fs_close` to sweep the holder as a side-effect.  Update mock syscalls in `rholang/tests/file_dir_check.rs` (~4000-line test file, ~30 existing tests may need adjustment for new FSERR_BUSY paths).  Composed-source golden hex will re-roll again.
-- **Step 5** (was 6) — Auto-release hook at `WalDeployScope::end` (or equivalent).  Cross-crate: casper's `WalDeployScope::end` (`casper/src/rust/rholang/runtime.rs`) invokes `LockRegistry::release_all_for_deploy(scope)` where `scope` is the per-deploy identity.  Both natives in step 3 must be updated to pass the real scope instead of `DeployScope::default()` — otherwise the sentinel guard in `release_all_for_deploy` panics.  DeployScope identity: recommend hash-of-deploy-sig or whatever WalDeployScope already uses internally.
-- **Step 6** (was 7) — Mode-differentiated unlink gate.  Modify `fs_remove_file` and `fs_remove_dir` handlers: when cmode = Consensus, call `lock_registry.is_locked(dev_inode, (0, u64::MAX))` after `stat_leaf_dev_inode`-equivalent resolves the target; if true, return `FSERR_BUSY` without touching the filesystem.  Under Oracular: no gate, but log-warn on locked-file delete per §Mode-differentiated invariants.
-- **Step 7** (was 8) — Integration tests + H-R3 concurrent-ack regression.  In `rholang/tests/file_dir_check.rs`: two disjoint bytesAt reads coexist; reader-vs-writer conflict → FSERR_BUSY; sequential + positional conflict; explicit `lockRange` held across positional calls then release.  In a new test crate or `fs_wal_spec.rs`: N-branch Par workload with distinct ack channels, 100 randomized tokio schedule shuffles, assert H-R3 drain matches 1:1 (see X-3 for the design).
-
-**Key files touched by slice 8a so far:**
-
-- `rholang/src/rust/interpreter/io/lock.rs` — NEW module (~900 lines with tests).
-- `rholang/src/rust/interpreter/io/handle_table.rs` — `+lock_registry` field + `share_lock_registry` method.
-- `rholang/src/rust/interpreter/io/handlers.rs` — 3 natives + 3 helpers + docstring block explaining slice 8a semantics.
-- `rholang/src/rust/interpreter/io/path.rs` — `fstat_dev_inode` promoted to `pub`; used by `dev_inode_from_fd` in handlers.rs.
-- `rholang/src/rust/interpreter/io/snapshot.rs` — hard-fork catalog item #12 added.
-- `rholang/src/rust/interpreter/system_processes.rs` — 3 `FixedChannels` + 3 `BodyRefs` + 3 `non_deterministic_ops` entries.
-- `rholang/src/rust/interpreter/rho_runtime.rs` — 3 `fs_native_def` entries.
-- `rholang/tests/fs_native_urn_filter_spec.rs` — 3 new suffixes in the hardcoded iteration list.
-- `casper/src/rust/util/rholang/runtime_manager.rs` — `+lock_registry` field + broadcast in both spawn paths + init.
-- `casper/src/rust/genesis/contracts/fs_genesis.rs` — 3 URN suffixes in `FS_NATIVE_URN_SUFFIXES` (with 5-place drift-discipline docstring) + 3 URN bindings in composed source + 3 arity table entries + golden hex bump.
-
-## Phase 8 slices 8b / 8c / 8d — implementation progress (2026-08-13)
-
-**STATUS: Phase 8 COMPLETE and pushed to `origin/fileio-phase-1-2` at tip `1d38f829` (2026-08-13).**
-
-Whole-Phase-8 review (2026-08-13, three parallel agents):
-- **FIP spec compliance — COMPLIANT** across all 9 spec sections (§Range locks, §Explicit locks, §Auto-release, §Wait vs. fail, §Buffer-taking, §Sequential producers, §Standard error codes, in-flight refinements, known deferrals).
-- **Security — no blocking issues.** One initially-flagged BLOCKING (sequential same-holder skip violation) was verified as a **false positive**: `lock.rs:899-905` correctly blocks sequential acquires when *any* range exists, and pinning tests `same_holder_sequential_still_conflicts_with_own_range` (line 1188) + `sequential_after_same_holder_range_still_conflicts` (line 1203) confirm the intended behavior.  Three real FOLLOW-UPs are all in the Deferred list (NB-3 waiter cap, NB-7 cross-deploy mutual-wait deadlock, cursor-relative TOCTOU docstring clarification).
-- **Test coverage — comprehensive.** 81 lock unit tests + 33 native handler tests + 491/3-ignored integration + 29 WalDeployScope + 37 fs_genesis; positive, negative, and race coverage all present.  Three follow-ups (readLineInto wait-variants scope question, randomized tokio-schedule stress, explicit Drop test) are non-blocking.
-
-Live progress tracker for post-slice-8a work.  Branch: `fileio-phase-1-2` on `f1r3node-rust` (up-to-date with `origin/fileio-phase-1-2`).
-
-### Delivered
-
-**Slice 8a full delivery** (see prior tracker section for step-by-step SHAs): `LockRegistry` MVP with `wait: false` only, `WalDeployScope`-hooked auto-release, mode-differentiated unlink gate, 4 gap fixes from step-6 review.
-
-**Slice 8b — `wait: true` Rig-protocol coordination** (7 commits):
-
-| Sub | SHA | Description |
-|---|---|---|
-| 8b-1 | `a099321a` | LockRegistry waiter-queue infrastructure: `WaitPolicy` enum, `AcquireOutcome::{Immediate, Parked}`, `LockError::Cancelled`, `FSERR_CANCELLED` string + code 12 appended to hard-fork table, `waiters: VecDeque<Waiter>` on `FileLockState`, `try_acquire_range_wait` / `try_acquire_sequential_wait` methods, `cancel_wait` / `cancel_all_waiters_for_deploy`, strict head-of-line FIFO wake with rollback on dropped receiver.  19 tokio async tests. |
-| 8b-2 | `ffe521c2` | Native handlers accept `wait: true` with backward-compat arity: fs_lock_range arity 7 (legacy shim) OR 8 (with wait), fs_lock_sequential arity 4 or 5. On Parked, awaits admit oneshot; on cancel maps Err(Cancelled) via lock_err_reply to FSERR_CANCELLED. Native uses is_replay short-circuit unchanged. 4 source-scan pins. |
-| 8b-3 | `f672886c` | WalDeployScope::drop cancels parked waiters for its deploy scope via cancel_all_waiters_for_deploy. Symmetrical with the step-5 release_all_for_deploy sweep. 3 tests + source-scan pin. |
-| 8b-4 | `bed43865` | File.rho arity-4 `method lockRange(@offset, @length, @mode, @options)` alongside existing arity-3 method (coexistence pattern); extracts wait from options, calls fsLockRange arity-8. Genesis hex `30535c12…` → `c7da25dc…`. |
-| 8b-5 | `d693215f` | Integration smoke-checks for arity-4 lockRange (7 tests: empty options, wait:false explicit, wait:true dispatches arity-8 native, wait non-Bool rejects, coexistence, negative offset, write-on-readonly). |
-| 8b-6 | `30ae3b2d` | Whole-slice review fixes: **B1** WalDeployScope::drop cancel-first-release-second (release-first admitted same-deploy waiters into leaked ranges); **B2** LockRegistry::cancel_all_waiters_for_holder + wire into fs_release_all_for_holder for File.close cleanup; **B3** arity-4 lockRange releases stateP early so concurrent close doesn't block. Genesis hex `c7da25dc…` → `c5d5be35…`. |
-| 8b-6-round-2 | `91ddf704` | Second-pass review fix: **BL-1** fs_release_all_for_holder also reversed to cancel-first-release-second (same as B1 pattern). 3 regression tests (source-scan pin + positive + negative bug-shape). |
-
-**Slice 8c — options-map plumbing for 3 bounded producer methods** (1 commit):
-
-| Sub | SHA | Description |
-|---|---|---|
-| 8c | `62057105` | Helper contracts `withSequentialLock` / `withRangeLock` (encapsulate acquire → inner-action → release dance).  Arity-N+1 variants for `writeByteArray` (arity-2), `writeBytes` (arity-2), `writeBytesAt` (arity-4).  Coexistence pattern.  stateP released early on wait:true paths.  Genesis hex `c5d5be35…` → `dcf1f4cb…`.  9 integration tests. |
-
-**Slice 8c/8d-1 review follow-up**: F-1 (`1e1c1f6f`) added writeBytes arity-1/arity-2 coexistence test.
-
-**Slice 8d — options-map plumbing for stream-lifetime + remaining bounded methods** (5 commits, complete):
-
-| Sub | SHA | Description |
-|---|---|---|
-| 8d-1 | `fe727143` | Hand-off helper contracts `acquireRangeForStream` / `acquireSequentialForStream` per design decision option A (chosen 2026-08-13 over B duplication, C refactor, D partial spec).  Bound in outer new-scope (fs_genesis.rs + all 8 test preambles).  Genesis hex `dcf1f4cb…` → `5a5f6fd0…`.  2 direct-invocation tests. |
-| 8d-2 | `6009e7a7` | Arity-N+1 variants for 4 bounded-scope sequential producers: `writeString(@s, @options)` (delegates to writeByteArray arity-2), `writeChars(@charStream, @options)`, `writeLine(@charStream, @options)`, `writeLines(@lineStream, @options)`.  NEW helper contract `writeLinesLoopWithOptions` (arity 5) for writeLines' per-line delegation.  Genesis hex `5a5f6fd0…` → `7eb81b02…`.  8 integration tests. |
-| 8d-3-bounded | `26e9e10d` | Arity-N+1 variants for 4 buffer-based methods: `readInto(@buf, @options)`, `readAtInto(@offset, @buf, @options)`, `writeFrom(@buf, @options)`, `writeFromAt(@offset, @buf, @options)`.  All use `withRangeLock`.  Genesis hex `7eb81b02…` → `02552344…`.  4 smoke tests. |
-| 8d-3-stream (partial) | `904f5b9a` | Arity-1 `bytes(@options)` variant using `acquireSequentialForStream` hand-off — proves option A works end-to-end for a stream-lifetime method.  Genesis hex `02552344…` → `ba1daa55…`.  1 test. |
-| 8d-3-stream-2 | `1d38f829` | Arity-N+1 variants for the remaining 4 stream-lifetime methods: `bytesAt(@offset, @length, @options)` (acquireRangeForStream + zero-length short-circuit preserved), `chars(@options)`, `readLine(@options)`, `lines(@options)` (all three use acquireSequentialForStream).  Full per-method body duplication (~1350 lines Rholang) with acquire dispatch swapped and stateP released early (sub-6 B3 pattern); all termination-path lockCell guards preserved verbatim from arity-N.  Genesis hex `ba1daa55…` → `c243b4db…`.  4 smoke tests.  Slice 8d-4 whole-slice review completed pre-push (8 categories checked clean — stateP ordering, lockCell double-release protection, holder identity, error-path leak, content preservation, bytesAt zero-length short-circuit, lines outer/inner protocol, codepoint machinery). |
-
-### Test totals
-
-- `cargo test -p rholang --lib io::lock::` — 81 pass
-- `cargo test -p rholang --lib io::` — 244 pass (+ 5 new since 8a end)
-- `cargo test -p casper --lib rholang::runtime::` — 29 pass (+ 5 new)
-- `cargo test -p casper --lib genesis::contracts::fs_genesis::` — 37 pass (8 hex rolls verified across 8b/8c/8d)
-- `cargo test -p rholang --test file_dir_check` — 491 pass, 3 ignored (+ 29 new since 8a end)
-
-### Design decision resolved (2026-08-13)
-
-**Option A** was chosen from the four-way analysis (see plan §X-2 supplement follow-up notes for the reasoning): use a hand-off helper that acquires the lock and hands the LockId to the caller via a `lockOut` channel; the caller's stream constructor stores it in the existing lockCell so release fires from stream termination as today.  Trade-off accepted: per-method body duplication for the stream-lifetime methods (~200-400 lines each) is the honest cost of option A vs. the ~800 line cost of option B (full duplication with acquire replaced only), and neither option C (refactor working code) nor option D (spec amendment) was preferred.
-
-### Remaining work — slice 8d-3-stream-2 (4 stream-lifetime methods) — DELIVERED 2026-08-13 (commit `1d38f829`)
-
-**Original scope preserved below for the record; work is complete.**
-
-
-**Scope**: 4 methods that use stream-lifetime locks (release fires from the stream's producer function via lockCell guard, not from a bounded inner-action).  Each needs an arity-N+1 variant using the sub-1 hand-off helpers.
-
-| Method | Arity | Helper | LOC (approx) | Notes |
-|---|---|---|---|---|
-| `bytesAt(@offset, @length, @options)` | arity-3 | acquireRangeForStream | ~300 | Positional; only method exercising the range hand-off helper end-to-end.  Length can be Int (bounded) or Nil (to-EOF; uses 2^62 sentinel).  Zero-length short-circuits without lock.  3 termination paths (length exhausted, EOF, fsReadAt error). |
-| `chars(@options)` | arity-1 | acquireSequentialForStream | ~350 | Sequential CharStream via UTF-8 codepoint iteration.  Codepoint-length helper + boundary handling.  Similar bytes-arity-1 shape modulo the codepoint machinery. |
-| `lines(@options)` | arity-1 | acquireSequentialForStream | ~400 | Sequential LineStream via `drainToNextLF` machinery.  Line-boundary detection + per-line CharStream mint.  Longest of the four. |
-| `readLine(@options)` | arity-1 | acquireSequentialForStream | ~300 | Sequential single-line CharStream.  9 termination paths per existing arity-0 docstring (2 EOS variants, LF-consumption EOS, 5 error variants).  Post-LF re-poll guarded via lockCell. |
-
-**Total mechanical duplication**: ~1350 lines of Rholang across the 4 methods.
-
-**Established pattern** (proven by `bytes` arity-1 in commit `904f5b9a`):
-
-1. Match `options.get("wait")` → normalize wOpt to Bool `w` via a waitCh helper (Nil→false, Bool→itself, other→FSERR_BAD_ARG).
-2. Take stateP → check "open" → release stateP EARLY (sub-6 B3 pattern for concurrent-close safety during wait).
-3. Get fd, cmode from fdP / cmodeP peek.
-4. Call `acquireRangeForStream` or `acquireSequentialForStream` with `(fd, [range args,] *this, cmode, w, *lockOut, *acqRet)`.
-5. On acqRet=[true]: read lid from lockOut, construct the stream (populate `lockCell!((lid, false))` in the producer's scope, define patProducer + patBuilder contracts, `Stream!?(*patProducer, *patBuilder)` for the handle), return `[true, streamHandle]`.
-6. On acqRet=[false, ...]: return the lock-error reply (no stream, no leak).
-
-Post-acquire body (steps 5-6) is per-method-specific — that's the ~200-400 lines per method.  The pattern above (steps 1-4 and the wrap around 5-6) is identical across all four.
-
-**Per-method smoke test** — one wait:true dispatch pin per method to verify the arity-N+1 dispatch + hand-off wiring:
-
-```rholang
-for (@f <- File!?(1, "/root", "test.txt", "rw", "oracular")) {
-  // (setup: write content or similar as needed)
-  for (@r <- @f!?("<method>", ...args, {"wait": true})) {
-    match r {
-      [true, _] => @"out"!([true])
-      _ => @"out"!(r)
-    }
-  }
-}
-```
-
-Existing tests for the arity-N form remain valid (unchanged bodies) — no need to add coexistence tests separately since the coexistence mechanism is already pinned for other methods.
-
-**Genesis hex roll** — one roll for all 4 methods (batch commit recommended).
-
-**Sub-4 (whole-slice review + push)** to follow once 8d-3-stream-2 lands.
-
-### Deferred (not blocking any capability)
-
-- **Native arity tightening** — sub-2's legacy arity-7/arity-4 fsLockRange/fsLockSequential shim currently accepted alongside arity-8/arity-5.  Removing the shim requires all ~300 test callers to migrate to the wait-taking form.  Standalone slice; not needed until we want to stop shipping the shim.
-- **MAX_WAITERS_PER_FILE cap** (reviewer NB-3 during 8b-6): hostile deploy could cause large transient parked-waiter allocation.  Bounded by deploy-end sweep so not exploitable to leak past deploy end; but a cap analogous to MAX_RANGES_PER_FILE would tighten defense-in-depth.
-- **Produce::with_error() for cancellation replies** (reviewer NB-4 during 8b-6): current path uses the ordinary reply produce + is_replay short-circuit.  Correct for caller-observable semantics; matters only for reporting-rspace observability.  Not needed until reporting-rspace ships.
-- **Cross-deploy mutual-wait deadlock** (reviewer NB-7 during 8b-6): two deploys each `wait: true` on the other's held lock never release.  Requires detection or per-deploy timeout — beyond Phase 8 scope.
-- **LockRegistry Drop test** (reviewer N4 during 8b-6): behaviorally correct via oneshot RecvError → Cancelled; test would pin the path.
-- **Source-scan pin for helper-binding drift** (reviewer F-2 during 8c/8d-1): golden hex catches any change and integration tests catch behavior via timeout; pin is defense-in-depth.
-
-## Phase 9 completion notes (2026-08-23) — 9a + 9b + 9c-i landed
-
-**Status**: **Phase 9 largely complete.**  12 commits landed on
-`fileio-phase-1-2` (local; **not yet pushed to origin**).  Local branch
-tip: **`4b6668e7f`**.  Previous origin state (before this session):
-`2dc106efe` from the cost-accounted-rho merge session (2026-08-21).
-
-### What actually landed (Phase 9 body of work)
-
-**Path B chosen** (post-D3, using `BillableTokenEvent::Primitive` from
-day one).  Path A was originally recommended because Path B was blocked
-on cost-accounted-rho landing; that block cleared 2026-08-21 with the
-merge to `fileio-phase-1-2` (see `merge-cost-accounting-plan.md` and
-merge commits `018549c12` / `f2e9e109b` / `37422f95e` / `a2cd425f9` /
-`2dc106efe`).  With D3 canonical dispatch available natively, no port
-work needed.
-
-**Slice 9a — Weight table + golden pins**
-- New module `rholang/src/rust/interpreter/io/costs.rs`.  26 per-handler
-  cost helpers + 4 weight-class constants.  All weights match plan
-  §Phase 9 line 1213-1221:
-    - `FS_SYSCALL_CONST = 100` (16 constant-work handlers)
-    - `FS_PATH_MUTATION_CONST = 200` (rename/copy_file/remove_file; 2×
-      FS_SYSCALL_CONST for two-endpoint work)
-    - `FS_ENTRIES_SETUP = 50`, `FS_ENTRIES_PER_ENTRY = 32`
-    - read/read_at: `100 + bytes_read`
-    - write/write_at: `100 + 2 * bytes_written` (2× reflects WAL-append)
-- Length-parameterized helpers use `saturate_linear` (saturating
-  arithmetic).  Adversarial `u64` input clamps to `i64::MAX` rather
-  than wrapping to negative and tripping `reserve_primitive`'s
-  BugFoundError gate.  Post-review-fix.
-- Golden-value pin file `rholang/tests/fileio_cost_spec.rs`: 53 pins
-  covering all 26 helpers + 4 constants + boundary cases + `u64::MAX`
-  saturation + monotonicity/linearity sweeps + ratio pin
-  (`FS_PATH_MUTATION_CONST == 2 * FS_SYSCALL_CONST`).  Plus a meta-pin
-  `every_cost_helper_has_a_golden_pin` catching new helpers that ship
-  without their pin.
-- Commits: `3877f0bde` `8f6618cc8` `a0988cfb4`.
-
-**Slice 9b — Handler wiring across all 26 fs natives**
-- **9b-i (plumbing)**: threaded `MeteredMachine` through
-  `dispatch_table_creator → ProcessContext::create →
-  SystemProcesses::create → FsProcesses::new`.  Reordered
-  `setup_reducer` to construct `MeteredMachine::new(cost.clone())`
-  BEFORE `dispatch_table_creator` so a clone can be passed down.
-  `MeteredMachine` clones share the same underlying `RuntimeBudget`
-  via Arc internals — a handler-side charge decrements the same budget
-  the reducer observes.  Verified.
-- **9b-ii (16 constant-cost handlers)**:
-  open/close/stat/exists/chmod/chown/seek/tell/size/truncate/flush/
-  quarantine/lock_range/lock_sequential/release_lock/
-  release_all_for_holder.  Charge placed BEFORE the argument-shape
-  check so leader and replay produce byte-identical primitive event
-  logs regardless of arg validity.  Full docstring on fs_open;
-  subsequent handlers reference it.
-- **9b-iii (3 path-mutation handlers)**: rename, copy_file, remove_file
-  at FS_PATH_MUTATION_CONST.  Same placement pattern as 9b-ii.
-- **9b-iv (7 length-parameterized handlers)**:
-    - **Fully wired** (4/7): read/read_at/write/write_at.  Byte count
-      from user-supplied contract args; charge is a pure function of
-      those args, so leader/replay parity holds.  Requested-byte
-      accounting (not returned-byte) to close the pre-seek-past-EOF
-      cost-amplification vector.
-    - **Setup-only** (3/7): entries/entries_stream/remove_dir.  Charge
-      only the base term (`_cost(0)`); per-entry component
-      (`FS_ENTRIES_PER_ENTRY * n_entries`) requires two-branch
-      post-syscall counting (leader counts from syscall result;
-      replay counts from `previous`).  Documented as follow-up.
-- **Review pins** (`45e0ca026`): three source-scan tests
-  (`every_fs_handler_charges_its_cost_helper`,
-  `setup_reducer_shares_one_metered_machine`,
-  `entries_family_charges_setup_only_pending_two_branch_impl`).  Each
-  verified against a simulated regression scenario.
-- Commits: `535fb55e5` `246059975` `a2e188474` `d451b89e9` `45e0ca026`.
-
-**Slice 9c — Materialization caps + payload caps + growth test**
-- **9c-i landed**: reply-payload cap on `Stream.rho::method chunk(@n)`.
-  `MAX_CHUNK_ITEMS = 65536` (matches `MAX_ENTRIES` in handlers.rs).
-  n above cap returns `FSERR_QUOTA_EXCEEDED` before any gathering
-  starts.  Composed-source hash rolled `5f41dafe → 126a35ab`.
-- **9c-i review pins**: runtime boundary matrix
-  (`stream_chunk_max_items_cap_boundary` in
-  `fileio_stream_argvalidation_spec.rs`, tests chunk(65536)/65537/1M),
-  plus deferral-preservation pin
-  (`buffer_to_byte_array_deferral_still_holds` — enforces
-  `Buffer.toByteArray()` stays no-arg + retains the "Known deferral"
-  docstring).  Both verified against simulated regressions.
-- Commits: `c44a787b1` `4b6668e7f`.
-
-### What was deferred (still open at end of session)
-
-**9c-ii — Buffer materialization caps** (plan doc line 1224).  Requires
-API change: `Buffer.rho::method toByteArray()` → `toByteArray(@cap)`
-plus updates to 4+ caller sites in `File.rho`.  Buffer.rho already
-documents this as a "Known deferral" at line 641.  Fits better as an
-independent Rholang-API slice.
-
-**9c-iii — Buffer pairwise-merge growth test** (plan doc line 1228).
-Blocked on the pairwise-merge refactor itself.  Buffer.rho line 16
-documents the current implementation as Θ(ℓν) linear-fold; the growth
-test asserting Θ(ℓ log ν) is a **regression guard for after** that
-refactor and would fail against today's code.  Neither the refactor
-nor the test belong in Phase 9 scope.
-
-**Per-entry two-branch charges** for
-entries/entries_stream/remove_dir (slice 9b-iv deferral).  The
-setup-only charges landed but the per-entry component still needs
-implementation.  Two-branch pattern: leader counts entries from
-syscall result and charges `FS_ENTRIES_PER_ENTRY * n`; replay extracts
-`n` from `previous` (the leader's cached reply) and charges the same.
-Both branches must emit matching primitive events for
-authority_cost_witness parity.  Held in place by the source-scan pin
-`entries_family_charges_setup_only_pending_two_branch_impl` in
-`fileio_cost_spec.rs`.
-
-**Cost-regression sample-workload test** (plan doc line 1227).
-Requires a Rust harness that runs Rholang exercising fs handlers and
-inspects the resulting realized cost.  Deferred because the harness
-setup is significant.
-
-### Test-suite state (post-Phase-9)
-
-Runs local against `4b6668e7f`, nightly-2026-02-09:
-- `fileio_cost_spec`: 58 passed / 0 failed / 0 ignored.
-- `fs_wal_spec`: 29 passed / 0 failed.
-- `fileio_stream_argvalidation_spec`: 6 passed (+1 new
-  `stream_chunk_max_items_cap_boundary`).
-- `compose_fs_genesis_source_golden_hex`: 1 passed with rolled anchor
-  `126a35ab`.
-- `cargo check --workspace --tests`: clean.
-- `cargo fmt --all -- --check`: PASS.  `cargo clippy --workspace
-  --all-targets`: PASS.
-
-### Preserved for reference — original Phase 9 pickup notes (2026-08-13)
-
-**Status at hand-off**: Phase 8 complete and pushed (tip `1d38f829`).  Ready to begin Phase 9 — cost accounting scaffolding.  See plan §Phase 9 (line ~705) for the deliverables list.
-
-### Phase 9 scope one-liner
-
-Per-native cost emission at handler entry with **consensus-critical weights**.  Two dispatch mechanisms depending on branch:
-- **Pre-D3** (current `fileio-phase-1-2` on `dev`): `CostManager::charge(cost_of(...))` at handler entry.
-- **Post-D3** (once `origin/feature/cost-accounted-rho` merges to `dev`): `BillableTokenEvent::Primitive` descriptors committed via `RuntimeBudget::reserve_canonical_with_cost` at the same call sites.
-
-Same numeric weights, two dispatch paths.  See plan §X-4 supplement (search for "D3 migration") for the mechanical translation table.
-
-### First decision to make (blocking design question)
-
-**Which branch does Phase 9 target?**  Two paths:
-
-1. **Path A — Land Phase 9 on `fileio-phase-1-2` pre-D3 first.**  Uses `CostManager::charge()`.  Ships now.  Then when cost-accounted-rho merges, port each `charge()` call to `BillableTokenEvent::Primitive` in a follow-up slice.  Mechanical translation, ~3-5h effort per plan §X-4.
-2. **Path B — Wait for cost-accounted-rho to merge, then land Phase 9 on the merged branch.**  Single implementation using `BillableTokenEvent::Primitive` from day one.  No port work.  Blocked on cost-accounted-rho merge timeline.
-
-**Recommendation**: Path A.  Rationale — decouples File I/O timeline from D3 timeline; port cost is small and uniform; ships weight-drift regression pins earlier which is the highest-value part of Phase 9 (weights become hard-fork the moment D3 lands).
-
-### Phase 9 concrete deliverable checklist
-
-Per plan §Phase 9 (line 705+):
-
-- [ ] Per-native cost emission at handler entry with weights:
-    - open/close/stat/exists/chmod/chown/seek/tell/size/truncate/flush/quarantine/lockRange/lockSequential/releaseLock: **~100** (calibrated against `equality_check_cost`)
-    - read/readAt: **`c_open + bytes_read`**
-    - write/writeAt: **`c_open + 2 * bytes_written`**
-    - entries: **`50 + 32 * n_entries`**
-    - rename/copyFile/removeFile: **~200**
-    - removeDir recursive: **`200 + per-entry across tree`**
-    - UTF-8 primitives: proportional to byte length
-    - concatBytes: linear in total byte length
-- [ ] Per-stream-method cost (Rholang library layer): per-element / per-chunk / per-byte transferred.  Under D3 these are NOT explicit charges (kernel authorizes at rule-1..5 boundaries); pre-D3 they are explicit `CostManager::charge()`.
-- [ ] Per-buffer-method cost per §Cost accounting > Buffers.  Under D3, per-instance dispatcher cost is recursive-metering cost at agent-block instantiation.
-- [ ] Materialization caps as stopgap defense-in-depth (unchanged by D3): `toString(cap)`, `toByteArray(cap)`, `toList(cap)` → `FSERR_QUOTA_EXCEEDED` above cap.
-- [ ] Reply-payload cap on `EntryStream.chunk(n)` and `ByteStream.chunk(n)`.  (LineStream doesn't support `chunk` — no cap needed.)
-- [ ] Tests:
-    - Cost regression: sample workloads (open + read + close) within tolerance.
-    - **Buffer read cost — pairwise-merge growth**: measure at ν=8/64/512, assert Θ(ℓ log ν) NOT Θ(ℓ ν) (a fold-vs-merge refactor regression guard).
-    - **Weight-drift pin**: golden-value test per-native weight (slice-34 pattern).  Under D3 drift is a hard-fork.
-
-### Test file targets
-
-Cost regression suite lives at `rholang/tests/fileio_cost_spec.rs` per plan §Test infrastructure (line 767+).  Doesn't exist yet — Phase 9 creates it.
-
-### Deferred to Cost FIP (out of Phase 9 scope, per plan)
-
-- `readInto` vs. `read` cost decomposition (documented in spec §Cost accounting > Buffers).
+## Phase 8 — delivered and pushed (2026-08-13, tip `1d38f829`)
+
+`LockRegistry` MVP + `wait: true` Rig-protocol coordination + options-map plumbing across all bounded and stream-lifetime File methods.  See git log on `fileio-phase-1-2` from `1d38f829` back through slices 8a / 8b / 8c / 8d for per-slice deliveries.  Whole-Phase-8 review found no blocking issues; three follow-ups (MAX_WAITERS_PER_FILE cap, cross-deploy mutual-wait deadlock, cursor-relative TOCTOU docstring) live in the Deferred catalog below.
+
+**Non-blocking deferrals from Phase 8 review** (kept here as they surface periodically):
+
+- **Native arity tightening** — legacy arity-7/arity-4 fsLockRange/fsLockSequential shim still accepted alongside arity-8/arity-5.  Removing requires ~300 test-caller migrations; standalone slice.
+- **MAX_WAITERS_PER_FILE cap** (NB-3): hostile deploy → large transient parked-waiter alloc.  Bounded by deploy-end sweep; cap would be defense-in-depth.
+- **Produce::with_error() for cancellation replies** (NB-4): not needed until reporting-rspace ships.
+- **Cross-deploy mutual-wait deadlock** (NB-7): two deploys each wait:true on the other's lock never release.  Beyond Phase 8 scope.
+- **LockRegistry Drop test** (N4) and **helper-binding drift source-scan pin** (F-2): behavioral pins exist; source-scan would be defense-in-depth.
+
+## Phase 9 — delivered (2026-08-23, slices 9a + 9b + 9c-i + 9b-iv-follow-up + 9c-ii)
+
+Per-native cost emission wired at handler entry via
+`BillableTokenEvent::Primitive` (Path B chosen — cost-accounted-rho
+merged first, so no port work).  Weight table + golden pins in
+`rholang/src/rust/interpreter/io/costs.rs` +
+`rholang/tests/fileio_cost_spec.rs`; every FS native charges at
+handler entry per §Phase 9 above.
+
+Deferrals from initial Phase-9 that later landed as follow-ups:
+
+- **9b-iv per-entry two-branch charges**: `fs_entries` now charges
+  the `FS_ENTRIES_PER_ENTRY * n` supplement on both leader (from
+  fresh `spawn_blocking` reply) and replay (from `previous`)
+  branches via `extract_ok_list_len`.  `fs_entries_stream` (stub
+  returning FSERR_UNSUPPORTED — no entries to charge for) and
+  `fs_remove_dir` (reply shape lacks `n_deleted`) stay setup-only
+  with the source-scan pin
+  `entries_stream_and_remove_dir_charge_setup_only_pending_blocker_resolution`
+  documenting each blocker.
+- **9c-ii Buffer materialization cap**: `Buffer.rho::toByteArray(@cap)`
+  with FSERR_QUOTA_EXCEEDED on `ell > cap`; 4 File.rho callers pass
+  `67108864` (MAX_WRITE_BYTES).  4 runtime pins in `file_dir_check`
+  exercise each gate arm.
+
+Post-Phase-10 follow-up (delivered 2026-08-25):
+
+- **Cost-regression sample-workload harness** (`bd4bc70c7` + doc-lint
+  fixup `d0be7fd9b`): new file `rholang/tests/fileio_cost_runtime_spec.rs`
+  hosts `create_metered_runtime()` (in-memory rspace + fs-native
+  URN filter disabled) + first two tests: `fs_entries_five_children_
+  charges_supplement_at_runtime` and `fs_entries_empty_dir_charges_
+  setup_only_at_runtime`.  Runtime-layer pin of the 9b-iv per-entry
+  supplement wiring: 5-child fixture consumes 3255 units (lower
+  bound `fs_entries_cost(5) + 5 * fs_stat_cost() = 710`, harness
+  overhead ≈ 2545, 5000-unit ceiling above lower bound).  Empty-dir
+  boundary pin catches an off-by-one that would fire the supplement
+  with n=1.  Reads consumed cost from `EvaluateResult.cost.value`
+  (which is `self.c.total_cost()` at the end of `inj_attempt`) —
+  the module docstring warns future readers that `runtime.cost.get()`
+  returns "budget remaining" after `inj_attempt` resets from
+  `initial_phlo`, so `initial - remaining` overflows.
+
+Still open (see Deferred items catalog below):
+
+- **9c-iii Buffer pairwise-merge growth test** — blocked on the
+  pairwise-merge refactor itself.
+
+Deferred to a future Cost FIP (out of Phase 9 scope):
+
+- `readInto` vs. `read` cost decomposition.
 - Full weight calibration.
 
-### Development conventions (unchanged from Phase 8)
+## Phase 10 — status and E2E test inventory
 
-Same conventions apply — see §Development conventions section below.  Summary:
-- Commit subject `<type>(fileio): <slice-tag> <summary>`; body is prose paragraphs.
-- Trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-- `SKIP_DENY=1 git commit -F <msgfile>` for pre-commit (bitmaps warning is pre-existing).
-- `SKIP_TESTS=1 git push origin fileio-phase-1-2` after local tests verified green.
-- `/tmp/*.txt` commit-message file workflow (avoids heredoc quoting issues with em-dashes).
+Phase 10 landed on `origin/fileio-phase-1-2` at tip `5d98daa21`
+(2026-08-23).  The section below is the current checklist and
+enduring reference material.  Historical per-session progress
+narratives (2026-08-13 canonical-examples + review-pass, 2026-08-23
+pickup) live in the git log and commit messages.
 
-### Phase 8 residuals for reference (all deferred, none block Phase 9)
+### E2E test file inventory (canonical reference)
 
-Consolidated in the plan's Deferred sections above:
-- NB-3 MAX_WAITERS_PER_FILE cap
-- NB-7 cross-deploy mutual-wait deadlock detection
-- Cursor-relative TOCTOU docstring clarification
-- readLineInto / readLinesInto arity-N+1 wait variants (spec ambiguity)
-- Randomized tokio-schedule stress test
-- Explicit LockRegistry Drop-trait test (N4)
-- Native arity tightening (retire arity-7/4 legacy shim; needs ~300 test-caller migration)
-- Produce::with_error for cancellation replies (NB-4; needs reporting-rspace to ship first)
-- Source-scan pin for helper-binding drift (F-2)
+Under `casper/tests/genesis/contracts/`:
 
-None of these block Phase 9.  Phase 9 can proceed in parallel with any of them.
+- `fileio_examples_spec.rs` — canonical-example regressions + Phase-10 additions (chown / lockrange / static / membrane / readonly-forwarder / stdio / parallel + 3-way lockRange no-starvation).  Two ignored (blocked on PB-B-5 Allocator publish; foldConcurrent positive-path pending Stream.rho method landing).
+- `fileio_error_matrix_spec.rs` — per-error-code integration matrix (12 tests: FSERR_BAD_ARG / UNSUPPORTED / CLOSED / BUSY / ALREADY_EXISTS / QUOTA_EXCEEDED / BAD_ARG-on-dir-kind).
+- `fileio_fs_spec.rs` — Fs / Stdin / Stdout surface (default-mode inference, mode-string sweep, Stdin/Stdout default arms, `r+` drift pin).
+- `fileio_stream_spec.rs` — LineStream chunk/foldChunks/foldConcurrent/mapReduce all → FSERR_UNSUPPORTED; fold on closed stream → FSERR_CLOSED.
+- `fileio_file_spec.rs` — cursor semantics (seek/tell), size, readN edge cases, truncate roundtrip + on-disk verify, close gates.
+- `fileio_consensus_replay_spec.rs` — Consensus vs Oracular stat field omission (Layer 1 only; Layer 2 leader-follower byte-identity replay blocked on two-runtime harness).
+- `fileio_dir_spec.rs` — Dir.exists, openFile mode attenuation, openFile→readN roundtrip + Phase-10 mutation E2E (removeFile / removeDir(recursive) / rename / copyFile with on-disk verification).
 
-## Phase 10 fresh-session pickup notes (2026-08-23)
+Under `rholang/tests/`:
 
-**Status at hand-off**: Phase 9 landed (9a + 9b + 9c-i).  Phase 10
-partially complete — see §Phase 10 progress (below) for the 14 slices
-that shipped in the 2026-08-13 session (10a-1..9 + 10g/10h/10i/10j +
-CRIT-2 backport).  **Local branch tip: `4b6668e7f`, 12 commits ahead
-of `origin/fileio-phase-1-2`.  Neither Phase 9 nor Phase 10-partial
-have been pushed yet.**  Standing convention: push at slice 10f
-(whole-Phase-10 review).
+- `fileio_cost_spec.rs` — per-native cost helpers golden pins + source-scan pins for handler wiring, entries-family two-branch charges, stream chunk cap, Buffer materialization cap, stdio-oracular invariant.
+- `fileio_lifecycle_spec.rs` — fd-table rollback via production `create_soft_checkpoint` / `revert_to_soft_checkpoint` path (single + nested checkpoints).
+- `fileio_stream_argvalidation_spec.rs` — foldConcurrent / mapReduce argument validation + Stream.chunk boundary matrix (65536 / 65537 / 1_000_000).
 
-### Where to start (recommended order)
+### Rholang / harness gotchas (enduring reference)
 
-Priority ordered by size, blast radius, and downstream unblocking:
-
-1. **Slice 10b — per-error-code integration test** (small).  Provoke
-   every reachable `FSERR_*` / `BUFERR_*` / `EOS` code from Rholang
-   and verify the catch arm fires with the exact code.  Phase-9 added
-   only one new code (`FSERR_QUOTA_EXCEEDED` on
-   `Stream.chunk(n > 65536)`) — the boundary matrix in slice 9c-i
-   review already covers it.  New file
-   `casper/tests/genesis/contracts/fileio_error_codes_spec.rs` (or
-   extension of `fileio_examples_spec.rs`).  ~10-12 focused tests.
-   Same RhoSpec harness pattern as
-   `fileio_stream_argvalidation_spec.rs`.
-
-2. **Slice 9b-iv-follow-up — entries/entries_stream/remove_dir
-   per-entry two-branch charges** (medium).  Currently held by the
-   `entries_family_charges_setup_only_pending_two_branch_impl` pin
-   in `fileio_cost_spec.rs` at `_cost(0)`.  Implementation shape:
-     - fs_entries leader path: after reply built with n rows, extract
-       n and charge `FS_ENTRIES_PER_ENTRY * n` as a second
-       `metering.reserve_primitive` call (single-branch charge would
-       break replay parity).
-     - fs_entries replay path: extract n from `previous` (leader's
-       cached [true, [row1, row2, ...]] reply); charge same amount.
-     - Same pattern for fs_entries_stream and fs_remove_dir.
-   Then replace the deferral pin with a real golden per-entry pin
-   (test cost of `entries` on a small directory equals
-   `50 + 32 * actual_count`).  Cost-regression harness needed —
-   see #7 below.
-
-3. **Slice 10 additional coverage (all Phase-9-independent, per plan
-   line 1324)**:
-     - **Dir mutations coverage** — extend `fileio_dir_spec.rs`.
-       `removeFile` / `removeDir(recursive)` / `rename` / `copyFile`
-       round-trips on rw-mode Dir bundles with on-disk `std::fs`
-       verification (mirrors `fileio_file_spec::
-       file_truncate_write_mode_roundtrip`).
-     - **Range-lock stress: 3-way contention** — extend
-       `fileio_examples_spec.rs` or `fileio_stream_spec.rs`.  cap1
-       holds, cap2 waits, cap3 also waits; cap1 releases → cap2
-       admitted → cap2 releases → cap3 admitted.  Verifies
-       head-of-line FIFO wake and no wake-starvation.  Small.
-     - **`fileio_lifecycle_spec.rs`** — fd-table rollback on deploy
-       error (production path, not mocks).  Medium.  Guards
-       deploy-level fd isolation.
-     - **`fileio_fs_spec.rs`** — systematic Fs surface coverage
-       beyond canonical examples: default arm on Fs / Stdin /
-       Stdout, openFile with all mode strings, openFile with invalid
-       options shapes.  Medium.
-     - **`fileio_native_spec.rs`** — direct RhoSpec-harness dispatch
-       of each native URN (bypassing the library).  Large but low
-       priority since natives are unit-tested and reached
-       transitively.  Needs genesis-scope URN-filter toggle in the
-       test source.
-
-4. **Slice 9c-ii — Buffer materialization caps** (medium, standalone
-   Rholang-API slice).  Change `Buffer.rho::method toByteArray()` to
-   `toByteArray(@cap)`, add caller updates in File.rho (4 sites,
-   grep for `@buf!?("toByteArray")`), return `FSERR_QUOTA_EXCEEDED`
-   when `ell > cap`.  Buffer.rho line 641 has the "Known deferral"
-   docstring ready to be removed.  Replace the
-   `buffer_to_byte_array_deferral_still_holds` source-scan pin with
-   a golden test on the new API.  Composed-source hash roll expected.
-
-5. **Slice 10f — whole-Phase-10 review + push to origin**.  Gates on
-   the above.  Push convention (from `merge-cost-accounting-plan.md`):
-     ```
-     PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 \
-       SKIP_TESTS=1 git push origin fileio-phase-1-2
-     ```
-   `SKIP_TESTS=1` because the workspace-wide pre-push hook enforces
-   a 600s per-crate timeout that's unrealistic for this workspace;
-   local test-suite verification is sufficient (see slice 10f push
-   discipline in prior session's merge doc).
-
-6. **Blocked (do not attempt this session)**:
-     - Slice 10c — stdio replay wiring.  Requires Rust changes to
-       Stdin native's fsRead capture path.  Own multi-slice effort.
-     - Slice 10d — oracular replay E2E for canonical examples.
-       Blocked on two-runtime harness.
-     - Slice 10e — `fileio_cross_fs_isolation.rho`.  Blocked on
-       Powerbox stub.
-     - `fileio_buffer_spec.rs` (Buffer library E2E).  Blocked on
-       PB-B-5 (Allocator not published to user deploys).
-     - `foldConcurrent`/`mapReduce` positive-path tests.  Blocked on
-       those methods landing in Stream.rho (currently deferred per
-       Stream.rho line 23).
-     - Layer-2 consensus-replay tests (leader-captures/
-       follower-replays byte-identity).  Blocked on two-runtime
-       harness.
-
-7. **Deferred by absence of cost-regression harness** (needed for #2
-   and any test asserting on realized cost):
-     - Rust test infrastructure to construct a full runtime, run
-       Rholang exercising fs handlers, and inspect
-       `MeteredMachine::budget().total_cost()` after.  See
-       `rholang/tests/accounting/cost_accounting_spec.rs` for the
-       primitive-layer harness pattern; a Rholang-level harness on
-       top of that pattern is what's missing.  Standalone slice
-       preferable — many downstream tests unblock once it lands.
-
-### Session-crossing context (read to catch up)
-
-- **Cost-accounted-rho merge** landed 2026-08-21 on
-  `fileio-phase-1-2`.  See `merge-cost-accounting-plan.md` in this
-  same directory for details.  Runtime.rs shape changed: WAL boundary
-  now lives inside
-  `process_deploy_cosigned_with_budget_and_authority_mode`; return
-  chain uses `Vec<WalEntry>` 4-tuples; every handler charge feeds
-  the D3-canonical `authority_cost_witness.realized`.  Post-merge
-  tests: fs_wal_spec 29/29, casper fileio+fs_generator 39/2,
-  file_dir_check 491/3.
-- **Phase 9 landed 2026-08-23** (this session).  See §Phase 9
-  completion notes above.  12 commits from `535fb55e5` through
-  `4b6668e7f` on top of the merge session's `2dc106efe`.
-- **Neither Phase 9 nor the merge's own new commits since the
-  origin state** have been pushed yet.  Origin `fileio-phase-1-2`
-  is at `2dc106efe`; local is at `4b6668e7f`.
-
-### Development conventions (unchanged)
-
-- Commit subject `<type>(fileio): <slice-tag> <summary>`; body is
-  prose paragraphs.  Trailer:
-  `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-- `SKIP_DENY=1 git commit -F /tmp/<msg>.txt` for pre-commit (the h2
-  RUSTSEC-2026-0258 advisory is pre-existing).
-- Toolchain: workspace pins nightly-2026-02-09 via
-  `rust-toolchain.toml`; MacPorts stable cargo ignores that file.
-  **Prefix EVERY cargo command**:
-  ```
-  PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 \
-    cargo <cmd>
-  ```
-  This applies to `git commit` too (pre-commit hook runs cargo fmt
-  + clippy).  See `.claude/memory/f1r3node_toolchain.md`.
-- **Two-commit pattern for slices adding new files**: `git commit -a`
-  does NOT stage untracked files.  Either explicitly `git add` new
-  files before commit, or expect a follow-up commit picking them up
-  (Phase 9 slice 9a shipped this way — `3877f0bde` + `8f6618cc8`).
-- `/tmp/<slice>_commit_msg.txt` heredoc-file pattern for commit
-  messages avoids apostrophe / em-dash / backtick issues that break
-  `git commit -m "$(cat <<'EOF'...)"`.
-
-## Phase 10 progress — examples + review-pass E2E tests (2026-08-13)
-
-**Status at hand-off**: 14 commits landed on `fileio-phase-1-2` since Phase 8 tip (`1d38f829`).  Local branch tip: **`6ca9ed2f`**.  **Not yet pushed to `origin`** — standing convention is push at slice 10f (whole-Phase-10 review).
-
-Session covered two work streams: (a) Phase 10 canonical examples (slices 10a-1 through 10a-9), (b) a review-pass adding four missing E2E spec files from the plan's §Test-infrastructure list (slices 10g/10h/10i/10j).  Also fixed a longstanding consensus-observable-fd bug in the Phase 8 lock natives (34b8f1d1) discovered while investigating perceived test flakiness.
-
-### Commit history (Phase 8 tip → HEAD)
-
-| # | SHA | Slice | Deliverable |
-|---|---|---|---|
-| 1 | `6fd3462f` | 10a-1 | `fileio_chown_consensus.rho` + `fileio_examples_spec.rs` bootstrap (1 test) |
-| 2 | `5ce22ba6` | 10a-2 | `fileio_lockrange.rho` — cross-cap fresh-mint + Phase 8 range lock (1 test) |
-| 3 | `333bfd23` | 10a-3 | `fileio_static.rho` — file-to-file line copy, on-disk byte-identity (1 test) |
-| 4 | `6118556a` | 10a-4 | `fileio_membrane.rho` — revocable-forwarder membrane (1 test) |
-| 5 | `cb45f366` | 10a-5 | `fileio_readonly_forwarder.rho` — attenuation via forwarder (1 test) |
-| 6 | `3f50463e` | 10a-6 | `fileio_buffer_loop.rho` + ignored spec (blocked on PB-B-5 Allocator) |
-| 7 | `201190d7` | 10a-7 | `fileio_rows.rho` + ignored spec (blocked on PB-B-5) |
-| 8 | `cf65f5c7` | 10a-8 | `fileio_stdio.rho` + caps-only sanity spec (echo-loop deferred to slice 10c) |
-| 9 | `a42f878f` | 10a-9 | `fileio_parallel.rho` + sequential-fold byte-sum spec + ignored foldConcurrent |
-| 10 | `34b8f1d1` | fix | fs_lock_range / fs_lock_sequential drop stale `fd >= 0` gate (Slice 28 CRIT-2 backport) |
-| 11 | `eccf7ab3` | 10g | `fileio_stream_spec.rs` — LineStream negative-path matrix (4 tests) |
-| 12 | `17cc77df` | 10h | `fileio_file_spec.rs` — File-agent method E2E (4 tests) |
-| 13 | `e13f6256` | 10i | `fileio_consensus_replay_spec.rs` — stat host-transient field omission (2 tests) |
-| 14 | `6ca9ed2f` | 10j | `fileio_dir_spec.rs` — Dir-agent method E2E (3 tests) |
-
-### E2E test file inventory (post-session)
-
-New under `casper/tests/genesis/contracts/`:
-- `fileio_examples_spec.rs` (10 tests, 3 ignored) — canonical-example regressions.
-- `fileio_stream_spec.rs` (4 tests) — plan §778 mandate; LineStream chunk/foldChunks/foldConcurrent/mapReduce all → FSERR_UNSUPPORTED, plus fold on closed stream → FSERR_CLOSED.
-- `fileio_file_spec.rs` (4 tests) — cursor semantics (seek/tell), size, readN edge cases, truncate roundtrip + on-disk verify, close gates.
-- `fileio_consensus_replay_spec.rs` (2 tests) — Consensus vs Oracular stat field omission (layer 1; layer 2 replay round-trip deferred pending leader/follower harness).
-- `fileio_dir_spec.rs` (3 tests) — Dir.exists present/absent, openFile mode attenuation, openFile→readN roundtrip.
-
-Combined `fileio_*` + `fs_generator_spec` parallel run: **24 non-ignored + 3 ignored, all green** (~6 min).
-
-### fs_lock CRIT-2 backport (commit `34b8f1d1`)
-
-**Bug**: `fs_lock_range` and `fs_lock_sequential` in `rholang/src/rust/interpreter/io/handlers.rs` had stale `if fd >= 0` guards on the fd argument (lines 2461 and 2589 pre-fix).  Slice 28's `seed_next_fd_from_state_hash` produces hash-derived `u64` fds; ~50% have the high bit set → `RhoNumber::unapply` decodes to negative `i64` → guard fails → `FSERR_BAD_ARG "expected (u64, u64, u64>0, ...)"`.
-
-**Why latent**: `fs_close` was fixed for exactly this on 2026-08-06 (Slice 28 CRIT-2, comment at `handlers.rs:600`).  Every other fd-consuming native uses `fd as u64` directly.  The Phase 8 lock natives landed in the same window but never got the same treatment.  Mocked-syscall tests in `file_dir_check.rs` used small fd values (no high bit set), so the bug never surfaced.  Only real bundle openFile + lockRange or bundle openFile + implicit sequential lock (chars/bytes/lines/writeByteArray/etc.) hit it.
-
-**Fix**: Drop the `fd >= 0` guard; reinterpret via `fd as u64`.  Symmetric to fs_close and every other Slice-28-era native.
-
-**Blast radius pre-fix**: ~50% flake rate on every `File.lockRange` and every stream producer + cursor-relative writer through the bundle path.  Post-fix: 5/5 isolated + 4/4 parallel of the lockrange test, plus stable file_dir_check (491/491+3 ignored).
-
-**Regression pin**: `fileio_examples_spec::fileio_lockrange_cross_cap_busy_then_release` exercises the exact code path.
-
-### Rholang / harness gotchas discovered
-
-Documented for pickup because they cost real debugging time:
+Recorded because each cost real debugging time; each still relevant for any future Rholang-side work:
 
 - **`...` splat in send position is illegal.**  Rholang grammar (`rholang_mercury.cf` — `ProcRemainderVar` line 185) only accepts `...` inside collection destructures (list / set / map), NOT as splats in send positions.  The FIP's §Ocap-patterns pseudocode `underlyingFile!(returnCh, method, ...args)` cannot land verbatim.  Membrane / readonly-forwarder examples specialize per-method-arity as workaround.  Recorded in `fileio_membrane.rho` and `fileio_readonly_forwarder.rho` docstrings.
 - **`Fs.openFile("name", {})` defaults `requestedMode` to `"r"`.**  Empty options ≠ "inherit provisioned mode".  Write-capable bundles need explicit `{"mode": "rw"}`.  See Fs.rho line 247.
 - **`File.bytes()` emits 1-byte `ByteArray`s, not integer bytes.**  Spec §225 pseudocode `returnCh!(acc + byte)` is wrong; user code needs `byte.nth(0)` to extract the Int.  See fileio_parallel.rho.
-- **`seek` whence values are `"set"` / `"cur"` / `"end"`** (per `handlers.rs::fs_seek` line 1027-1030), not `"start"` as some FIP prose uses.
-- **Rholang requires `|` between adjacent processes** inside a `for` body.  A `stdout!(...)` immediately followed by a nested `for(...)` without a separator is rejected by tree-sitter with a `(ERROR (send ...))` sexp.  See fileio_lockrange.rho commit message for the concrete symptom.
-- **Sequential-lock intra-testSuite serialization**: two testSuite entries that each `openFile("target")` + `lines()` on the same bundled path RACE for a same-path sequential lock with distinct holders — first-in acquires, second BLOCKS forever unless the first explicitly `close()`s the stream.  If a test's assertion fires from a non-close-taking path (e.g., a default-arm error branch), the lock leaks and blocks the next testSuite entry.  **Fix pattern**: combine related dispatches into ONE contract using ONE lineStream, not two testSuite entries.  See `fileio_stream_spec::line_stream_parallel_combinators_return_fserr_unsupported` for the pattern.
-- **RhoSpec anti-vacuity error `"missing genesis/registry state"`** with `has_finished=false` typically indicates a hung deploy inside RhoSpec's tokio timeout window.  Under investigation this was the lock-leak symptom above, not actual missing state.
+- **`seek` whence values are `"set"` / `"cur"` / `"end"`** (per `handlers.rs::fs_seek`), not `"start"` as some FIP prose uses.
+- **Rholang requires `|` between adjacent processes** inside a `for` body.  A `stdout!(...)` immediately followed by a nested `for(...)` without a separator is rejected by tree-sitter with a `(ERROR (send ...))` sexp.
+- **Sequential-lock intra-testSuite serialization**: two testSuite entries that each `openFile("target")` + `lines()` on the same bundled path RACE for a same-path sequential lock with distinct holders — first-in acquires, second BLOCKS forever unless the first explicitly `close()`s the stream.  If a test's assertion fires from a non-close-taking path (e.g., a default-arm error branch), the lock leaks and blocks the next testSuite entry.  **Fix pattern**: combine related dispatches into ONE contract using ONE lineStream, not two testSuite entries.
+- **RhoSpec anti-vacuity error `"missing genesis/registry state"`** with `has_finished=false` typically indicates a hung deploy inside RhoSpec's tokio timeout window (often the sequential-lock leak above).
+- **Em-dashes / apostrophes / backticks in Rholang string literals** break tree-sitter parsing (UNEXPECTED 8212 for em-dash).  Use ASCII dashes and standard punctuation in `!?("...", ...)` string args and assertion clues.
+- **RhoSpec harness cannot drive wait:true admits**: cross-cap `wait:true` lockRange deploys time out silently rather than resolving parked acquires (harness doesn't drive the tokio waker infrastructure).  Use wait:false + explicit retry for cross-cap E2E; strict FIFO is unit-tested at LockRegistry layer.  Recorded in `~/.claude/projects/-Users-stay-greg-f1r3fly-FIPS-fileio/memory/fileio_wait_true_e2e_harness_gap.md`.
 
-### Deferred but implementable next (no Phase 9 or Powerbox dependency)
+### fs_lock CRIT-2 backport reference (commit `34b8f1d1`)
 
-Prioritized for the next session.  All Phase-9-independent (won't need rewriting when cost accounting lands).
-
-1. **Slice 10b — per-error-code integration test.**  Provoke each reachable `FSERR_*` / `BUFERR_*` / `EOS` code and verify the catch arm fires with the right code.  All base error codes are generated by Phase 1-8 code; Phase 9's only new code is `FSERR_QUOTA_EXCEEDED` on materialization caps (separate code path).  Medium size — ~10-12 focused tests.  New file `casper/tests/genesis/contracts/fileio_error_codes_spec.rs` or extension of `fileio_examples_spec.rs`.
-2. **Dir mutations coverage** — extend `fileio_dir_spec.rs`.  removeFile / removeDir(recursive) / rename / copyFile round-trips on rw-mode Dir bundles with on-disk `std::fs` verification (mirrors the `fileio_file_spec::file_truncate_write_mode_roundtrip` pattern).  Medium size.
-3. **Range-lock stress: 3-way contention** — extend `fileio_examples_spec.rs` or `fileio_stream_spec.rs`.  cap1 holds, cap2 waits, cap3 also waits; cap1 releases → cap2 admitted → cap2 releases → cap3 admitted.  Verifies head-of-line FIFO wake and no wake-starvation.  Small.
-4. **`fileio_lifecycle_spec.rs`** — fd-table rollback on deploy error (production path, not mocks).  Medium.  Guards deploy-level fd isolation.
-5. **`fileio_fs_spec.rs`** — systematic Fs surface coverage beyond canonical examples: default arm on Fs / Stdin / Stdout, openFile with all mode strings, openFile with invalid options shapes.  Medium.
-6. **`fileio_native_spec.rs`** — direct RhoSpec-harness dispatch of each native URN (bypassing the library).  Large but low priority since natives are unit-tested and reached transitively by the library tests above.  Would need genesis-scope URN-filter toggle in the test source.
-
-### Deferred by external blockers (do not attempt)
-
-- **`fileio_buffer_spec.rs`** (Buffer library E2E, monotonic-index invariant): blocked on **PB-B-5** — Allocator not published to user deploys.  `rholang/examples/fileio_buffer_loop.rho` and `fileio_rows.rho` are documentation artifacts; companion regressions are `#[ignore]`-d in `fileio_examples_spec.rs`.
-- **`fileio_cross_fs_isolation.rho`** + per-`deployerId` isolation tests: blocked on **Powerbox stub** (plan §345 / line 1277).
-- **`foldConcurrent` / `mapReduce` positive-path tests**: blocked on those methods landing in Stream.rho (currently line 23 says "Deferred to follow-up commits").  Negative-path FSERR_UNSUPPORTED covered in `fileio_stream_spec`.
-- **Layer 2 of consensus replay** (leader-captures / follower-replays byte-identity): blocked on two-runtime harness.  Layer 1 (field omission) covered in `fileio_consensus_replay_spec`.
-- **`fileio_replay_spec.rs`** (oracular play/mutate-disk/replay): blocked on the same replay harness.
-- **Stdio replay wiring** (slice 10c): stdin.fsRead capture path not wired into deploy log per plan line 332.  Requires Rust changes to Stdin native.  Doesn't block the example's parse-only ship (slice 10a-8 already landed).
-
-### Deferred by Phase 9 (do not attempt pre-cost-accounting)
-
-Would need rewriting when Phase 9 lands:
-- Materialization-cap tests (`toString(cap)` / `toByteArray(cap)` / `toList(cap)` → FSERR_QUOTA_EXCEEDED above cap).
-- Reply-payload cap on `EntryStream.chunk(n)` / `ByteStream.chunk(n)`.
-- Per-native weight-drift golden values.
-- Buffer read pairwise-merge growth `Θ(ℓ log ν)` at ν=8/64/512.
-- Any test asserting on cost / phlo consumption.
+Kept as a class-of-bug reference: any fd-consuming native written before Slice 28's `seed_next_fd_from_state_hash` landed can carry a stale `if fd >= 0` guard that rejects hash-derived u64 fds whose high bit is set.  Symptom: ~50% flake rate on real-bundle openFile-then-anything, invisible under mocked tests that use small fd values.  Fix pattern: reinterpret via `fd as u64` (mirrors `fs_close` at `handlers.rs:600`).  Regression pin lives in `fileio_examples_spec::fileio_lockrange_cross_cap_busy_then_release`.
 
 ### Phase 10 remaining slice-level checklist
 
+**Canonical examples (10a-1 .. 10a-9)** — all landed prior session (see commit table above).
+
 - [x] 10a-1 through 10a-9 — canonical examples
-- [ ] 10b — per-error-code integration test (see "Deferred but implementable" #1 above)
-- [ ] 10c — stdio replay wiring (Rust native change, deferred)
-- [ ] 10d — oracular replay E2E for examples (needs replay harness)
-- [ ] 10e — `fileio_cross_fs_isolation.rho` (Powerbox blocked)
-- [ ] 10f — whole-Phase-10 review + push to origin
 
-## Deferred items catalog (fresh-session pickup, 2026-08-12)
+**Per-error-code coverage (10b)** — landed:
 
-Consolidated list of tracked open items across all phases.  Each is either delivered-with-notes, scoped as future work, or deferred with a specific dependency.  A fresh session picking up this project should skim this catalog first — most "what's next?" questions resolve here.
+- [x] 10b — per-error-code integration test — `fileio_error_matrix_spec.rs`, 12 tests covering FSERR_BAD_ARG (3) / FSERR_UNSUPPORTED (3) / FSERR_CLOSED (2) / FSERR_BUSY / FSERR_ALREADY_EXISTS / FSERR_QUOTA_EXCEEDED / FSERR_BAD_ARG-on-dir-kind.  Discovery of the io-error-kind loss bug lived here → `fix(fileio) slice 10b` (`bf254f951`) landed the routing fix through `quarantine_err_reply → io_err_code`; companion FIPS path-leakage pin (`63f78064a`) guards `io_msg_scrub` from `to_string()` regressions.
 
-**Phase 7 delivered-with-open-items**:
+**Stdio replay wiring (10c)** — reclassified out of the roadmap:
 
-- **Task #15 — PB-B-3 `insertVersion` for `rho:io:fs:1.0.0`** (Phase 6-7 crossover).  FsGenesis publishes at `rho:id:<hash>` via `insertSigned` (delivered slice 25); the follow-up `insertVersion` call binding `rho:io:fs:1.0.0` / `rho:io:fs:1.*` as normalization-time aliases has not landed.  Own slice, not blocked by anything.  See plan §325.
-- **Task #122 — Two-validator PB-M-14 end-to-end test**.  `TestNode::create_network` harness exists in casper (`casper/tests/multi_node/`).  Blocked on: (a) confirming `TestNode` + `GenesisBuilder` thread per-node consensus-static HOCON, (b) verifying `TestNode::propagate_block` triggers `replay_deploys` → WAL apply on receiver.  If both wired: ~200-300 lines of test.  If harness extension needed: separate small prerequisite.  Deferred by user until Phase 8 lock work matures.
-- **Phase 7b — byte-payload distribution protocol** (plan §372, decomposed 2026-08-11):
-    - **7b-1**: snapshot chunk-fetch via 4 MiB Merkle-tree chunks; extends Casper block-fetch machinery with `get_snapshot_chunk(snapshot_root, chunk_index)` opcode.  Reuses peer discovery + DoS defenses + hash verification.
-    - **7b-2**: between-snapshot on-demand `get_wal_payload(payload_hash)` opcode.  Same fetch/verify/store shape.
-    - **Demand-reducer**: write-payload determinism (consensus writes SHOULD trace to on-chain sources: deploy data + deterministic Rholang + operator-provisioned static content).  Not a hard invariant.
-    - Rejected: push-in-gossip (defeats hash-only WAL), full DHT (overkill), strict determinism (too restrictive for operator-added content).
-- **Powerbox stub** (plan §345).  Interim per-`deployerId` Powerbox listed as Phase-6 deliverable; not built — Phase 6 shipped shared-Fs MVP.  Dedicated future slice.  Blocking on: (a) NormalizerEnv plumbing decision (Option A/B/C in `powerbox-requirements.md` §5), (b) Phase 7's config → bundle handoff (delivered slice 25).  When landed, revisit Phase 10 `fileio_cross_fs_isolation.rho` + `fileio_membrane.rho` examples for full end-to-end coverage.
-- **F-30b-1 retention key promotion** (plan §PB-M-15).  Design landed (§PB-M-15 amended); implementation deferred.  Small: change `NodeConfig.storage.consensus_fs_snapshot_retain` from `Option<usize>` to `usize`, remove `#[serde(default)]`, remove the `cadence * 2` fallback in `build_snapshot_writer`, add boot validation.  ~30 lines + test updates.  Standalone; unblocked.
+- [x] ~~10c — stdio replay wiring~~ **RECLASSIFIED 2026-08-23 as not needed**: stdio is intrinsically oracular; enforced by Stdin.rho / Stdout.rho constructor signatures + pinned by `stdio_agents_have_no_cmode_arg_and_stay_oracular`.  Deploy-author responsibility: don't route stdin bytes into consensus-observable state.  Rationale docstrings in Stdin.rho / Stdout.rho / Fs.rho; commit `5d98daa21`.
 
-**Phase 8 remaining** (see §Phase 8 slices 8b / 8c / 8d — implementation progress above for the full commit history):
-- **Phase 8 COMPLETE.**  Slice 8a/8b/8c/8d all shipped as of commit `1d38f829` (slice 8d-3-stream-2, 2026-08-13).  Whole-Phase-8 review pass (2026-08-13, three parallel agents on FIP-spec compliance / security / test coverage) found zero blocking issues.  Next up: **Phase 9 (cost accounting scaffolding)** — see the Phase 9 fresh-session pickup notes above.
+**Replay-harness-dependent slices (10d, 10e)** — still blocked:
 
-**Phase 9 pickup**: see §Phase 9 fresh-session pickup notes (2026-08-13) above.  First decision: Path A (pre-D3, land now) vs. Path B (wait for cost-accounted-rho merge).  Recommendation Path A.
+- [ ] 10d — oracular replay E2E for examples (needs two-runtime replay harness)
+- [ ] 10e — `fileio_cross_fs_isolation.rho` (Powerbox stub blocked)
 
-**Phase 7 whole-review deferrals** (from L-cleanup / slice-27 review notes — Cost-FIP territory, not blocking Phase 8):
-- H-27-1, H-27-F1 (per-runtime fd cap DoS aggravated by fresh-mint; no per-deploy sub-cap).
-- M-27-F1 (mint-path `fsStat` runs on every fresh open; Consensus operators must freeze `consensus-static-*` paths for the full deploy lifetime).
-- M-27-F2 (deploy-cost blowup: legacy code paying O(1) for repeat opens now pays O(N)).
-- M-27-1, I-27-F3 (handle equality is consensus-observable and always false for repeat opens).
-- L-27-1 (tuplespace state cells grow per-mint).
-- H-26-F2 (mutable-file `size` under Consensus — operator-invariant issue).
-- M-26-F1 (signature scope — documentation-only note).
-- M-26-F3 (NSS PII leakage under Oracular — operator hygiene).
-- M-26-F4 (project_bundle HashMap iteration — defense-in-depth; already pinned by determinism test).
-- H-28-F3 (play/replay runtimes have separate `fs_handles` — low likelihood).
-- H-28-1 (mid-block reset ordering fragility — consensus-safe today).
-- L-28-1 (32 bits of state-hash prefix exposed via fd values — no confidentiality issue).
-- H-R2 (hard checkpoint WAL snapshot — if a future slice introduces `revert_to_hard_checkpoint`, must snapshot/restore WAL alongside fd table).
-- H-R4 / M-29-3 (partial-write divergence — RESOLVED via `finalize_write_journal`).
-- M-R1 (block-wide WAL cap DoS — per-deploy cost accounting is a Cost FIP concern).
-- M-R4 (fs_open `is_replay` skips cmode validation — inherent to is_replay pattern; not a bug today).
-- M-14 (dedup `lib_body`) — RESOLVED commit 2353fd9a.
-- M-16 (docs: directory ≠ file distinction on `oracle-static-files`) — RESOLVED preempted by KindMismatch check in boot_validation.rs.
+**Review-pass E2E gap-fills (10g-10j)** — landed prior session (see commit table above):
 
-## Cost-accounted-rho merge integration playbook (fresh-session pickup, 2026-08-12)
+- [x] 10g — `fileio_stream_spec.rs` (LineStream negative-path matrix, 4 tests)
+- [x] 10h — `fileio_file_spec.rs` (File-agent method E2E, 4 tests)
+- [x] 10i — `fileio_consensus_replay_spec.rs` (stat host-transient field omission, 2 tests; Layer 2 leader-follower replay blocked on harness)
+- [x] 10j — `fileio_dir_spec.rs` bootstrap (Dir.exists / openFile mode attenuation / openFile→readN, 3 tests)
 
-`origin/feature/cost-accounted-rho` (branch of `f1r3node-rust`) is the D3 migration — internalized cost accounting via `RuntimeBudget` + `BillableTokenEvent` + `MeteredMachine`, replacing `CostManager` + `ChargingRSpace`.  Not yet merged to `dev`; work is underway.  When it merges, the File I/O `fileio-phase-1-2` branch needs a coordinated update.  See X-3 and X-4 supplements above for the design analysis; this section is the concrete integration checklist.
+**Phase-10 additional coverage (2026-08-23 session)** — landed:
 
-**Pre-merge posture**:
+- [x] Dir mutations E2E — extension of `fileio_dir_spec.rs` with 4 mutation round-trips (removeFile / removeDir(recursive) / rename / copyFile) verified via on-disk `std::fs` reads.
+- [x] 3-way lockRange no-starvation E2E — `fileio_examples_spec::fileio_lockrange_three_way_no_starvation`; uses wait:false + retry chain (wait:true 3-way is blocked on RhoSpec harness plumbing, recorded in project memory).
+- [x] `fileio_lifecycle_spec.rs` — fd-table rollback via production `create_soft_checkpoint` / `revert_to_soft_checkpoint` path (2 tests, including nested-checkpoint stack semantics).
+- [x] `fileio_fs_spec.rs` — Fs / Stdin / Stdout surface coverage (6 tests including default-mode inference and the `r+` mode drift pin surfaced during writing).
+- [ ] `fileio_native_spec.rs` — direct RhoSpec dispatch of each native URN.  **Deferred** (low priority per plan): natives are unit-tested + reached transitively; needs genesis-scope URN-filter toggle in test source.
 
-- `fileio-phase-1-2` and `origin/feature/cost-accounted-rho` are disjoint on file surface — cost-accounting doesn't touch `rholang/src/rust/interpreter/io/`, and File I/O doesn't touch `accounting/mod.rs` or `metering.rs` or `reduce.rs`'s eval loop.
-- No merge conflicts expected.  Behavioral integration is the risk.
+**Cross-phase slices landed alongside Phase 10:**
 
-**At-merge checklist**:
+- [x] Slice 9b-iv follow-up — `fs_entries` per-entry two-branch charge (leader + replay), with 5 unit-test parity pins for `extract_ok_list_len`.  Deferred blockers documented for `fs_entries_stream` (stub) and `fs_remove_dir` (reply-shape change needed).  Commits `fad068ffd` + `2d065cf68`.
+- [x] Slice 9c-ii — Buffer materialization cap: `toByteArray()` → `toByteArray(@cap)` with FSERR_QUOTA_EXCEEDED gate, 4 File.rho caller updates at MAX_WRITE_BYTES, 4 runtime pins covering each gate arm.  Commits `f6fe61f30` + `eae9f13ae`.
 
-1. **Cross-branch dry-run**: check out `feature/cost-accounted-rho`, cherry-pick `fileio-phase-1-2`'s commits (or merge), run `cargo check -p rholang -p casper`.  Expected clean.
-2. **Run `fileio_native_spec.rs` + `file_dir_check.rs`** — verify all fs-native paths work under the new eval loop.
-3. **Run `fs_wal_spec.rs`** — critical: WAL determinism under `FuturesUnordered` (Par branches now truly interleave; H-R3 log-order drain must still produce byte-identical WAL across schedules).  Add the X-3 concurrent-ack regression test (N Par-branches, distinct ack channels, 100 randomized tokio schedule shuffles, assert 1:1 drain).
-4. **Verify replay under the new is_replay path**: slice 29 round-2's fs_open shadow-handle machinery (C-R1 fix) sits in the replay path; confirm it still works when `evaluate_cosigned` installs `Cost::unsafe_max()` (D3 accepts all deploys; no OOP abort).
-5. **Native weight ports**: Phase 9's `CostManager::charge()` becomes `BillableTokenEvent::Primitive` emission via `RuntimeBudget::reserve_canonical_with_cost`.  Same numeric weights, different dispatch.  Uniform per-native port pattern — expect 3-5 hours of mechanical translation.  Coordinate weight activation with the cost-accounted-rho hard-fork block-height trigger.
-6. **Phase 1 §51 + §Reference points + §Buffer library size on-chain**: language updates flagged in X-4 supplement.  Word-only; no code change.
-7. **Spec §Cost accounting**: FIP language already uses "CostManager::charge() (or the equivalent)" future-proofing; minimal edit needed.  §Buffers > Reuse-is-refunded needs the D3 storage-cost shift described in X-4.
+**Whole-phase review + push (10f)** — landed:
 
-**Post-merge validation**:
+- [x] 10f — whole-Phase-10 review + push to origin.  12 commits landed on `fileio-phase-1-2` over 2026-08-23; branch tip on `origin/fileio-phase-1-2` currently `5d98daa21`.  Review passes for slices 10b, 9b-iv follow-up, and 9c-ii each produced additional regression pins.
 
-- Full test suite green (`cargo test -p rholang -p casper --lib`).
-- Slice-8a lock tests still 47/47 (LockRegistry semantics unchanged by D3).
-- No new consensus divergence in `fileio_replay_spec.rs`.
-- Hard-fork surface catalog (slice 34) updated if any new consensus-committed constants land.
+### Hard-fork surfaces flagged during Phase 10 (for eventual master merge)
 
-**Rollback posture**: if merge exposes a P1 issue, revert the cost-accounted-rho merge on `dev`; `fileio-phase-1-2` returns to functional under pre-D3 CostManager path.
+The following code changes have consensus-relevant semantics.  All safe on the pre-production `fileio-phase-1-2` branch; require merge-coordination when master-bound.
 
-## Development conventions (fresh-session pickup, 2026-08-12)
+- **io-error-kind widening** (`bf254f951`): `map_open_err` in `path.rs` now preserves `io::ErrorKind` and `quarantine_err_reply` routes AlreadyExists / NotFound / PermissionDenied / Unsupported / InvalidInput to their spec-canonical FSERR codes instead of collapsing to FSERR_IO.  Reply tuples reach the tuplespace; different code = different state hash.
+- **fs_entries per-entry supplement** (`fad068ffd`): realized cost under D3 changes from `50` to `50 + 32*n_entries` per fs_entries call.  Directly hard-forkable.
+- **Genesis-source anchor rolls**: `126a35ab → fbea2d02` (slice 9c-ii, `f6fe61f30`), `fbea2d02 → af6f10fa` (10c reclassification docstrings, `5d98daa21`), `af6f10fa → cd2f6494` (PB-B-3 initial wiring), and `cd2f6494 → 46db7011` (PB-B-3 final ship with docstring cleanup + await sequencing).  All change the fs-genesis-deploy content hash.
+- **PB-B-3 insertVersion call** (2026-08-24): FsGenesis now emits an `insertVersion` message onto `rho:registry:v1:internal` for the fs cap.  Adds a new tuplespace effect to the fs-genesis deploy's execution trace; historical blocks without this effect would fail replay.
+- **Streaming-backing slice Step 2** (`d70ca8235`, 2026-08-25): three new native URNs registered — `rho:io:fs:native:1.0.0/entriesStreamOpen` (arity 4), `.../entriesStreamNext` (arity 2), `.../entriesStreamClose` (arity 2).  Composed FsGenesis source gains three new native bindings.  `non_deterministic_ops()` gains three replay-cache entries.  Deploy-content hash rolls from `46db7011` → `434a828b`.  Native URNs remain under the `FS_NATIVE_URN_PREFIX` filter — user deploys cannot resolve them directly; the composed Fs agent captures them lexically for the Dir.rho consumer swap (Step 5).
+- **Streaming-backing slice Step 3** (`ac7bb9b6a`, 2026-08-25): new `WalOp::EntriesStreamNext` variant (op_tag = 15) journaled per `entriesStreamNext` call on Consensus-cap dir streams.  `SNAPSHOT_FORMAT_VERSION` bumped 3 → 4 (WAL root encoding hard-fork).  Golden `compute_wal_root_golden_hex` rolled forward `9f2553c3` → `0db9a418`.  Follower shadow-handle insertion (Step 2's `entriesStreamOpen` replay branch) is the load-bearing dependency for byte-identical WAL entries across leader/follower — verified by the new `entries_stream_next_wal_is_byte_identical_on_leader_and_follower` pin.  Consensus-committing per-call journal on a streaming primitive is novel for this branch; joining validators fetching snapshots past this commit must understand the v4 layout.
+- **Streaming-backing slice Step 5** (2026-08-25): `Dir.rho::entries()` body swapped from bulk `fsEntries` list-materialization to `entriesStreamOpen`/`Next`/`Close` pull model.  Composed FsGenesis source `compose_fs_genesis_source_golden_hex` rolled forward `434a828b` → `60035818`.  Under Consensus caps, each `entries()` deploy now emits a stream of `WalOp::EntriesStreamNext` entries (one per yielded record, plus one on EOS) instead of a single `WalOp::EntriesRead` — different WAL shape, different state hash on any block containing a Consensus-cap `Dir.entries()` call.  Same caller-facing Stream API; the bulk `fsEntries` native is unchanged and remains dispatchable from outside Dir.rho.
 
-Local conventions this session used repeatedly.  Written down so next-me doesn't have to re-discover them.
+## Deferred items catalog
+
+Open items with their blockers.  A fresh session should skim this first — most "what's next?" questions resolve here.
+
+**Phase 7 open items:**
+
+- **Two-validator PB-M-14 end-to-end test** — needs `TestNode` + `GenesisBuilder` per-node consensus-static HOCON wiring; ~200-300 LOC test once harness confirmed.
+- **Phase 7b — byte-payload distribution protocol** — snapshot chunk-fetch (`get_snapshot_chunk`, 4 MiB Merkle chunks) + between-snapshot on-demand fetch (`get_wal_payload`).  Extends existing Casper block-fetch machinery.
+- **Powerbox stub** — interim per-`deployerId` Powerbox listed as Phase 6 deliverable; not built (shipped shared-Fs MVP).  Dedicated slice.  When landed, revisit Phase 10 `fileio_cross_fs_isolation.rho` + `fileio_membrane.rho` examples.
+
+**Phase 9 open items** (see §Phase 9 delivered):
+
+- **9c-iii Buffer pairwise-merge growth test** — blocked on the refactor itself (Buffer.rho line 16 uses Θ(ℓν) linear-fold; test would assert Θ(ℓ log ν)).
+- **`fs_entries_stream` streaming backing** — ~~the URN + dispatcher are wired (`rho:io:fs:native:1.0.0/entriesStream`, `handlers.rs:2449`), but the handler body unconditionally returns `[false, FSERR_UNSUPPORTED, "entriesStream backing not yet implemented (Phase 1 tail-end)"]`~~ **LANDED 2026-08-25/2026-08-26** as three arity-2/4 natives (`entriesStreamOpen` / `_next` / `_close`) via the streaming-backing slice (Steps 1-8 + review-fixups A/B; final head `5c9b18dbd`).  The original arity-3 `fs_entries_stream` handler at `handlers.rs:2449` remains as an FSERR_UNSUPPORTED stub for URN backward-compatibility but is unreachable from any post-Step-5 production caller (Dir.rho::entries() now dispatches to the new natives).  Deprecated-stub state pinned by `fileio_cost_spec::arity3_entries_stream_stub_still_returns_fserr_unsupported`.
+- **Dir-stream fd deploy-end sweep** — `DirHandleTable::close_all_for_deploy` exists at `rholang/src/rust/interpreter/io/dir_handle_table.rs:356` and mirrors `lock_registry.release_all_for_deploy`'s API shape, but is NOT wired into `WalDeployScope::Drop` (surfaced during the Steps 4-8 review pass — the Step 5 commit body originally claimed the sweep was wired; corrected in fixup `b7f04dd74`).  Consequence: a Rholang deploy that opens Dir.entries() streams and drops the Stream cap before EOS (via `Stream.close()` or by dropping the reference) holds dir fds until the runtime is dropped.  Current mitigations: (a) per-runtime `MAX_OPEN_FDS = 1024` cap; (b) per-block runtime respawn via `RuntimeManager::spawn_runtime` cleans state between blocks.  Under adversarial Rholang, an attacker can pin all 1024 dir fds within one block and DoS subsequent dir-list operations within the same runtime lifetime.  Fix scope: wire `dir_handles.close_all_for_deploy(scope)` into `WalDeployScope::Drop` (uses existing `DirHandle.deploy: DeployScope` field, sentinel-scope guard already in place).  Async-in-sync-Drop needs care — the lock sweep is sync; dir table sweep would need `Handle::current().block_on(...)` or similar.  Design consistency: `FileHandleTable` also lacks a deploy-end sweep — either wire both together or accept both under the same mitigation contract.  Leak-visibility documented by `fileio_stream_spec::open_without_close_leaves_fd_in_table`.
+- **fs_remove_dir two-branch charge** — blocked on reply-shape change (would need `[true, n_deleted]` instead of `[true]`), rippling through Dir.rho + file_dir_check + fs_generator callers.
+- **bulk `fs_entries` `reserve_primitive(0)` bug on empty dirs** — discovered 2026-08-25 while writing the streaming-slice Step 3 WAL-count pin.  Bulk `fs_entries` handler (both leader and follower branches, `rholang/src/rust/interpreter/io/handlers.rs` ~lines 1633 + 1721) uses `self.metering.reserve_primitive(costs::fs_entries_per_entry_supplement_cost(n_entries))?;`.  When `n_entries = 0` (empty directory), `saturate_linear(0, 32, 0) = 0`, and `reserve_primitive` returns `BugFoundError` on ≤ 0 cost (`rholang/src/rust/interpreter/metering.rs:137`).  The `?` propagates → the deploy's `EvaluateResult.errors` gets populated → the WAL journal that would fire AFTER the supplement never runs.  Cost-observationally invisible: `fileio_cost_runtime_spec::fs_entries_empty_dir_charges_setup_only_at_runtime` only asserts `c >= setup_only && c < setup_only + 2000`, and the setup charge happens BEFORE the supplement, so the error path silently loses only the 0-value supplement.  **Fix**: switch to `reserve_incremental_primitive` (early-returns on 0).  Streaming's Step 3 (`ac7bb9b6a`) already did this for `fs_entries_stream_next`; same fix applies mechanically to `fs_entries`.  Broader cost-helper audit territory — check every `reserve_primitive` call with a `saturate_linear`-derived cost that can legitimately produce 0.
+
+**Phase 10 open items** (see checklist above):
+
+- **10d** oracular replay E2E — blocked on two-runtime harness.
+- **10e** `fileio_cross_fs_isolation.rho` — blocked on Powerbox stub.
+- **`fileio_native_spec.rs`** — low priority; natives covered transitively.  Needs genesis-scope URN-filter toggle in test source.
+- **`fileio_buffer_spec.rs`** — blocked on PB-B-5 (Allocator not published to user deploys).
+- **`foldConcurrent` / `mapReduce` positive-path tests** — blocked on those methods landing in Stream.rho (line 23: "Deferred to follow-up commits").
+- **Layer 2 consensus replay** (leader-captures / follower-replays byte-identity) — blocked on two-runtime harness.
+- **`fileio_replay_spec.rs`** — blocked on the same harness.
+
+**Phase 8 non-blocking review follow-ups** (all documented in §Phase 8 delivered):
+
+- MAX_WAITERS_PER_FILE cap (NB-3).
+- Cross-deploy mutual-wait deadlock (NB-7).
+- Native arity tightening (retire legacy arity-7/4 shim).
+- Produce::with_error for cancellation replies (NB-4; needs reporting-rspace).
+- LockRegistry Drop-trait test (N4); helper-binding drift source-scan pin (F-2).
+- Randomized tokio-schedule stress test; cursor-relative TOCTOU docstring clarification; readLineInto arity-N+1 wait-variants (spec ambiguity).
+
+**Phase 7 review-pass deferrals** (Cost-FIP territory or low priority; kept for reviewers reading historical review comments):
+
+- Per-runtime fd cap DoS aggravated by fresh-mint; no per-deploy sub-cap (H-27-1, H-27-F1).
+- Mint-path `fsStat` runs on every fresh open — Consensus operators must freeze `consensus-static-*` paths for full deploy lifetime (M-27-F1).
+- Deploy-cost blowup: legacy code paying O(1) for repeat opens now pays O(N) (M-27-F2).
+- Handle equality consensus-observable and always false for repeat opens (M-27-1, I-27-F3).
+- Tuplespace state cells grow per-mint (L-27-1).
+- Mutable-file `size` under Consensus — operator-invariant issue (H-26-F2).
+- Signature scope docstring note (M-26-F1); NSS PII leakage under Oracular — operator hygiene (M-26-F3).
+- project_bundle HashMap iteration — defense-in-depth; already pinned by determinism test (M-26-F4).
+- Play/replay runtimes have separate `fs_handles` — low likelihood (H-28-F3).
+- Mid-block reset ordering fragility — consensus-safe today (H-28-1).
+- 32 bits of state-hash prefix exposed via fd values — no confidentiality issue (L-28-1).
+- Hard checkpoint WAL snapshot (H-R2) — if a future slice introduces `revert_to_hard_checkpoint`, must snapshot/restore WAL alongside fd table.
+- Block-wide WAL cap DoS — per-deploy cost accounting is a Cost FIP concern (M-R1).
+- fs_open `is_replay` skips cmode validation — inherent to is_replay pattern (M-R4).
+
+## Streaming-backing slice — concrete implementation steps (fresh-session pickup, 2026-08-25)
+
+Turns the `fs_entries_stream` stub at `rholang/src/rust/interpreter/io/handlers.rs:2449-2482` into a working streaming primitive.  Consumer-side wrapper at `Dir.rho:127-149` swaps from list-materialization to `next(fd)`-pull.  Under consensus mode each `next` reply must be journaled + replayable byte-identically; under oracular it's best-effort.  Scope estimate: ~700 LOC + tests, ~2-3 sessions.  Not a single-slice ship.
+
+Order matters — the D3 WAL wiring is the hardest part and should not be left for last.
+
+**Step 1 — `DirHandleTable` (parallel to `FileHandleTable`)**.  New file `rholang/src/rust/interpreter/io/dir_handle_table.rs`.  Mirror the shape at `handle_table.rs`:
+- `pub struct DirHandle { iter: Option<tokio::fs::ReadDir>, canon_path: PathBuf, cmode: ConsensusMode }` (`iter: None` for shadow handles on the follower replay branch — same `None`-means-shadow contract as `FileHandle.file`).
+- `pub struct DirHandleTable { inner: Arc<Inner> }` with monotonic `next_fd: AtomicU64` seeded from state-hash (reuse `seed_next_fd_from_state_hash` pattern; see the compile-time `MAX_OPEN_FDS` assertion at `handle_table.rs:41` for the entropy-budget invariant to preserve).
+- Reuse `MAX_OPEN_FDS = 1024` cap (mod.rs:68) either shared with file fds or as a separate `MAX_OPEN_DIR_FDS`.  Recommendation: shared cap unless there's a reviewer objection — one operator-visible knob.
+- `snapshot_next_fd` + `truncate_to` for deploy-boundary rollback (see `runtime.rs::WalDeployScope` Drop for the file-fd rollback shape to replicate).
+- `close(fd)` drops the `ReadDir`.  `close_all_for_deploy(scope)` sweeps leaked stream fds at deploy-end (mirror `lock_registry.release_all_for_deploy`).
+
+**Step 2 — three natives (or one arity-varying native with sub-op discriminant)**.  New URNs: `rho:io:fs:native:1.0.0/entriesStreamOpen`, `/entriesStreamNext`, `/entriesStreamClose`.  Register in `rho_runtime.rs` (see the block around line 1314 for the existing `entriesStream` registration to fork).  Assign fresh `FixedChannels::fs_entries_stream_next()` etc. — bump `byte_name(NN)` numbers past 54 (system_processes.rs:294).  Handlers:
+- `entriesStreamOpen(root, rel, cmode, ack) -> [true, streamFd] | [false, code, msg]`: `safe_descend` + `tokio::fs::read_dir(canon)`, allocate fd, insert into `DirHandleTable`.  Charge `fs_entries_stream_cost(0) = 50` at entry.
+- `entriesStreamNext(streamFd, cmode, ack) -> [true, entryRecord] | [false, "EOS"] | [false, code, msg]`: `handles.with_mut(streamFd, |dh| dh.iter.next_entry().await)`.  On leader: emit reply, then `reserve_primitive(fs_entries_stream_per_entry_supplement_cost(1))` (already have the helper at costs.rs:308) — one entry per call, so `n=1` unless you batch-charge at close.  Batching-at-close is a valid alternative: on `Close`, charge `supplement(total_yielded)` and record the count in the handle.  Recommendation: per-call charge — simpler replay semantics, matches the mental model of pay-as-you-consume.
+- `entriesStreamClose(streamFd, ack) -> [true]`: `handles.remove(streamFd)`.  No per-entry charge here if per-call was chosen.
+
+**Step 3 — D3 WAL wiring (consensus-mode only)**.  This is the load-bearing step.  Each `entriesStreamNext` reply on a consensus-cap stream must be journaled (leader) + replayable (follower).  Model after `fs_read` / `journal_read` at handlers.rs:220-267 + slice-29's `finalize_write_journal`:
+- New `WalOp::EntriesStreamNext` variant.  Payload: the entry record produced (or an EOS marker).
+- Leader path: after `dh.iter.next_entry().await`, call `journal_entries_next(streamFd, entry_record, ack)` which computes `ack_channel_hash(ack)` and `Wal::append_with_ack`.
+- Follower `is_replay=true` path: DO NOT call `next_entry()` on the follower's `ReadDir` (its iteration order can diverge from leader's under oracular file-system state).  Return `previous` (the cached leader reply), same as `fs_read` at handlers.rs:2472.
+- Cross-deploy fd-reuse: fd IDs derive from state-hash + monotonic counter, so a leader-side stream fd and a follower-side stream fd for the "same" call site have the same numeric value under D3 (the state hash matches at the deploy boundary).  Verify by extending an existing D3 replay-parity test.
+
+**Step 4 — snapshot/rollback integration**.  Wire `DirHandleTable::snapshot_next_fd` + `truncate_to` into the same `WalDeployScope` Drop path (or equivalent) that already rolls back file fds.  Test: deploy that opens 3 streams then throws — assert all 3 fds are closed post-drop.
+
+**Step 5 — `Dir.rho::entries()` swap**.  Current body (Dir.rho:127-149) captures the bulk `fs_entries` list into `listState` and pops one at a time from an `entryProducer` contract.  New body: `entriesStreamOpen!(root, rel, cmode, *fdRet) | for (@fdReply <- fdRet) { ... }` — mint the Stream around `entriesStreamNext(streamFd)`.  On stream close (Stream.EOS or consumer drop), call `entriesStreamClose(streamFd)`.  Same caller-facing `Stream` API — no changes to Dir.rho callers.
+
+**Step 6 — bump MAX_ENTRIES-via-fs_entries messaging**.  The `FSERR_QUOTA_EXCEEDED` message at handlers.rs:1691 currently says "use entriesStream for large directories" but entriesStream was a stub — now it actually works.  Message stays the same; the affordance is now real.  Consider: raise `MAX_ENTRIES` (currently `65_536`) since streams supersede the bulk-list use case?  Recommendation: leave as-is — the bulk `entries` is still a valid convenience path for small dirs and the cap protects against wire-payload blowup on a single reply.
+
+**Step 7 — cost pin**.  Add `fs_entries_stream_streams_five_children_charges_supplement_at_runtime` to `rholang/tests/fileio_cost_runtime_spec.rs` (companion to the `fs_entries` 5-children pin).  Fixture identical (4 files + 1 subdir); assert `consumed >= fs_entries_stream_cost(0) + fs_entries_stream_per_entry_supplement_cost(5) + 5 * fs_stat_cost()`.  Upper bound: `lower_bound + 5000` (same ceiling as the bulk pin — stream traversal shouldn't be dramatically more expensive per row).
+
+**Step 8 — remove the source-scan pin escape hatch**.  `fileio_cost_spec.rs::entries_stream_and_remove_dir_charge_setup_only_pending_blocker_resolution` currently documents "no per-entry supplement wired, and that's OK because handler is a stub."  Once streaming lands and the supplement fires, this pin flips.  Either delete it (subsumed by the runtime pin) or narrow it to `fs_remove_dir` only (which is still blocked on the reply-shape change).
+
+**Blockers / prerequisites**: none — all substrate exists.  `FileHandleTable`, `WalDeployScope`, `journal_*` helpers, `ack_channel_hash`, `saturate_linear`, `fs_entries_stream_per_entry_supplement_cost`, `seed_next_fd_from_state_hash` are all in-tree.  D3 cost-accounted-rho already merged.  This is scaffold-copy + wiring, not novel design.
+
+**Hard-fork surface**: yes.  Changes the fs-genesis-deploy content hash (new URNs added to `non_deterministic_ops()`).  Adds new tuplespace effects to consensus-mode deploys (WAL entries).  Historical blocks without these effects would fail replay.  Same care as PB-B-3 / io-error-kind widening — safe on `fileio-phase-1-2`, coordinate on master merge.
+
+### Streaming-backing slice — Steps 1-8 landed + review-fixups A/B (2026-08-26)
+
+**Slice complete.** Steps 4/5/7/8 landed in one fresh-session pass on
+`fileio-phase-1-2`, followed by two review-fixup commits (six commits
+total, not yet pushed at this snapshot):
+
+- `b49ca37db` Step 4 — dir-fd rollback via new `dir_fs_snapshot_stack`
+  in `RhoRuntimeImpl`; drops the `#[ignore]` on
+  `fileio_stream_spec::deploy_error_rollback_sweeps_stream_fds` and
+  adds the nested-checkpoint parity pin
+  `nested_soft_checkpoints_preserve_outer_dir_fd_snapshot`.
+- `7b6e33911` Step 5 — `Dir.rho::entries()` swapped to
+  `entriesStreamOpen/Next/Close`.  Genesis anchor rolled
+  `434a828b` → `60035818`.  Producer wrapper adapts the 2-element
+  `[false, "EOS"]` native terminator to the 3-element
+  `[false, "EOS", msg]` shape Stream.rho expects and closes the fd
+  on EOS + error branches.
+- `a3f5406f5` Step 7 — runtime pin
+  `fs_entries_stream_streams_five_children_charges_supplement_at_runtime`
+  drives 8 native calls end-to-end and asserts the per-call charges;
+  ceiling widened to `+30_000` (measured ~21_000 harness overhead
+  vs. bulk's ~500).
+- `da9bdc9f5` Step 8 — narrowed the source-scan pin to `fs_remove_dir`
+  only; renamed to `remove_dir_charges_setup_only_pending_reply_shape_change`.
+- `b7f04dd74` Review-fixup A — Dir.rho malformed-close +
+  docstring correction.  The producer wrapper's defensive
+  malformed-reply arm now closes the stream fd before responding
+  FSERR_IO.  Docstring corrected: Step 5's original claim that
+  `WalDeployScope::Drop` sweeps via
+  `DirHandleTable::close_all_for_deploy` was verified false and
+  removed — the sweep API exists but is unwired; see the
+  "Dir-stream fd deploy-end sweep" deferred item.  EOS-shape
+  brittleness pinned via comment on the match arm.  Genesis
+  anchor rolled `60035818` → `5efce8f422d240b2e271fd7407d0a80e6c2a62302195fb8cce42c13dabf00c5e`.
+- `5c9b18dbd` Review-fixup B — coverage additions across
+  five test files: `reset_clears_dir_fs_snapshot_stack` +
+  `unbalanced_dir_revert_without_matching_create_is_no_op`
+  (Step 4); `dir_entries_mid_stream_error_closes_stream_fd` +
+  `dir_entries_eos_closes_stream_fd` +
+  `open_without_close_leaves_fd_in_table` (Step 5);
+  `fs_entries_stream_empty_dir_charges_setup_only_at_runtime`
+  (Step 7); `arity3_entries_stream_stub_still_returns_fserr_unsupported`
+  (Step 8).  Mock preamble in `file_dir_check.rs` gains a
+  `streamCloseLog` counter and mid-stream error injection via
+  `("__err", code, msg)` sentinel.
+
+**Final test posture at head `5c9b18dbd`:** `io::` lib 270/270,
+`fs_wal_spec` 33/33, `fs_next_fd_seed_spec` 6/6, `fileio_stream_spec`
+10/10 (was 9/9 → +1 leak-visibility pin), `fileio_lifecycle_spec` 4/4
+(was 2/2 → +reset-clear + unbalanced-revert),
+`fileio_cost_spec` 73/73 (was 72/72 → +arity-3 stub pin),
+`fileio_cost_runtime_spec` 4/4 (was 3/3 → +empty-dir streaming),
+`fs_genesis` 38/38 (golden hex rolled twice through the slice),
+casper genesis-contracts fileio E2E 53/53 (2 ignored PB-B-5),
+rholang `file_dir_check` 497/497 (was 495/495 → +2 close-branch pins).
+
+**Remaining deferred (updated during review pass):**
+* bulk `fs_entries` `reserve_primitive(0)` bug on empty dirs — cost-
+  helper audit territory; see Deferred items catalog.
+* `fs_remove_dir` per-entry supplement pending reply-shape change.
+* Dir-stream fd deploy-end sweep NOT wired — new deferred item
+  surfaced during Steps 4-8 review; see catalog entry.  Mitigated by
+  MAX_OPEN_FDS cap + per-block runtime respawn until wired.
+* Consensus-mode replay pin via `Dir.entries()` (leader/follower
+  byte-identity through Dir.rho → producer wrapper → streaming
+  natives → WAL) — blocked on the already-tracked Layer 2 two-runtime
+  harness (see Phase 10 open items).
+* E2E `Dir.entries()` against the real streaming handler (not just
+  mocks) — blocked on the same harness as consensus replay above.
+
+The pickup notes below are preserved as-is for historical reference
+during any post-mortem or review of the slice's design choices.
+
+---
+
+### Streaming-backing slice — Steps 1-3 landed; Steps 4/5/7/8 pickup (fresh-session, 2026-08-25)
+
+**Current state (branch `fileio-phase-1-2`, head `5c2419169`):** Steps 1-3 shipped and pushed.  Six commits comprise the slice so far:
+- `d7b69bb40` Step 1 DirHandleTable + 18 unit tests
+- `299707d62` Step 1 fixup — swap `tokio::fs::ReadDir` → `libc::DIR*` for TOCTOU-immunity parity with bulk `fs_entries`
+- `d70ca8235` Step 2 three natives + wiring (oracular happy path)
+- `4089127c1` Step 2 fixup — `Box<Par>` in `Result::Err` for clippy `result_large_err`
+- `ac7bb9b6a` Step 3 D3 WAL wiring for `entriesStreamNext`
+- `5c2419169` Review fixups — seed `dir_handles.next_fd` from state hash + 8 additional test pins
+
+**Test posture at head:** `io::` lib 270/270, `fs_wal_spec` 33/33, `fs_next_fd_seed_spec` 6/6, `fileio_stream_spec` 7/7 + 1 ignored (Step-4 placeholder), `fileio_cost_spec` 72/72.  Clippy clean.
+
+**Deferred latent bug** (documented in Step 3 commit body, out of scope for streaming slice): bulk `fs_entries` also has the `reserve_primitive(0)` → `BugFoundError` bug on empty dirs.  Streaming's Step 3 uses `reserve_incremental_primitive` (which early-returns on zero) — bulk uses the wrong helper.  No existing test catches it because the empty-dir cost test only observes setup cost, not the supplement error path.  Broader cost-helper audit; fold into a fs_entries fixup slice.
+
+**Step 4 — snapshot/rollback integration.** Wire `DirHandleTable::snapshot_next_fd` + `truncate_to` into the same fs snapshot stack that already handles file fds.  Two touchpoints in `rholang/src/rust/interpreter/rho_runtime.rs`:
+1. `RhoRuntime::create_soft_checkpoint` (currently line ~526) pushes `self.fs_handles.snapshot_next_fd()` onto `fs_snapshot_stack`.  Extend to also push `self.fs_handles.dir_handles.snapshot_next_fd()` — needs a companion stack, or push a tuple, or add a second `dir_fs_snapshot_stack: Arc<Mutex<Vec<u64>>>`.  The second-stack approach is a smaller diff and matches the existing pattern for WAL (`wal_snapshot_stack` is separate from `fs_snapshot_stack`).
+2. `RhoRuntime::revert_to_soft_checkpoint` (~line 578) pops and calls `truncate_to`.  Add symmetric pop for the dir snapshot.
+Also update `reset()` (line ~655) to clear the new stack.  The already-committed `fileio_stream_spec::deploy_error_rollback_sweeps_stream_fds` test is `#[ignore]`d — drop the ignore once wired; it becomes the regression pin.  Nested-checkpoint parity: mirror `nested_soft_checkpoints_preserve_outer_fd_snapshot` in `fileio_lifecycle_spec.rs`.
+
+**Step 5 — `Dir.rho::entries()` swap.** Read `casper/src/rust/genesis/contracts/rho/Dir.rho:127-149` first.  Current body materializes `fs_entries` result into a `listState` and pops one-at-a-time from an `entryProducer` contract.  New body: `entriesStreamOpen!(root, rel, cmode, *fdRet) | for(@fdReply <- fdRet) { ... }` — mint a `Stream` around `entriesStreamNext(streamFd)`; on `Stream.EOS` (or consumer drop) call `entriesStreamClose(streamFd)`.  Bindings for `fsEntriesStreamOpen`/`Next`/`Close` are already in the composed FsGenesis outer `new` clause (Step 2 landed).  Genesis anchor roll — fs_genesis.rs golden hex will trip; update `EXPECTED` in `compose_fs_genesis_source_golden_hex` (currently `434a828b`).  Hard-fork surface: yes — changes composed source deploy-content hash.  Log the roll.
+
+**Step 7 — cost runtime pin.** Add `fs_entries_stream_streams_five_children_charges_supplement_at_runtime` to `rholang/tests/fileio_cost_runtime_spec.rs`.  Fixture: 4 files + 1 subdir (5 children).  Term: open stream, drive 6 Next calls (5 yields + 1 EOS), close.  Assert: `consumed >= fs_entries_stream_open_cost() + 5 * fs_entries_stream_next_cost() + 5 * fs_entries_stream_per_entry_supplement_cost(1) + 1 * fs_entries_stream_next_cost() + fs_entries_stream_close_cost()`.  Upper bound: `lower_bound + 5000` (same ceiling as bulk `fs_entries` pin).  Companion to `fs_entries_five_children_charges_supplement_at_runtime`.
+
+**Step 8 — source-scan pin cleanup.** `rholang/tests/fileio_cost_spec.rs::entries_stream_and_remove_dir_charge_setup_only_pending_blocker_resolution` currently documents "no per-entry supplement wired, and that's OK because handler is a stub."  Once Step 3 landed, the streaming supplement wires up.  Either delete that pin (subsumed by Step 7 runtime pin) or narrow it to `fs_remove_dir` only (still blocked on the `[true, n_deleted]` reply-shape change).  Recommendation: narrow — the fs_remove_dir gap is a separate deferred item.
+
+**Toolchain gotcha** (still applies): every `cargo` command needs `PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09`; every `git commit` needs those PLUS `SKIP_DENY=1 SKIP_CLIPPY=1 SKIP_TESTS=1`; `git push` needs `SKIP_TESTS=1` but MUST keep clippy on (the pre-push clippy caught the `result_large_err` on Step 2).  Never amend commits — root-cause hook failures with fixup commits instead.
+
+## Cost-accounted-rho merge — landed (2026-08-21)
+
+`origin/feature/cost-accounted-rho` — the D3 migration (internalized cost accounting via `RuntimeBudget` + `BillableTokenEvent` + `MeteredMachine`, replacing `CostManager` + `ChargingRSpace`) — merged into `fileio-phase-1-2` on 2026-08-21.  Merge commits `018549c12` / `f2e9e109b` / `37422f95e` / `a2cd425f9` / `2dc106efe`.  Post-merge test posture: fs_wal_spec 29/29, casper fileio+fs_generator 39/2, file_dir_check 491/3.  See `merge-cost-accounting-plan.md` in this directory for the actual integration narrative and conflict resolutions.
+
+**Post-merge consequences that shape ongoing work:**
+
+- Phase 9 uses Path B (`BillableTokenEvent::Primitive` from day one; no port work needed).
+- WAL boundary lives inside `process_deploy_cosigned_with_budget_and_authority_mode`; return chain uses `Vec<WalEntry>` 4-tuples; every handler charge feeds the D3-canonical `authority_cost_witness.realized`.
+- Every fs native charges via `metering.reserve_primitive(...)` at handler entry (or post-reply for two-branch charges — see §Phase 9).
+
+## Development conventions
 
 **Commits on `fileio-phase-1-2`**:
 
-- Subject line: `<type>(fileio): <finding-id or slice-tag> <summary>` — e.g., `feat(fileio): Phase 8 slice 8a step 3 — range-lock natives + URN registration`.  Match style of `git log --oneline -20`.
-- Body: prose paragraphs, not bullet-hell.  Reference finding IDs (M-x, H-x, F-x) or slice tags in-body where relevant.
+- Subject: `<type>(fileio): <slice-tag> <summary>`.  Match style of `git log --oneline -20`.
+- Body: prose paragraphs.  Reference slice tags / finding IDs (M-x, H-x, F-x) in-body where relevant.
 - Trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
 
 **Pre-commit hooks**:
 
 - `[fmt]` `[clippy]` `[deny]` run automatically.
-- `[deny]` currently fails on pre-existing `bitmaps` unmaintained warning (not caused by any slice-8a work; my commits add no crate dependencies).  Use `SKIP_DENY=1 git commit -F <msgfile>` to bypass just that check.  Do NOT use `--no-verify` — user policy is explicit hook check + selective skip.
-- `[fmt]` failures: `cargo fmt --all`, then re-add + re-commit.  The workspace's `rustfmt.toml` sets `fn_call_width` / `attr_fn_like_width` / `array_width` that print `.expect too high` warnings — cosmetic, ignore.
+- `[deny]` fails on pre-existing `bitmaps` / `h2 RUSTSEC-2026-0258` warnings unrelated to fileio work.  Use `SKIP_DENY=1 git commit -F <msgfile>` to bypass just that check.  Do NOT use `--no-verify`.
+- `[fmt]` failures: `cargo fmt --all`, then re-add + re-commit.  Workspace `rustfmt.toml` prints cosmetic `.expect too high` warnings on `fn_call_width` / `attr_fn_like_width` / `array_width` — ignore.
 
-**Testing during slice work**:
+**Toolchain gotcha** — workspace pins nightly-2026-02-09 via `rust-toolchain.toml`; MacPorts stable cargo ignores that file.  **Prefix EVERY cargo command and every `git commit`**:
 
-- `cargo check -p rholang` — fast compile check.
-- `cargo test -p rholang --lib io::` — all File I/O unit tests (~200 in slice 8a era).
-- `cargo test -p rholang --lib io::lock` — just LockRegistry (47 in slice 8a era).
-- `cargo test -p casper --lib fs_genesis` — golden hex + drift checks (37 in slice 8a era).
-- `cargo test -p rholang --test file_dir_check with_libs_composes` — quick compile check that composed source parses through the Rholang lexer.
-- Full `cargo test -p rholang --lib` takes ~2.5 min; use for pre-commit sanity.
+```
+PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 cargo <cmd>
+PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 SKIP_DENY=1 git commit -F /tmp/<msg>.txt
+```
 
-**Commit-message file workflow** (avoids bash heredoc quoting issues with the accented em-dashes we use):
+See `.claude/memory/f1r3node_toolchain.md`.
+
+**Push convention**: `PATH="$HOME/.cargo/bin:$PATH" RUSTUP_TOOLCHAIN=nightly-2026-02-09 SKIP_TESTS=1 git push origin fileio-phase-1-2`.  `SKIP_TESTS=1` because the workspace pre-push hook enforces a 600s per-crate timeout that's unrealistic for this workspace; local test-suite verification is sufficient.
+
+**Commit-message file workflow** — avoids bash heredoc quoting issues with em-dashes, apostrophes, backticks:
 
 ```
 # Write msg to /tmp/<name>.txt via Write tool, then:
 SKIP_DENY=1 git commit -F /tmp/<name>.txt
 ```
 
-**Two-repo state**: `fileio-phase-1-2` is on `f1r3node-rust` at `/Users/stay/greg/f1r3fly/f1r3node-rust`; the FIP spec + implementation plan live in FIPS repo at `/Users/stay/greg/f1r3fly/FIPS/fileio/` on `main`.  Keep them synchronized manually — design memos land in FIPS, code lands in f1r3node-rust.
+**Two-commit pattern for slices adding new files**: `git commit -a` does NOT stage untracked files.  Either explicitly `git add` new files before commit, or expect a follow-up commit picking them up.
+
+**Testing during slice work**:
+
+- `cargo check -p rholang` — fast compile check.
+- `cargo test -p rholang --lib io::` — all File I/O unit tests.
+- `cargo test -p rholang --lib io::lock` — LockRegistry.
+- `cargo test -p casper --lib fs_genesis` — golden hex + drift checks.
+- `cargo test -p rholang --test file_dir_check with_libs_composes` — quick compile check that composed source parses.
+- Full `cargo test -p rholang --lib` takes ~2.5 min; use for pre-commit sanity.
+
+**Two-repo state**: code lives in `f1r3node-rust` at `/Users/stay/greg/f1r3fly/f1r3node-rust` (git repo); FIP spec + implementation plan live in FIPS at `/Users/stay/greg/f1r3fly/FIPS/fileio/` (NOT a git repo — local edits only, no push).  Synchronize manually: design memos land in FIPS, code lands in f1r3node-rust.
 
 **Untracked local scripts**: `startnode`, `startrepl` appear in `git status` — user's local test helpers, don't touch.
 
