@@ -1448,6 +1448,39 @@ SKIP_DENY=1 git commit -F /tmp/<name>.txt
 
 **Untracked local scripts**: `startnode`, `startrepl` appear in `git status` — user's local test helpers, don't touch.
 
+## Fresh-session pickup — post-2026-08-26 head (`7323f391f`)
+
+**Current state (branch `fileio-phase-1-2`, head `7323f391f`):** streaming-backing slice complete (Steps 1-8 + fixups A/B); cost-helper audit landed (`d0df35476`); Phase 8 review follow-ups closed (`e578ae9dd`); cost-accounted-rho merge landed (`1c28f53a2`); post-merge polish landed (WalSnapshotWrite effect kind `9b87565b7`, Phase 8 arity tightening `5e8f3e2a0`, randomized tokio stress `f7c0736b0`, PB-M-14 scaffold + multi-deploy WAL `7630b00de`); review-fixup test coverage + lock-ordering audit landed (`f15be8302` + `7323f391f`).
+
+**Test posture at head:** io lib 270/270, rholang integration 645/645 + 1 ignored (PB-M-14 scaffold), casper fs_genesis 39/39, casper fileio E2E 53/53, casper lib 594/594.  Full sweep command in the Development conventions section.
+
+### Unblocked next-session items
+
+Three items are unblocked and can be picked up without design decisions.  Listed in priority order (highest downstream unlock first):
+
+1. **Layer 2 two-runtime harness** — highest-leverage unblock (four downstream items: Phase 10d oracular replay E2E, `fileio_replay_spec.rs`, consensus-mode replay pin via `Dir.entries()`, E2E `Dir.entries()` through the real streaming handler).  Two paths:
+   - **Path A (extend `create_leader_and_follower`):** smaller scope.  The existing helper in `rholang/tests/fs_wal_spec.rs:820` runs leader + follower in the same process against a shared store via `RSpace::create_with_replay`.  Extend to: (i) a "fresh follower" variant that starts from an empty store and applies the leader's checkpoint hash without rig (so replay must reconstruct state from WAL only); (ii) a helper that runs N leader deploys, drains the WAL, and re-executes them on a fresh follower via WAL replay (not tuplespace rig).  Enables the "byte-identity from WAL alone" property PB-M-14 targets.
+   - **Path B (`TestNode` retrofit):** larger scope.  Add per-node fs provisioning + observation hooks to `casper/tests/helper/test_node.rs::create_node` — see the docstring on `fs_wal_spec::pb_m_14_two_validator_scaffold` for the concrete gap list.  Produces full E2E test with network-layer block propagation.
+   - **Recommendation:** Path A first.  It's the smaller diff, still enables the PB-M-14 byte-identity property, and doesn't require touching Casper block-processing.  Path B is a natural follow-up once Path A validates the byte-identity story.
+
+2. **Phase 7b protocol implementation** — byte-payload distribution.  Design memo at implementation-plan.md:374-377 (Option C).  Infrastructure survey in Deferred items catalog `Phase 7b` entry: no existing scaffolding, `BlockRetriever` at `casper/src/rust/engine/block_retriever.rs:79` is the extension template.  Concrete scope:
+   - **Phase 7b-1 (snapshot chunk-fetch):** `SnapshotChunkRetriever` mirroring `BlockRetriever`'s `RequestState`/timeout/retry/peer-set shape; new wire opcodes `get_snapshot_chunk` request/response + broadcast variants; Merkle chunker over 4 MiB pieces with per-chunk Blake2b256 hashes, root = Merkle root.  PB-M-15's `WalSnapshotWrite` effect kind (landed `9b87565b7`) already commits the snapshot root on-chain, so the Merkle-root commitment side is done.
+   - **Phase 7b-2 (between-snapshot payload fetch):** `WalPayloadRetriever` — same shape as Phase 7b-1 but keyed on payload hashes referenced by the WAL slice between the joiner's latest snapshot and the head block.  Also covers the "write-payload determinism" reducer: bytes traceable to on-chain sources (deploy data + deterministic Rholang) don't need `get_wal_payload` requests — the joiner replays deploys and produces the bytes locally.  Only writes whose bytes originate outside the reproducibility chain fall back to fetch.
+   - **Estimate:** multi-session, 3-5 files across `casper::engine`, `models`, `comm`.
+   - **Recommendation:** land Phase 7b-1 first (snapshot fetch); it exercises the Retriever/opcode pattern with a bounded byte-count per fetch (4 MiB chunks).  Phase 7b-2 reuses everything and adds the on-demand + reducer logic.
+
+3. **`fileio_native_spec.rs`** — direct-URN dispatch coverage for each native.  Low priority per prior classification (natives are unit-tested and reached transitively through Dir.rho / File.rho / Fs.rho).  Needs a genesis-scope URN-filter toggle in test source so the natives are dispatchable from a user-scope deploy.  ~50-100 LOC test + a small helper.  Good for a "warmup" bite that doesn't require touching production code.
+
+### Deferred design decisions (still gating other work)
+
+Not to be confused with the unblocked items above.  These need a human call before implementation can start:
+
+1. **Dir-fd deploy-end sweep coupling** — dir alone or file+dir together?  async-in-sync-Drop strategy (block_on / block_in_place / explicit commit call)?  Security-review finding from the streaming-slice review pass; DoS mitigation gap for adversarial Rholang.  See Deferred items catalog entry `Dir-stream fd deploy-end sweep`.
+2. **`fs_remove_dir` reply-shape change** — `[true, n_deleted]` (ripples through Dir.rho + file_dir_check + fs_generator callers; hard-fork surface) OR flat subtree-entry budget cap (caller UX degrades).
+3. **Powerbox stub scope** — per-`deployerId` cap issuance with revocation, or lighter?  Blocks Phase 10e (`fileio_cross_fs_isolation.rho`) + `fileio_membrane.rho` example.
+4. **`MAX_WAITERS_PER_FILE` cap** (Phase 8 NB-3) — threshold value + hard-fork surface acknowledgement.
+5. **readLineInto arity-N+1 wait-variants** (Phase 8) — spec ambiguity; needs semantics decision.
+
 ## Definition of done
 
 - All 10 phases complete; `cargo test` and the casper integration suite pass.
