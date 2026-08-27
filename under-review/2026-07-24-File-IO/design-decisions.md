@@ -1,6 +1,11 @@
 # File I/O — outstanding design decisions
 
 **Opened:** 2026-08-27
+**Last updated:** 2026-08-27 — DD-7b-1, DD-7b-2, DD-7b-3, DD-Dir,
+DD-Waiters, DD-ReadLineInto **committed** by user sign-off.  DD-7b-3 +
+DD-ReadLineInto diverged from documented leans.  DD-Waiters-XD remains
+open.  Each committed entry now has "Decision (committed YYYY-MM-DD)"
+in place of the "Lean (not committed)" line.
 **Purpose:** consolidated surface for open design decisions that need
 resolution before their downstream implementation slices can land.
 A fresh session should read this alongside `implementation-plan.md`'s
@@ -10,8 +15,8 @@ first?" questions resolve here.
 Each entry:
 - **Context** — why the decision matters + what depends on it.
 - **Options** — enumerated with tradeoffs.
-- **Lean** — best guess if no additional input; explicitly labelled as
-  "not committed."
+- **Lean / Decision** — either a "not committed" best guess or, if
+  signed off, "committed YYYY-MM-DD" with the choice locked in.
 - **Downstream** — implementation slices that unblock once decided.
 
 ---
@@ -48,7 +53,7 @@ persistent storage.
 - **(z) Time-based** — cleanup after `T` hours.  Simple; may delete
   payloads still needed by lagging joiners.
 
-**Lean (not committed).**  **(a) + (y)** — sibling dir under
+**Decision (committed 2026-08-27).**  **(a) + (y)** — sibling dir under
 `<node-dir>/wal_payload_store/`, retention = one snapshot cycle behind
 the earliest retained snapshot.  Rationale: dir lifecycle stays
 independent (snapshot cleanup can't accidentally kill payloads); (y)
@@ -89,7 +94,7 @@ if the reducer returns `None`?  Current design: fall back always.  If
 the reducer becomes async (option c), the enumeration loop itself
 becomes async.
 
-**Lean (not committed).**  **(a)** synchronous
+**Decision (committed 2026-08-27).**  **(a)** synchronous
 `Fn(&WalEntry) -> Option<Vec<u8>>`.  Simplest API; the reducer's inputs
 are all in-memory (deploy data + Rholang term).  Async can come later
 if a specific reducer needs it.
@@ -118,10 +123,13 @@ Currently no signal terminates the loop.
   Tick continues to fire every 5s but does no useful work.  Low overhead
   (eviction pass + empty pending set = ~1ms per tick).
 
-**Lean (not committed).**  **(c)** for now — the overhead is
-negligible and adding shutdown plumbing risks bugs (dangling references,
-missed cancellations).  If telemetry shows tick overhead is a real
-concern, revisit with (b).
+**Decision (committed 2026-08-27).**  **(a)** explicit `driver.stop()`
+called when block-processing catches head.  Diverges from the earlier
+lean of (c) — user opted for explicit shutdown plumbing over drain-by-
+stale-eviction.  Rationale for the override: keeps the runtime shape
+observable ("is the retriever alive?"), avoids "why is this timer still
+firing?" confusion, and the extra wiring is a one-shot signal from the
+block-processing loop — small blast radius.
 
 **Downstream.**
 - 7b-2 follow-up **(c)** — boot enumerator wiring.
@@ -158,9 +166,9 @@ run from `Drop`?  Existing options:
 - Post the close to a background reaper task via mpsc.  Simpler; adds a
   named background task to the runtime shape.
 
-**Lean (not committed).**  **(a)** unified sweep, **(b')** background
-reaper for the async close.  Rationale: (a) is one code path for the
-operator to reason about; (b') avoids the block_on foot-gun.
+**Decision (committed 2026-08-27).**  **(a)** unified sweep, **(b')**
+background reaper for the async close.  Rationale: (a) is one code path
+for the operator to reason about; (b') avoids the block_on foot-gun.
 
 **Downstream.**
 - Dir-stream fd deploy-end sweep implementation slice.
@@ -181,10 +189,10 @@ much higher.
   on the file until a waiter clears; (iii) return `FSERR_QUOTA_EXCEEDED`
   (surfaced to Rholang caller).
 
-**Lean (not committed).**  **256 + (iii)**.  Rationale: 256 is well
-above legit workloads; surfacing the error to Rholang lets contracts
-adapt (retry with backoff).  Hard-fork surface (rejection code path
-change).
+**Decision (committed 2026-08-27).**  **256 + (iii)**.  Rationale: 256 is
+well above legit workloads; surfacing the error to Rholang lets
+contracts adapt (retry with backoff).  Hard-fork surface (rejection code
+path change).
 
 **Downstream.**
 - Phase 8 review follow-up NB-3 slice.
@@ -232,9 +240,13 @@ the bool.
 - **(b) Keep the bool** — one method, one bool arg.  Less churn.  Bool
   is easy to typo.
 
-**Lean (not committed).**  **(b)** for now.  Rationale: less churn;
-the bool is at least type-checked.  If a specific use-case surfaces
-where the bool is ergonomically painful, revisit.
+**Decision (committed 2026-08-27).**  **(a)** — split into
+`readLineInto` (no wait) and `readLineIntoWaiting` (wait) as separate
+rho methods.  Diverges from the earlier lean of (b) — user opted for
+uniform shape with `lockRange`.  Rationale for the override: matches
+the wait-variant shape already used by `lockRange`; bool-arg typos are
+worse than callsite duplication for a wait-vs-nowait distinction that
+callers should be aware of.  Hard-fork surface (new native URN).
 
 **Downstream.**
 - Phase 8 review follow-up (readLineInto arity-N+1 wait-variants).
