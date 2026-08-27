@@ -1204,6 +1204,36 @@ The following code changes have consensus-relevant semantics.  All safe on the p
 
 Open items with their blockers.  A fresh session should skim this first — most "what's next?" questions resolve here.
 
+### Unblocked next-step candidates (2026-08-27 survey)
+
+Snapshot as of `bc30dd1ce` (Phase 7b-2 review-fixes landed).  Each item is start-anytime; open design decisions are consolidated in `design-decisions.md` (sibling doc).
+
+**Phase 7b-2 follow-ups (natural next after network-layer landed):**
+
+- **(a) Wire the write-payload-determinism reducer.**  `enumerate_and_enqueue_payloads` accepts an `is_reproducible: F` predicate but every caller currently passes `|_| false` — the joiner fetches everything.  Reducer skips bytes derivable from on-chain sources (deploy data + deterministic Rholang).  Bounded impl: walk the WAL slice, tag each entry's payload as reproducible/not, fall back to `false`.  Depends on design decision **DD-7b-2** (reducer API shape).
+
+- **(b) Populate a `DirectoryPayloadStore` on the serving side.**  Every `WalPayloadContext` is currently constructed with an empty `InMemoryPayloadStore::new()`; we're joiner-only, never serve.  Hook `DirectoryPayloadStore::insert(bytes)` into the fs_write handler's journal path so serving validators accumulate the payloads they process.  Depends on design decision **DD-7b-1** (payload store location + retention).
+
+- **(c) Wire the boot enumerator + apply-to-follower path.**  `enumerate_and_enqueue_payloads` isn't called from any production site.  Need a caller in `casper_launch` / `initializing` after snapshot fetch completes; on retriever `is_complete()`, collected bytes need to be applied via the fresh-tree WAL applier (helper `apply_wal_to_fresh_tree` lives in `fs_wal_spec` test module — must move to a production location).  Depends on design decision **DD-7b-3** (sync completion signal).
+
+- **(d) Two-validator PB-M-14 E2E.**  Byte-transport now ready; still needs `TestNode` retrofit for shared FS root + in-process TransportLayer stub.  Bounded scaffolding (~200-300 LOC of harness + ~50 LOC test).  See interim-coverage note in "Phase 7 open items" below for what's already pinned.
+
+**Pre-existing unblocked (unchanged from prior surveys):**
+
+- **Native arity tightening** — retire the legacy arity-7/4 shim.  ~300 test caller migrations across `rholang/tests/`; mechanical.  No design.
+- **Randomized tokio-schedule stress test** — property-test the fs handlers under `#[tokio::test(flavor = "multi_thread")]` with `yield_now` inserted at await points.  Catches ordering bugs the deterministic tests miss.
+- **Dir-stream fd deploy-end sweep** (implementation bounded; has design call **DD-Dir**).  See "Phase 9 open items" below for the leak-visibility pin.
+
+**Blocked (not currently actionable — kept here for cross-reference):**
+
+- Phase 10e `fileio_cross_fs_isolation.rho` — blocked on Powerbox stub.
+- `fileio_buffer_spec.rs` — blocked on PB-B-5 (Allocator not published to user deploys).
+- 9c-iii Buffer pairwise-merge test — blocked on Buffer.rho refactor itself.
+- `foldConcurrent` / `mapReduce` positive-path tests — blocked on those methods landing in Stream.rho.
+- `Produce::with_error` for cancellation replies — blocked on reporting-rspace.
+
+### Historical open items (organized by phase)
+
 **Phase 7 open items:**
 
 - **Two-validator PB-M-14 end-to-end test** — needs `TestNode` + `GenesisBuilder` per-node consensus-static HOCON wiring; ~200-300 LOC test once harness confirmed.  **Interim coverage landed 2026-08-26** (`7630b00de`): `fs_wal_spec::multi_deploy_wal_is_byte_identical_on_leader_and_follower` extends the single-deploy byte-identity pin to a 3-deploy sequence with mixed Consensus + Oracular caps; verifies the WAL-byte-identity half of PB-M-14.  Scaffold test `fs_wal_spec::pb_m_14_two_validator_scaffold` (ignored) documents the specific `TestNode` / `GenesisBuilder` gaps and the assertion shape needed.  **FILE-STATE-IDENTITY half landed 2026-08-26** (Path A(ii), pending commit): `fs_wal_spec::pb_m_14_file_state_identity_via_wal_replay` + `wal_applier_skips_failure_outcome_entries` add a fresh-tree WAL applier (`apply_wal_to_fresh_tree`) that reconstructs on-disk file state on an empty follower tree using ONLY the WAL slice + a Phase-7b-style payload sidecar (hash → bytes).  Test drives a 3-deploy Consensus `fsWriteAt`/`fsTruncate` sequence on the leader, applies the resulting WAL to a fresh follower tree, and asserts byte-identical tree contents.  Restricted to `WriteAt`/`Truncate` for now — see new deferred entry "WAL fresh-tree applier: sequential-Write reconstruction" below.  Fully-remaining gap for the two-validator E2E test is Casper block-processing propagation (Path B: TestNode fs provisioning + observation hooks).
