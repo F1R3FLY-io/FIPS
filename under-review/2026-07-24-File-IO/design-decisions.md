@@ -61,6 +61,16 @@ matches the "bytes needed to reconstruct any block between the earliest
 retained snapshot and head" invariant from the plan's Phase 7b
 retention discussion.
 
+**Landed (a):** `4b1c19102` — see implementation-plan.md 7b-2 item (b).
+
+**Landed (y):** `4b54de853` — sidecar-based union.  Each snapshot
+write drops a `<hex(root)>.hashes` sidecar alongside its `.wal`
+file (format: `[u32-be count][32-byte hash × count]`).  Finalization
+runner runs `scan_retained_payload_hashes(snapshot_dir)` (unions
+all sidecars) + `prune_payload_store(payload_dir, keep)` after
+each successful `maybe_write`.  See implementation-plan.md 7b-2
+retention entry.
+
 **Downstream.**
 - 7b-2 follow-up **(b)** — populating the store from fs_write handlers.
 
