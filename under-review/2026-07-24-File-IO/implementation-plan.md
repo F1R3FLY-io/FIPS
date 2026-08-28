@@ -1204,6 +1204,80 @@ The following code changes have consensus-relevant semantics.  All safe on the p
 
 Open items with their blockers.  A fresh session should skim this first — most "what's next?" questions resolve here.
 
+### Session summary — 2026-08-27 evening (head `4b54de853`)
+
+Three of the four 2026-08-27 Phase 7b-2 follow-ups landed in one
+long session; item (c) remains as the multi-session end-to-end
+pickup.  Design-decisions sign-off snapshot lives one-doc-over
+in `design-decisions.md`.
+
+**Commits landed (code repo, in order):**
+
+- `4b1c19102` **feat(fileio): item (b)** — DirectoryPayloadStore
+  persist hook + boot wiring.  Trait `PayloadPersistence` in
+  rholang, `PayloadStoreBundle` bridge in casper, interior-mutable
+  `FileHandleTable.payload_store` slot, all three boot sites read
+  a shared bundle for `WalPayloadContext.payload_lookup`.  874/17
+  LOC, 10 test pins.
+- `b1da314dd` **feat(fileio): item (a)** — reducer API to
+  `FnMut(&WalEntry) -> Option<Vec<u8>>` per DD-7b-2 (a).  New
+  `WalPayloadRetriever::mark_resolved(hash, bytes)` with
+  defense-in-depth rehash (debug_assert! in debug builds, false +
+  peer-fetch fallback in release).  `EnumerateStats` return type.
+  327/23 LOC, 8 test pins (5 new, 1 updated, 2 signature-refactor
+  companions).  Wiring at boot deferred to item (c).
+- `0efc50bf7` **test(fileio): item (a) dedup pin** — retrospective
+  review closed the "repeated hashes across a WAL slice" coverage
+  gap.  +36 LOC (test-only).
+- `4b54de853` **feat(fileio): retention pass (DD-7b-1 (y))** —
+  sidecar-based union.  `<hex(root)>.hashes` next to each
+  snapshot's `.wal`; `scan_retained_payload_hashes` +
+  `prune_payload_store` chained in finalization runner's
+  `WalSnapshotWrite` branch after each `maybe_write` returning
+  Some.  `SnapshotWriter` gained `payload_dir: Option<PathBuf>`;
+  `build_snapshot_writer` gained matching param; `setup.rs`
+  plumbs `data_dir_snapshot.join("wal_payload_store")` through.
+  682/3 LOC, 10 test pins.
+
+**Commits landed (docs repo):**
+
+- `9cd81c1` DD sign-offs + item (b) completion note (6 of 7
+  design decisions committed 2026-08-27; DD-Waiters-XD remains
+  open).
+- `0fc89a8` item (a) completion note.
+- `d0f8fe3` retention completion note.
+
+**Test posture at `4b54de853` (all green):**
+
+| Suite | Result | Delta from start of session |
+|---|---|---|
+| fs_wal_spec | 58/58 | 54 → 58 (+4) |
+| rholang lib io:: snapshot | 68/68 | 62 → 68 (+6) |
+| rholang lib io:: | 291/291 | 285 → 291 |
+| wal_payload | 51/51 | 41 → 51 (+10) |
+| snapshot_chunk | 28/28 | ±0 |
+| payload_store_wiring | 6/6 | 0 → 6 (+6) |
+| snapshot_writer_wiring | 4/4 | ±0 |
+| snapshot_config | 28/28 | 27 → 28 (+1) |
+
+**What remains: item (c).**  Full end-to-end joiner sync path
+— see the next-step candidates block below (unchanged except
+item (c) is now the only outstanding).  It touches
+`initializing.rs`'s joiner boot flow, moves the
+`apply_wal_to_fresh_tree` helper from
+`fs_wal_spec.rs`'s test module to a production location, and
+wires the boot enumerator + apply-to-follower + explicit
+`driver.stop()` (DD-7b-3 (a) committed).
+
+**Auto-memory pointers new this session:**
+
+- `f1r3node_no_running_network.md` — hard-fork surface changes
+  are free on this codebase; don't defer consensus-observable
+  fixes as "hard-fork surface" concerns.
+- `feedback_review_before_commit.md` — pause after tests are
+  green; do security + coverage review; report findings inline
+  before `git commit`.
+
 ### Unblocked next-step candidates (2026-08-27 survey)
 
 Snapshot as of `bc30dd1ce` (Phase 7b-2 review-fixes landed).  Each item is start-anytime; open design decisions are consolidated in `design-decisions.md` (sibling doc).
