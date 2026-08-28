@@ -1204,6 +1204,129 @@ The following code changes have consensus-relevant semantics.  All safe on the p
 
 Open items with their blockers.  A fresh session should skim this first — most "what's next?" questions resolve here.
 
+### Session summary — 2026-08-28 (head `9aae8a722`)
+
+Phase 7b-2 item (c) landed in one full session — the joiner-side
+end-to-end sync path is now wired end-to-end.  All three
+sub-items (applier move, boot enumerator + apply-to-follower wire-in,
+DD-7b-3 (a) driver.stop) shipped together as a single commit
+`9aae8a722 feat(fileio): Phase 7b-2 item (c) — boot enumerator +
+apply-to-follower + driver.stop`.
+
+**c-1 — applier move.**  `apply_wal_to_fresh_tree` moved from
+`rholang/tests/fs_wal_spec.rs:2989` (~200 LOC test-module
+function) to production at
+`rholang/src/rust/interpreter/io/wal_applier.rs`.  Signature
+generalized to `path_map: Fn(&Path) -> PathBuf` closure —
+production joiners pass identity (WAL entries already carry the
+joiner's canonical paths); test callers use the retained
+`translate_path` helper via a thin `apply_wal_translated`
+wrapper (kept in the test module — test-harness artifact per
+handoff guidance).  Four `pb_m_14_*` test call sites + the
+Failure-skip pin re-pin against the production location.  Three
+new unit pins in `wal_applier`: identity path_map writes at
+WAL entry path, Failure entries skip without touching sidecar,
+path_map closure redirects writes.
+
+**c-2 — boot enumerator + apply-to-follower.**  Four new
+pieces compose into the boot-time flow:
+
+- `decode_wal_slice` in `snapshot.rs` — symmetric inverse of
+  `encode_wal_slice` across every op tag (Write/WriteAt/Truncate/
+  Chmod/Chown/RemoveFile/RemoveDir/Rename/CopyFile/Read/ReadAt/
+  Stat/Entries/Size/EntriesStreamNext) + PayloadRef variant +
+  outcome variant.  Byzantine bytes surface as
+  `SnapshotError::MalformedBlob { offset, message }`; truncation
+  as `Truncated`; wrong version as `UnsupportedVersion`.  Six
+  pins: round-trip, empty, truncated prefix, future version,
+  unknown op tag, disk round-trip.
+- `apply_wal_slice_after_fetch` in `wal_payload_sync.rs` —
+  composes the flow: enumerate payloads (reducer `|_| None`
+  per DD-7b-2 (a)'s "no production caller yet" posture) → poll
+  `driver.is_complete()` under a timeout → build dedup'd
+  sidecar via `take_bytes` → apply via `spawn_blocking`.
+  Returns `BootApplyReport` or `BootApplyError::PayloadFetchTimeout
+  { pending_count }` / `BootApplyError::MissingResolvedHash
+  { hash_hex }`.  Four pins: happy path, timeout, dedup,
+  path_map redirect.
+- `SnapshotChunkSyncDriver::install_completion_sink` +
+  `SnapshotCompletion` in `snapshot_chunk_sync.rs` — mpsc-based
+  notification hook fires from `on_chunk_response` after each
+  assembled snapshot is written to disk.  Three pins: sink
+  receives, no-sink no-op, dropped receiver silently tolerated.
+- `wal_apply_boot` module (new) — `spawn_boot_apply_subscriber`
+  subscribes to snapshot completions, calls `read_snapshot_bytes`
+  + `decode_wal_slice` + `apply_wal_slice_after_fetch` per
+  completion.  All error paths log + continue the loop (bad
+  bytes, decode failures, apply timeout, missing hash).  Two
+  end-to-end pins.
+
+Boot wire-in landed in **three** boot sites: `casper_launch.rs`,
+`initializing.rs`, `genesis_ceremony_master.rs` (only the first
+two directly, plus `genesis_ceremony_master.rs`'s
+`WalPayloadContext` construction now provides the new
+`tick_stop: None` field).  Wired only when both `snapshot_chunk_ctx`
+and `wal_payload_ctx` are `Some` — observer nodes without an
+fs_snapshot_writer opt out cleanly.  Source-scan pin
+`boot_pipeline_installs_wal_apply_subscriber` in
+`snapshot_config.rs` catches future refactors that drop the
+wire-in.
+
+**c-3 — DD-7b-3 (a) driver.stop plumbing.**  Diverges from the
+earlier lean of drain-by-stale-eviction per user sign-off
+2026-08-27.  `spawn_periodic_tick` now returns a
+`WalPayloadTickHandle { join_handle, stop }` where `stop:
+WalPayloadTickStop` wraps a `tokio::sync::Notify`.  The tick
+loop selects between `interval.tick()` and `signal.notified()`;
+`stop()` exits the loop at the next select boundary (immediately
+if idle, or after the current `driver.tick(...)` completes).
+`WalPayloadContext.tick_stop: Option<WalPayloadTickStop>`
+colocates the handle with the driver so a future block-processing
+catch-up detector (not yet built) can raise the signal.  Two
+pins: stop signal exits the loop within 2s, cloned stop handle
+works.
+
+**Trust boundary.**  `decode_wal_slice` accepts arbitrary bytes
+and returns `MalformedBlob` on schema violations — but path
+bytes decode to `PathBuf` without traversal sanitization.
+Deliberate: the upstream Merkle-root chunk-verify (Phase 7b-1)
++ `read_snapshot_bytes` root re-check are the trust anchor;
+a byzantine peer would have to forge Blake2b256 to inject a
+malicious path.  Documented in the decoder + `wal_apply_boot`
+module docstrings.
+
+**Test posture at `9aae8a722` (all green):**
+
+| Suite | Result | Delta from start of session |
+|---|---|---|
+| fs_wal_spec | 58/58 | ±0 |
+| rholang lib io:: | 300/300 | 291 → 300 (+9: 6 decoder + 3 wal_applier unit) |
+| wal_payload | 57/57 | 51 → 57 (+6: 4 apply-after-fetch + 2 stop-signal) |
+| snapshot_chunk | 31/31 | 28 → 31 (+3 completion-sink) |
+| wal_apply_boot | 2/2 | new module |
+| payload_store_wiring | 6/6 | ±0 |
+| snapshot_writer_wiring | 4/4 | ±0 |
+| snapshot_config | 28/28 | 27 → 28 (+1 source-scan pin) |
+| casper lib (full) | 690/690 | ±0 regressions |
+| rholang lib (full) | 690/690 | ±0 regressions |
+
+**Not landed (deferred to follow-up):**
+
+- Live reducer wiring — the `|_| None` reducer at
+  `apply_wal_slice_after_fetch`'s enumerate call site means every
+  payload gets fetched from peers even when the joiner could
+  reproduce it locally from deploy data.  DD-7b-2 (a) committed
+  reducer signature is in place; a specific reducer + caller
+  will unlock local reproduction.
+- Block-processing catch-up detector → `tick_stop.stop()`.
+  DD-7b-3 (a) plumbing is in place; the detector that raises the
+  signal doesn't exist yet (needs to observe head consumption).
+- Two-validator PB-M-14 E2E — item (d).  Byte-transport now fully
+  wired; still needs `TestNode` retrofit for shared FS root +
+  in-process TransportLayer stub.  Bounded scaffolding (~200-300
+  LOC harness + ~50 LOC test).  Now genuinely a "compose the
+  ready pieces" slice.
+
 ### Session summary — 2026-08-27 evening (head `4b54de853`)
 
 Three of the four 2026-08-27 Phase 7b-2 follow-ups landed in one
@@ -1290,7 +1413,7 @@ Snapshot as of `bc30dd1ce` (Phase 7b-2 review-fixes landed).  Each item is start
 
 - ~~**Retention pass (DD-7b-1 (y)).**~~ **LANDED** `4b54de853` (2026-08-27).  Sidecar-based: `write_snapshot` writes a `<hex(root)>.hashes` file alongside each `.wal` (format `[u32-be count][32-byte hash × count]`).  `prune_snapshot_dir` also removes `.hashes` siblings.  New `scan_retained_payload_hashes(snapshot_dir)` unions all sidecars.  New `prune_payload_store(payload_dir, keep)` deletes any 64-char-hex-decode-valid filename not in the keep set; skips symlinks and non-hex names for defense.  Finalization runner's `WalSnapshotWrite` branch chains `spawn_blocking(scan_retained_payload_hashes → prune_payload_store)` after each successful `maybe_write`.  Corrupt sidecars → over-eager prune (safe direction — joiner re-fetches from peers).  `SnapshotWriter` gained an optional `payload_dir: Option<PathBuf>` field; `build_snapshot_writer` gained a matching parameter; `setup.rs` plumbs `data_dir_snapshot.join("wal_payload_store")` through.  Pins: 6 snapshot-side (referenced_payload_hashes dedup + Hash-only filter, sidecar round trip, corrupt-sidecar-as-empty, `write_snapshot` writes sidecar, `scan_retained_payload_hashes` union across snapshots + skips non-`.hashes` files, `prune_snapshot_dir` removes siblings) + 4 payload-side (remove non-retained, ignore non-hex names, missing dir → Ok(0), skip symlinks).  Not landed: end-to-end integration test showing the three-way chain via finalization runner (item (c) will exercise).
 
-- **(c) Wire the boot enumerator + apply-to-follower path.**  `enumerate_and_enqueue_payloads` isn't called from any production site.  Need a caller in `casper_launch` / `initializing` after snapshot fetch completes; on retriever `is_complete()`, collected bytes need to be applied via the fresh-tree WAL applier (helper `apply_wal_to_fresh_tree` lives in `fs_wal_spec` test module — must move to a production location).  Depends on design decision **DD-7b-3** (sync completion signal).
+- ~~**(c) Wire the boot enumerator + apply-to-follower path.**~~ **LANDED** `9aae8a722` (2026-08-28).  Full end-to-end joiner sync path shipped in one session: (c-1) applier moved to `rholang/src/rust/interpreter/io/wal_applier.rs` with a `Fn(&Path) -> PathBuf` path_map closure; (c-2) `decode_wal_slice` + `apply_wal_slice_after_fetch` helper + `SnapshotChunkSyncDriver::install_completion_sink` + `wal_apply_boot::spawn_boot_apply_subscriber` compose into the flow; boot wire-in in `casper_launch.rs` + `initializing.rs` installs the sink + spawns the subscriber whenever both contexts are Some; (c-3) DD-7b-3 (a) `WalPayloadTickStop` handle wraps a `tokio::sync::Notify` for graceful shutdown of `spawn_periodic_tick`, colocated on `WalPayloadContext.tick_stop`.  16 new pins across the touched modules; source-scan pin `boot_pipeline_installs_wal_apply_subscriber` in `snapshot_config.rs` catches future refactors that drop the wire-in.  Deferred: live reducer wiring (uses `|_| None` for now); block-processing catch-up detector that raises `tick_stop.stop()`.  See implementation-plan.md's session summary block for the full picture.
 
 - **(d) Two-validator PB-M-14 E2E.**  Byte-transport now ready; still needs `TestNode` retrofit for shared FS root + in-process TransportLayer stub.  Bounded scaffolding (~200-300 LOC of harness + ~50 LOC test).  See interim-coverage note in "Phase 7 open items" below for what's already pinned.
 
