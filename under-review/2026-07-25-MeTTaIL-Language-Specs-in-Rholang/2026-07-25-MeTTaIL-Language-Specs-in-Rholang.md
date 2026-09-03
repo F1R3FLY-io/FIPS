@@ -96,7 +96,8 @@ The implementation is conforming only when all of these layers are present and
 their equivalence obligations pass:
 
 - the `Module` / `Theory` surface in the existing nouveau Rholang grammar;
-- the ordinary Rholang `language/2` value and its one schema decoder;
+- the backward-compatible ordinary Rholang `language/2` value, the
+  generalized `language/3` value, and their one versioned schema decoder;
 - validation, canonicalization, GrammarCore lowering, parser-image generation,
   image verification, and atomic installation;
 - opaque installed-language handles and scoped registry publication;
@@ -110,8 +111,11 @@ their equivalence obligations pass:
 `Theory`, `Types`, `Exports`, `Replacements`, `Terms`, `Equations`, and
 `Rewrites` express a grammar without Rust; how theory join, meet, difference,
 application, and local binding compose presentations; and how the result maps
-to the exhaustive `language/2` value. Identity, validation, FLT integration,
-security, registry loading, and runtime backend generation are also in scope.
+to the exhaustive `language/2` or `language/3` value. The generalized
+`language/3` form additionally carries checked interactive, continued,
+operational-logic, and semantic-resource structure. Identity, validation, FLT
+integration, security, registry loading, runtime backend generation, and the
+cost-accounted Rholang projection are also in scope.
 
 Registry modules are resolved now through an injected Versioned Registry
 capability. Filesystem references are recognized but remain unavailable until
@@ -216,7 +220,7 @@ $`\uplus`$ and $`\setminus`$.
 | **FIPS** | F1R3FLY Improvement Proposal Specification — the normative change-proposal format of this repository. A FIPS moves through `under-review/` and then `approved/`. |
 | **MeTTaIL** | The codename of **Rholang 1.4** and the name of its language-definition framework. Named for SingularityNET's *MeTTa*, an experimental artificial-intelligence language whose requirements drive the new features. |
 | **Rholang** | The reflective, higher-order concurrent process calculus f1r3fly nodes execute [Meredith & Radestock 2005]. |
-| **DDL** | Data Definition Language — the `Module` / `Theory` authoring notation and its canonical `language/2` value representation. They are two surfaces over one data model; see §III.2. |
+| **DDL** | Data Definition Language — the `Module` / `Theory` authoring notation and its canonical `language/2` or `language/3` value representation. They are two surfaces over one data model; see §III.2. |
 | **BNF** | Backus–Naur Form — the classical production notation `Label . Category ::= Item Item ;`. `language!`'s original term syntax is a BNF variant, and the value form keeps it under the `"items"` key (§IV.7). |
 | **BNFC** | BNF Converter — the grammar toolkit and labelled-production notation used by `metta_venus.cf`. |
 | **EBNF** | Extended BNF — BNF plus the repetition, option, and grouping metasyntax `{ … }`, `[ … ]`, `( … )`. §III.3's L0 surface grammar is written in EBNF. |
@@ -229,6 +233,14 @@ $`\uplus`$ and $`\setminus`$.
 | **Displayed site** | A distinguished occurrence in a Hypercube operational presentation. It records where contextual behavior is generated; it is not an FLT substitution hole. |
 | **Observer context** | A context admitted by a language's observation profile. It may test behavior without receiving unrestricted AST-reflection authority. |
 | **Effect grade** | A monotone summary of required authority and observable effects. Composition joins grades and can never manufacture authority. |
+| **Semantic resource grade** | The language-theoretic cost attached to a transition of $`\mathsf{Cost}(G)`$. It is distinct from parser ranking, logical work, validator funding, and actual settlement. |
+| **Located purse** | A finite token stack indexed by the interaction surface allowed to draw from it. Location makes authority explicit and factors a global funding proof into local obligations. |
+| **Reject-safe decision** | One of `Proven`, `Refuted`, or `Undetermined`. Exhausting a bound yields `Undetermined`; no consensus, admission, spending, or effectful operation may treat it as proof. |
+| **Language bundle** | The canonical, versioned deployment artifact containing one `LanguageCore`, its verified parser, semantic, OSLF, and cost images, their separate fingerprints and ABI identifiers, limits, provenance, and checker certificates. Source text is not executable bundle content. |
+| **Bootstrap seed** | The minimized, audited frontend used only to parse and check the canonical Rholang 1.4 self-specification during a staged build. It is neither a second production parser nor a second evaluator. |
+| **Bootstrap fixed point** | Equality of the canonical core and derived artifact bytes after the generated Rholang frontend parses the same canonical self-specification and regenerates them. It proves reproducible self-description, not equivalence of arbitrary context-free grammars. |
+| **Occurrence identity** | A stable identity for one syntactic occurrence in a parse derivation. Source maps index occurrences rather than semantic term hashes, so identical subterms at different locations retain distinct spans without changing semantic identity. |
+| **Cost plan** | A checked, immutable description of the semantic resource transitions required by a cost-decorated term. It remains paired with the lowered Rho term and resource certificate; lowering never erases it into an unsigned `Par`. |
 | **Spec value** | A Rholang value denoting a presentation or a whole specification, in the notation of §III.4. Written $`v`$. |
 | **Native block** | A `![ … ]` or `![{ … }]` region carrying an expression in the active `semantics` language. §V. |
 | **Fold / step** | The two evaluation modes for a native block: `fold` (constant folding only) and `step` (congruence-driven single steps). A native block with neither keyword is a *mode-less* block — see the census in §V.2. |
@@ -258,6 +270,10 @@ $`\uplus`$ and $`\setminus`$.
 | $`\setminus`$ (written `∖`) | **Sequence difference, order-preserving.** `xs ∖ ys` is the subsequence of `xs` obtained by deleting every element that occurs in `ys`, leaving the *relative order of the survivors exactly as it was in* `xs`. It is written as a difference and not as a filter because the removed set is characterised extensionally (`auto_injected(d)` — the rules the augmentation pass appended), not by a predicate on elements. Order preservation is load-bearing: §III.6.3's right-inverse property $`\mathcal{E} \circ \mathsf{enc} = \mathrm{id}`$ holds only if re-running the augmentation pass over `xs ∖ ys` reproduces `xs` positionally, which it does because augmentation appends. |
 | $`\models`$ (written `\|=`) | The **satisfaction predicate** of a behavioral-type guard: `t \|= φ` reads "the term `t` satisfies the behavioral type `φ`". §VII.3. |
 | $`\langle K \rangle \varphi`$ | The modal operator of the OSLF logic: "some rewrite matching $`K`$ leads to a state satisfying $`\varphi`$". §VII.3 records Meredith's richer indexed form. |
+| $`\mathsf{Cost}(G)`$ | The cost-accounting endofunctor applied to a checked continued interactive language theory $`G`$. It adds signatures, temporal token stacks, wrapped terms, located stacks, graded transitions, and their laws. |
+| $`\eta_G`$, $`\mu_G`$ | Respectively the unit embedding unsigned $`G`$ terms into $`\mathsf{Cost}(G)`$ and the multiplication flattening nested cost structure. They satisfy the monad laws in §XVIII. |
+| $`\Delta_s`$, $`\Sigma_s`$, $`\kappa`$ | Semantic resource demand, host-visible supply, and the protocol-pinned projection from semantic grades to validator funding demand. They are distinct from parse weights and logical work. |
+| $`\preceq`$ | The resource preorder. $`a \preceq b`$ means $`b`$ provides at least the resource represented by $`a`$; a conservative host projection may over-approximate demand but never undercount it. |
 
 ### The implementation surface this FIPS builds on
 
@@ -266,6 +282,11 @@ $`\uplus`$ and $`\setminus`$.
 | **`language!`** | The MeTTaIL procedural macro turning Rust tokens into a `LanguageDef` (`macros/src/lib.rs`). |
 | **`LanguageDef`** | The parsed, composed, augmented specification record (`ast/src/language/model.rs`); the sole input to every backend generator. |
 | **GrammarCore** | The versioned, source-neutral grammar intermediate representation consumed by backend compilers and fingerprinted for parser-image verification. |
+| **LanguageCore** | The versioned source-neutral pair of a `GrammarCore` and a `TheoryCore`. Its full fingerprint commits to syntax, dynamics, OSLF judgments, effects, resource profiles, limits, and checker ABIs. |
+| **TheoryCore** | The closed, canonical semantic projection of a language: sorts, constructors, binding, equations, rewrites, observations, interaction structure, morphisms, effects, OSLF judgments, limits, and optional checked $`\mathsf{Cost}(G)`$ structure. |
+| **Interactive GSLT** | A GSLT equipped with a checked interaction cut and observation structure. A plain GSLT need not be interactive. |
+| **Continued interactive GSLT** | An interactive GSLT additionally equipped with the continuation, near, compute, canonical-section, wrappability, and quote-faithfulness witnesses needed to define $`\mathsf{Cost}(G)`$. Interactivity alone does not imply this structure. |
+| **Semantic transition kernel** | The one bounded transition interface used by both execution and OSLF checking. It returns checked next terms, effects, observations, and resource grades; OSLF never reinterprets rewrite rules in a second evaluator. |
 | **PraTTaIL** | MeTTaIL's parser generator: Pratt parsing (precedence climbing over prefix/infix binding powers) plus recursive descent, compiled to a weighted push-down automaton. |
 | **WPDA** | Weighted Push-Down Automaton — a push-down automaton whose transitions carry semiring weights, used here as the parser backend PraTTaIL emits. Weights drive ambiguity resolution. |
 | **WFST** | Weighted Finite-State Transducer — the finite-state device, weighted over a semiring, used in MeTTaIL's lexical and disambiguation analyses. |
@@ -1085,6 +1106,54 @@ field available even when it has no dedicated convenience builder. A program
 may also construct and publish a complete `language/2` value directly. Both
 paths have identical canonical bytes and GrammarCore fingerprints.
 
+#### III.3.2 Ordinary module processes are staged, not installed
+
+An ordinary `Proc` in `ModuleItem` is Rholang orchestration colocated with the
+language declarations. It is not a theory expression, canonical module
+content, grammar input, parser-image input, or authority grant. In particular,
+installing a module must never execute such a process and must never let it
+implicitly capture an installed-language handle.
+
+The nouveau Rholang parser has already parsed the complete module at this
+boundary. Its structural lowerer visits module items in source order and emits
+each top-level ordinary process as the normalized `rhoapi::Par` leaf of a
+tagged `module-program` item. The installer first charges the complete envelope
+under §III.6.4's whole-candidate bounds. It then moves each process leaf into an
+ordered staging vector and replaces the leaf with the exact pair
+`(slot, source-ordinal)`. This is structural ownership transfer, not
+serialization to source and not a call to another parser. Recursive DDL and
+embedded value structure use the bounded explicit worklists of §III.4.1; the
+fixed module framing pass is a single iterative scan.
+
+```text
+⟨Stage ordinary module processes⟩ ≡
+  require the complete candidate has passed whole-candidate admission
+  staged ← []
+  for each (source_ordinal, item) in module.items:
+    if item is ModuleProgram(process):
+      require process is closed
+      slot ← length(staged)
+      move process into staged[slot]
+      replace item with ModuleProgramRef(slot, source_ordinal)
+  require references form an exact bijection with staged entries
+  return module-with-references, staged
+```
+
+The elaborator preserves every reference's source position but ignores it when
+constructing canonical `module/1` data, GrammarCore, semantic fingerprints, and
+parser images. This makes grammar identity depend only on the language
+presentation. The installer releases the staged vector only after every module
+export has committed atomically. The caller receives each process as an inert
+quoted Rholang value with its source ordinal and must explicitly dereference it
+under ordinary Rholang authority. A rejected installation returns neither
+handles nor staged processes, and schedules nothing.
+
+Staged processes are local inline orchestration and are not part of a Registry
+module record. Registry resolution installs the signed canonical module and its
+exports but returns no startup process. Publishing executable orchestration
+would require a separately specified, signed, capability-gated package format;
+grammar publication alone must not become remote-code execution.
+
 ### III.4 L1 — the canonical value form
 
 #### III.4.1 Which Rholang shape carries which meaning
@@ -1132,6 +1201,98 @@ guess. The value form is expressible using existing nouveau Rholang literals;
 the L0 DDL surface is separately added to the same `Proc` grammar as specified
 in §III.3.
 
+##### Sectioned depth and whole-value resource admission
+
+Transport framing is not language recursion. The versioned structural envelope
+used to carry an already-parsed L0 `Module` or `Theory` contains fixed tagged
+lists around the DDL tree; a `Data(v)` builder additionally contains an opaque
+canonical value. An implementation must not subtract those fixed lists and tag
+strings from either semantic depth budget.
+
+Let $`D_{\mathrm{ddl}}`$ bound recursive DDL constructors and let
+$`D_{\mathrm{value}}`$ bound canonical maps and lists. A structural envelope is
+depth-admissible exactly when
+
+```math
+\operatorname{depth}_{\mathrm{ddl}}(r) \le D_{\mathrm{ddl}}
+\quad\land\quad
+\forall v \in \operatorname{data}(r),\quad
+\operatorname{depth}_{\mathrm{value}}(v) \le D_{\mathrm{value}},
+```
+
+where $`r`$ is the decoded DDL root and $`\operatorname{data}(r)`$ is the
+sequence of `Data(v)` payloads. A direct L1 `language/2` value is checked from
+its own root against $`D_{\mathrm{value}}`$. In particular, a legal DDL tree at
+its exact bound may contain a legal `Data(v)` at its exact bound; neither spends
+the other's depth allowance.
+
+Depth separation does not exempt framing or payloads from denial-of-service
+limits. Before schema projection, one explicit worklist scans the complete
+value and charges every node, collection item, map-key byte, string byte, byte
+array, and allocation against host limits. Schema projection then uses a second
+section-typed worklist for semantic depth:
+
+```text
+⟨Admit one structural DDL envelope⟩ ≡
+  require exact envelope version, root tag, and arity
+  scan every envelope node iteratively and charge whole-value resources
+  work ← [(DdlStructure, root, 1)]
+  while work is not empty:
+    (section, node, depth) ← pop(work)
+    require depth ≤ limit(section)
+    if node is Data(v):
+      scan v iteratively from depth 1 under CanonicalData
+    else:
+      push semantic children at depth + 1 in deterministic reverse source order
+  return the already-parsed structural declaration
+```
+
+The decoder may fuse these worklists, but it must preserve both judgments and
+their diagnostics. It must use checked counters and heap-resident work storage;
+attacker-selected depth must never consume the native call stack. Failure of
+either whole-value resources or a section-local depth bound rejects the entire
+candidate before installation, with no partial declaration, alias, handle, or
+effect.
+
+##### One string-literal transducer
+
+Every Greg/Mike `String` position—import references, grammar terminals, and
+separator text—uses nouveau Rholang's `StringLiteral` token semantics. Every
+path that lexes textual DDL—inline L0 today and a future capability-backed file
+resolver—must call the same deterministic transducer. A canonical Registry
+record contains already-decoded Rholang values, so production installation
+must not lex or parse its optional source oracle. These paths must not maintain
+two escape tables.
+
+The transducer has normal and escaped states. Only escaped double quote and
+escaped backslash contract; every other pair retains its leading backslash.
+Thus `\"` denotes a double quote, `\\` denotes one backslash, and the source
+spellings `\n`, `\t`, and `\x` denote two literal characters each rather than a
+newline, tab, or implementation-specific escape. Unicode scalar values pass
+through unchanged.
+
+```text
+⟨Decode a Rholang string token⟩ ≡
+  require one opening and one unescaped closing double quote
+  output ← empty string
+  cursor ← first character inside the quotes
+  while cursor is not at the closing quote:
+    if cursor is not backslash:
+      append cursor; advance once
+    else:
+      require a following character e
+      if e is double quote or backslash: append e
+      else: append backslash; append e
+      advance twice
+  return output
+```
+
+The loop is linear in Unicode scalar values, never recursive, and never expands
+the decoded output beyond the token body. Conformance includes an encoder/
+decoder round trip, unknown-escape preservation, malformed-frame rejection,
+and differential equality between inline lowering and direct decoding of the
+equivalent canonical Registry value.
+
 #### III.4.2 The grammar of the value form
 
 ![The canonical value form's schema: the Spec record and every production reachable from it, annotated with which Rholang shape each production uses and why](diagrams/09-value-form-schema.svg)
@@ -1178,7 +1339,7 @@ does not join those lines falsely reports `BehavioralPred`, `RefinementPred` and
 **A whole specification.**
 
 ```text
-Spec ::= { "mettail"  : "language/2"       -- notation version, required
+Spec ::= { "mettail"  : "language/2" | "language/3" -- required
          , "name"     : Str                -- an identifier, gated by III.6
          , "options"? : { Str : Scalar, … }
          , "rights"?  : [ LanguageRight, … ] -- request, never authority
@@ -1194,6 +1355,7 @@ Spec ::= { "mettail"  : "language/2"       -- notation version, required
          , "equations"?: [ Equation, … ]
          , "rewrites"?: [ Rewrite, … ]
          , "relations"?: [ RelationDecl, … ]
+         , "oslf"?    : OslfDecl             -- language/3 only
          , "extends"? : [ Str, … ]  , "includes"? : [ Str, … ]
          , "mixins"?  : [ Str, … ]
          , "exports"? : [ [Str, Str], … ]  -- category renaming, A => B
@@ -1205,12 +1367,14 @@ Spec ::= { "mettail"  : "language/2"       -- notation version, required
 
 LanguageRight ::= "Parse" | "Construct" | "Match" | "Observe"
                 | "ReflectAst" | "Reduce" | "Bridge" | "Publish"
-                | "Introspect"
+                | "Introspect" | "Check" | "SearchProof" | "Spend"
 ```
 
 `rights` is a declarative request profile, not a grant. Its default is
 `["Parse", "Construct", "Match", "Observe", "ReflectAst", "Reduce"]`;
-`Bridge`, `Publish`, and `Introspect` therefore require explicit opt-in. An
+`Bridge`, `Publish`, `Introspect`, `Check`, `SearchProof`, and `Spend` therefore
+require explicit opt-in. `Spend` requests permission to present already-held
+resource authority; it never provisions supply. An
 explicit empty list requests no operations, whereas an absent key requests the
 default profile. A duplicate or unknown name is an error. Canonical order is
 the `LanguageRight` production order above, and composition takes set union.
@@ -1224,7 +1388,75 @@ same map restricted to the block's own key, so `types = [ … ]` and
 `types { … }` carry identical information.
 
 The `"mettail"` key is mandatory. It is what lets the elaborator reject a value
-that is merely map-shaped, and what lets a future `"language/3"` coexist.
+that is merely map-shaped. `language/2` forbids the `"oslf"` key and migrates
+deterministically to a structural-only `TheoryCore`; `language/3` admits the
+closed OSLF schema below. Both versions project their parser-relevant fields to
+the same `GrammarCore`, so adding semantic structure cannot perturb the parser
+cache identity.
+
+**OSLF and continued-interaction data.** Every string in this schema is either
+a stable label declared in the same canonical theory or a versioned handler,
+effect, checker, or projection URN admitted by the installer. It is never Rust
+source, a host function pointer, a wallet identifier, or ambient authority.
+Recursive term and proof structures are decoded with explicit work stacks and
+the declared `TheoryLimits`.
+
+```text
+OslfDecl ::= { "actions"?    : [ SemanticAction, … ]
+             , "judgments"?  : [ JudgmentDecl, … ]
+             , "observations"?: [ ObservationDecl, … ]
+             , "morphisms"?  : [ TheoryMorphism, … ]
+             , "effects"?    : [ EffectDecl, … ]
+             , "interactive"?: InteractiveDecl
+             , "continued"?  : ContinuedDecl
+             , "cost"?       : CostDecl
+             , "resource_projection"? : ResourceProjection
+             , "limits"?     : TheoryLimits }
+
+SemanticAction ::= { "id": Str, "domain": [Str, …], "codomain": Str
+                   , "transition": RuleRef, "effect": Str, "grade": Str }
+RuleRef ::= ["rewrite", Str] | ["equation", Str] | ["handler", Str]
+
+JudgmentDecl ::= { "name": Str, "arguments": [Str, …]
+                 , "decision": "exact" | "bounded"
+                 , "rules": [ JudgmentRule, … ] }
+JudgmentRule ::= { "name": Str, "premises": [ JudgmentAtom, … ]
+                 , "conclusion": JudgmentAtom }
+JudgmentAtom ::= { "judgment": Str, "terms": [ TheoryTerm, … ] }
+TheoryTerm ::= ["var", Str] | ["ctor", Str, [TheoryTerm, …]]
+             | ["literal", Scalar]
+
+ObservationDecl ::= { "name": Str, "action": Str, "result": Str }
+TheoryMorphism ::= { "name": Str, "source": Str, "target": Str
+                   , "categories": [[Str, Str], …]
+                   , "constructors": [[Str, Str], …]
+                   , "actions": [[Str, Str], …]
+                   , "grades": [[Str, Str], …] }
+EffectDecl ::= { "name": Str, "requires": [Str, …], "emits": [Str, …] }
+
+InteractiveDecl ::= { "cut": Str, "channel_sort": Str, "datum_sort": Str
+                    , "continuation_sort": Str }
+ContinuedDecl ::= { "k": Str, "kp": Str, "ke": Str, "k_prime": Str
+                  , "near": Str, "compute": Str, "section": Str
+                  , "wrappability": Str, "quote_faithfulness": Str }
+CostDecl ::= { "base": Str, "signature_sort": Str, "stack_sort": Str
+             , "wrapped_sort": Str, "located_sort": Str
+             , "product": Str, "unit": Str, "rules": [Str, …]
+             , "eta": Str, "mu": Str, "map": Str, "laws": [Str, …] }
+ResourceProjection ::= { "abi": Str, "grade_sort": Str, "demand_sort": Str
+                       , "project": Str, "proof": Str }
+TheoryLimits ::= { "max_term_nodes": Int, "max_proof_nodes": Int
+                 , "max_frontier": Int, "max_steps": Int
+                 , "max_grade_bits": Int }
+```
+
+The presence relations are normative. `continued` requires `interactive` plus
+checked section, wrappability, and quote-faithfulness witnesses. `cost` requires
+`continued`; a decoder must not infer either profile. A
+`resource_projection` is usable for consensus only when its protocol-pinned ABI
+and proof establish equality with, or a conservative upper bound on, host
+demand. A bounded judgment returns `Undetermined` at exhaustion and therefore
+cannot authorize admission, spending, or effects.
 
 **Why `"language/2"` and not `"language/1"`.** The declarative `NativeEval`
 forms are a **new identity**, not a v1-compatible refactor, for a reason that is
@@ -2336,16 +2568,21 @@ Four properties of $`\mathsf{enc}`$ are worth stating, and one non-property.
 Elaboration is only half of what `install!` does. The whole operation, in the
 same literate form, so that §IX's gates have a procedure to attach to:
 
+`SpecInput` means either a direct canonical `language/2` value or the closed
+structural envelope produced by nouveau Rholang for an L0 `Module` or `Theory`.
+
 ```text
-⟨install(v : Value, p : Provenance, grants : Authority, ret : Name)⟩ ≡
-  ⟨G5a — admission bound, BEFORE anything is decoded⟩
+⟨install(candidate : SpecInput, p : Provenance, grants : Authority, ret : Name)⟩ ≡
+  v, staged ← ⟨G5a — admission and staging, BEFORE DDL/value decode⟩
+  require staged references exactly match staged            -- before commit
   graph ← resolve and pin the complete import graph
   d, F ← ⟨Elaborate a Rholang specification value⟩          -- G1, G2, identity
   requested ← ⟨G4 — resolve every capability reference⟩     -- consumes p
   rights ← intersect(requested, grants)                      -- cannot amplify
   image ← ⟨Build and verify the installable artifacts⟩
-  h ← atomic_install(F, d, image, rights)                    -- no partial state
-  ret!({"ok": h})                                            -- opaque handle
+  receipt ← atomic_install_all(F, d, image, rights, requested.bindings)
+                                                            -- one commit point
+  ret!(release_success(receipt, quote(staged)))              -- no execution
 
 Provenance ::= Local | NonLocal
 ```
@@ -2353,6 +2590,12 @@ Provenance ::= Local | NonLocal
 Every failing branch sends `{"error": InstallError}` on `ret`; it never sends
 a handle-shaped value and never changes installed state. The return channel is
 fresh and private. A success-only map pattern therefore cannot consume an error.
+For a standalone language, `release_success` retains the existing
+`{"ok": handle}` shape. For a module it returns
+`{"ok": {"module": name, "exports": [{"name": n, "handle": h}, ...],
+"programs": [{"ordinal": i, "program": @{P}}, ...]}}`. The export and program
+lists are both in source order. Constructing this response only quotes and sends
+data; it neither schedules `P` nor grants any returned handle to `P`.
 
 > **Short forms, bound here so they are never ambiguous.** Three fragment names
 > are abbreviated throughout the rest of this document. Each **is** its long
@@ -2360,8 +2603,8 @@ fresh and private. A success-only map pattern therefore cannot consume an error.
 >
 > | Short form | Long form | Defined at |
 > | --- | --- | --- |
-> | `⟨install⟩` | `⟨install(v : Value, p : Provenance, grants : Authority, ret : Name)⟩` | above |
-> | `⟨G5a⟩` | `⟨G5a — admission bound, BEFORE anything is decoded⟩` | below |
+> | `⟨install⟩` | `⟨install(candidate : SpecInput, p : Provenance, grants : Authority, ret : Name)⟩` | above |
+> | `⟨G5a⟩` | `⟨G5a — admission and staging, BEFORE DDL/value decode⟩` | below |
 > | `⟨G4⟩` | `⟨G4 — resolve every capability reference⟩` | below |
 >
 > **★ And `install!` in Rholang IS `⟨install⟩`'s `NonLocal` entry point, by
@@ -2405,52 +2648,76 @@ fresh and private. A success-only map pattern therefore cannot consume an error.
 > request came through.
 
 ```text
-⟨G5a — admission bound, BEFORE anything is decoded⟩ ≡        -- §IX.3 R-2
-  require size(v)              ≤ MAX_SPEC_BYTES   else Err(SpecTooLarge)
+⟨G5a — admission and staging, BEFORE DDL/value decode⟩ ≡     -- §IX.3 R-2
+  measure ← iteratively_measure_complete_normalized_Par(candidate)
+  require measure.par_nodes    ≤ MAX_SPEC_PAR_NODES else Err(SpecTooLarge)
+  require measure.encoded_bytes ≤ MAX_SPEC_BYTES    else Err(SpecTooLarge)
+  v, staged ← ⟨Stage ordinary module processes⟩     -- structural ownership move
+  v ← decode_canonical_value_with_sectioned_limits(v)
   require |v["terms"]|         ≤ MAX_RULES        else Err(TooManyRules)
   require |v["tokens"]| + |v["modes"]| ≤ MAX_TOKENS else Err(TooManyTokens)
   require every regex in v is BACKTRACK-FREE      else Err(UnboundedRegex)
   require alternation_count(v) ≤ MAX_ALTERNATIONS else Err(TooAmbiguous)
+  return v, staged
 ```
+
+The first traversal covers the original candidate, including every ordinary
+module process, before ownership transfer can remove a leaf from the canonical
+decoder's view. `measure.par_nodes` is the exact reachable-`Par` count and
+`measure.encoded_bytes` is the exact protobuf body length. Both are computed by
+linear explicit-stack machines with checked counters. The sectioned decoder
+then applies the independent DDL/value depth, collection, string, and byte-array
+limits of §III.4.1. Thus staging cannot be used to retain an uncharged process,
+and neither size check requires native recursion.
 
 ```text
 ⟨G4 — resolve every capability reference⟩ ≡
-  for each ["handler", urn] ∈ eval-positions of d :
-    require registry.contains(urn)               else Err(UnregisteredHandler urn)
-    require registry.arity(urn) = declared arity else Err(HandlerArityMismatch urn)
-    require registry.code_hash(urn) = commitment(urn)   -- see below: NOT from d
-                                                 else Err(HandlerCodeMismatch urn)
+  requirements ← collect_callback_requirements(d, F)   -- iterative, ordered set
+  for each r ∈ requirements :
+    m ← injected_catalog.lookup(r.key)            else Err(MissingCapability r.key)
+    require m.key = r.key                         else Err(CapabilityKeyMismatch)
+    require r.effect ∈ m.effects                  else Err(UnderdeclaredEffect)
+    require valid_abi(m.abi)                      else Err(InvalidCapabilityAbi)
+    require valid_exact_cost(m.cost)              else Err(InvalidCapabilityCost)
+    bindings[r.key] ← m
+  for each (key, committed) ∈ bindings :
+    require injected_catalog.lookup(key) = committed
+                                                 else Err(CapabilityChanged key)
   for each ["extern", urn] ∈ carrier-positions of d :
     require carrier_registry.contains(urn)       else Err(UnregisteredCarrier urn)
   for each theory name t ∈ d.guard_config :
     require theory_registry.contains(t)          else Err(UnregisteredTheory t)
   if p = NonLocal then
     require d contains no ["src", …]             else Err(SrcNotPublishable)
+  return { requests: requested_rights(d), bindings }
 ```
 
-> **★ `commitment(urn)` must not come from the specification, or the check is
-> vacuous.** The clause compares the node's registered evaluator against a
-> commitment; if the specification supplied both the URN *and* the commitment,
-> the attacker would be supplying both sides of an equality and the check would
-> assert only that the attacker is self-consistent. `commitment` is therefore
-> defined as a **third-party binding**, and exactly one of these two sources:
->
-> 1. **Registry-published.** The handler's code hash is published in the
->    versioned registry alongside the evaluator, under the deployer's key, and
->    `commitment(urn)` is a lookup against that published record. The binding's
->    integrity is the registry's, not the specification's.
-> 2. **Carried by the URN itself.** The `mtl:native:` band is extended so that
->    the URN's terminal component **is** the code hash —
->    `mtl:native:{fingerprint}:{label}:{code_hash}` — making the commitment part
->    of the name the specification must already know in order to reference the
->    handler at all. An attacker can then name any hash it likes, but naming a
->    hash the node does not have registered is `Err(UnregisteredHandler)`.
->
-> Which of the two is a handler-registry design decision, not a notation one,
-> and §IX.6 records it as such. What is **normative here** is the negative: a
-> `"commitment"` key in the `Spec` map, or any other specification-supplied
-> source for the right-hand side, is **inadmissible**, and §III.4.2's key set
-> accordingly has none.
+Here `r.key` is the fingerprint-scoped triple
+$`(F,mathsf{kind},mathsf{name})`$, where `kind` distinguishes token decoding,
+native evaluation, and foreign bridging. For the current structural foreign
+edge, `name` is the domain-separated commitment of its ordered opening and
+closing delimiters; a future declared virtual-host bridge identifier occupies
+the same component. The complete selected manifest is
+$`m=(mathsf{key},mathsf{code},mathsf{abi},epsilon,q)`$, where $`epsilon`$ is
+its effect row and $`q`$ is an exact integer logical-cost contract. Installation
+commits the canonically ordered manifest map, not merely a free-form ABI label.
+
+> **★ No implementation commitment comes from the specification.** A DDL may
+> request a capability name, but it cannot supply `code`, `abi`, effects, cost,
+> or the catalog used to resolve that name. Otherwise an attacker would control
+> both sides of the admission check. The catalog is an injected host authority.
+> Registry retrieval supplies immutable grammar or module *content* only; local
+> installation still resolves capabilities under the receiving node's injected
+> policy. The second complete pass rejects a changing provider before the table
+> lock is taken, so a batch cannot publish a mixture of capability generations.
+> A later invocation requires the identical committed manifest both before and
+> after the callback. Revocation or replacement therefore discards the result.
+
+`collect_callback_requirements` uses an explicit worklist for nested syntax and
+an ordered set for deduplication. Its order and result do not depend on native
+stack depth, hash iteration, or scheduler order. Pure built-in operators and
+carriers are closed audited semantics, so they add no external manifest lookup;
+this preserves the generated compile-time parser path.
 
 ```text
 ⟨Build and verify the installable artifacts⟩ ≡
@@ -4779,6 +5046,12 @@ it in `Theory N() { e }` and writes `theory N()`. Duplicate export names are an
 error. Local declarations and aliases are absent from the value because only
 their elaborated results affect downstream semantics.
 
+Ordinary `Proc` items follow §III.3.2: they retain source order in the local
+staging receipt but are absent from canonical `module/1`, every export
+fingerprint, and Registry publication. Module resolution therefore composes
+language presentations without smuggling executable startup authority across a
+registry boundary.
+
 ### X.2 Import schemes
 
 The resolver classifies a reference before performing I/O.
@@ -4793,8 +5066,10 @@ The resolver classifies a reference before performing I/O.
 Registry imports must use explicit `rho:` references. The resolver must retain
 the full import chain and report missing members, visibility failures, cycles,
 version mismatches, and commitment mismatches deterministically. Imports are
-content-addressed; a supplied commitment must match the BLAKE3 digest of the
-resolved module source before that source is parsed.
+content-addressed: each dependency commitment must match the domain-separated,
+length-framed BLAKE3-256 commitment of the resolved record's signed canonical
+projection before any export is decoded or lowered. Neither that check nor
+production installation parses the record's source oracle.
 
 ### X.3 Versioned Registry records
 
@@ -4802,22 +5077,33 @@ A registry module record has this logical form:
 
 ```text
 {
-  "schema":       "mettail-registry-module/1",
-  "module":       <required canonical module value>,
-  "exports":      { <export name>: <canonical language/2 value>, ... },
-  "dependencies": [ <exact URI + content commitment>, ... ],
-  "images":       { <language fingerprint>: <optional parser-image bytes>, ... },
-  "signatures":   <registry trust metadata>
+  "schema":            "mettail-registry-module/1",
+  "source":            <development-only source oracle, possibly empty>,
+  "source_commitment": <BLAKE3-256 provenance commitment for that oracle>,
+  "module":            <required canonical module value>,
+  "exports":           { <export name>: <canonical language/2 value>, ... },
+  "dependencies":      [ <exact URI + content commitment>, ... ],
+  "images":            { <language fingerprint>: <optional parser-image bytes>, ... },
+  "signatures":        <registry trust metadata>
 }
 ```
 
-`module`, `exports`, and the exact dependency graph are authoritative content.
+`module`, `exports`, and the exact dependency graph are authoritative semantic
+content. The signed payload is the canonical map containing `schema`,
+`source_commitment`, `module`, `exports`, and `dependencies`; signatures and
+the replaceable source and image bytes are outside that payload. A dependency's
+content commitment is BLAKE3-256 over a domain tag, the payload length, and
+those canonical payload bytes. Thus registry trust can bind source provenance
+without making source text a semantic identity or a production parser input.
+
 Every image is an untrusted cache. Installation must resolve and verify the
-signed graph, decode and elaborate the selected export, lower it to GrammarCore,
-compute its fingerprint, and verify the matching image against that result. A
-rejected image may be discarded and rebuilt from the export; it must never
-become semantic authority. A one-language publication is the same record with
-one export, not a second registry schema.
+signed graph, decode and lower each selected canonical export to GrammarCore,
+compute its fingerprint, and verify the matching image against that result. An
+absent, malformed, mismatched, or excessive image is discarded and rebuilt
+from the export; an unsigned cache can neither change nor veto valid canonical
+content. All exports are installed atomically from one exact graph snapshot. A
+one-language publication is the same record with one export, not a second
+registry schema.
 
 ### X.4 Filesystem capability boundary
 
@@ -5475,7 +5761,7 @@ boundary without choosing ergonomics over analyzability.
 | **surface DDL** | The `Module` / `Theory` text accepted as Rholang source. It is authoring syntax, not stored authority. |
 | **canonical value** | The ordinary Rholang `language/2` map/list value produced by desugaring, or constructed directly by a program. |
 | **presentation** | The elaborated set of categories, constructors, equations, rewrites, and exports after theory composition and replacement. |
-| **resolver** | A capability supplied to elaboration that maps a module reference to source bytes plus provenance. |
+| **resolver** | A capability supplied to elaboration that maps a module reference to a trust-checked canonical Registry record, or—once the File I/O FIPS exists—to bounded source bytes plus provenance that are canonicalized exactly once. |
 | **GrammarCore** | A versioned, serializable, host-language-neutral intermediate representation with stable integer identifiers for categories, tokens, modes, productions, reductions, capabilities, limits, and weights. |
 | **parser image** | A versioned cache artifact derived from a validated GrammarCore: lexer tables, parser tables, semantic-reduction plans, and verified instructions. |
 | **weighted pushdown automaton (WPDA)** | The generalized parser machine used by PraTTaIL, with every transition carrying a semiring weight. |
@@ -5711,6 +5997,18 @@ expectations and the acceptance gates are distinct:
   overhead relative to typed Rust. Fused micro-operations, compact indices,
   structure-of-arrays tables, GSS/SPPF sharing, and verified cache reuse are the
   intended mitigations, not a promise that the overhead is zero.
+- Repeated structural FLTs may reuse only the weighted symbolic guest template,
+  before fills. The key commits to the language, parser and policy profiles,
+  category, complete `Text`/typed-`Hole` sequence, and every result-affecting
+  host or adapter semantic epoch. Uncommitted hosts bypass this cache.
+- Symbolic-template retention is bounded independently by entry count and
+  retained logical weight. Deterministic oldest-first eviction and per-key
+  single-flight are iterative; same-owner re-entry is a rejected dependency
+  cycle. Errors and partially filled terms are never retained.
+- Every input-depth-dependent validator, compiler pass, parser traversal,
+  decoder, graft, and proof checker uses an explicit bounded worklist or
+  pushdown store. Recursive mathematical definitions do not imply native-stack
+  recursion in the executable refinement.
 
 The feature cannot become the default for an existing grammar until its
 benchmark row passes all gates below on pinned corpora and hardware:
@@ -5737,7 +6035,7 @@ branch carry that history. Acceptance requires every row below.
 | exact integer lexicographic semiring | algebraic laws, overflow, witness-coupling, and consensus determinism tests |
 | `Module` / `Theory` syntax inside `languages/src/rholang.rs` | positive/negative corpus and L0/L1 canonical-byte parity |
 | complete §III.4 decoder and `Data(v)` merge semantics | exhaustive schema closure, unknown-field rejection, and metacircular fixpoint |
-| injected Versioned Registry resolver | graph, commitment, cycle, visibility, rollback, freeze, and equivocation tests |
+| injected Versioned Registry resolver and trust-policy seam | exact snapshot, graph, commitment, cycle, visibility, mix-and-match, and all-or-none tests in the resolver; rollback, freeze, and equivocation contract tests at the injected trust-policy boundary |
 | parser-image ABI and verified DFA/WPDA tables | bounds, decoder fuzzing, image/core equivalence, and corrupt-image rejection |
 | staged FLT and installed-handle integration | same-deploy language creation, parse, match, reduce, reflection, revoke, and race tests |
 | Reified RSpace compatibility seam | theorem-indexed typing, proof-checker soundness, match-free invariant, qualifier/replay preservation, capability separation, and comparison of adaptation, coexistence, and FLT-supersession designs |
@@ -5928,12 +6226,37 @@ rights. Concurrent identical installs are single-flight and return handles for
 one immutable record. Local installation and registry publication are separate
 operations requiring separate rights.
 
+Validation, import-graph processing, effect derivation, image verification, and
+cleanup are iterative bounded state machines. Each loop has an explicit
+work/fuel measure and deterministic child order; attacker-selected grammar depth
+must not consume the native call stack. Single-flight waiters loop on an
+explicit predicate, and re-entry by the owner of the same key is rejected as a
+dependency cycle rather than recursing or deadlocking. No registry, cache, or
+installed-table lock may remain held across a resolver, parser, native handler,
+bridge, or other host callback.
+
 The handle carries independent rights at minimum: `Parse`, `Construct`,
 `Match`, `Observe`, `ReflectAst`, `Reduce`, `Bridge`, `Publish`, and
 `Introspect`. A specification requests rights and handlers; it never grants
 them. The installer intersects requests with authority injected by the host.
 Revocation prevents new operations and cache acquisition without changing the
 meaning of already immutable values.
+
+The installer also derives a closed parser effect row from the validated
+GrammarCore. Capability token decoding and native evaluation require `Reduce`;
+foreign-language delegation requires `Bridge`; composition takes set union.
+The DDL cannot under-declare this row. Before and after parsing, the handle must
+authorize `Parse`, the operation-specific right, and every derived effect
+right, so a parse-only handle cannot invoke an evaluator or bridge. A trusted
+static adapter declares and commits its effect row at installation.
+
+Symbolic FLT-template cache hits and misses pass that same pre/post authority
+and revocation gate. The cache value is the immutable weighted parse before
+fills; its key binds stable language, parser, policy, structural input, and host
+semantic commitments. A missing or changed commitment disables reuse. Count
+and retained-logical-weight bounds, deterministic iterative eviction, and
+same-key single-flight limit memory and duplicate work, but a hit never conveys
+authority.
 
 ![A Rholang DDL value passes through bounded validation, canonical GrammarCore, verified image construction, and an atomic language-capability commit; FLTs use the installed handle, and theorem-checked FLT values and patterns may operate on a separately authorized Reified RSpace](diagrams/13-categorical-installation.svg)
 
@@ -5979,6 +6302,14 @@ handler discovery, and iteration-order dependence are forbidden. Registry
 records need rollback, freeze, mix-and-match, and equivocation protections in
 the style of The Update Framework. The canonical specification is authority;
 an image is an untrusted derived cache and is always verified.
+
+The module resolver owns within-install guarantees: it reads every URI at most
+once from one immutable snapshot, verifies the exact signed payload through the
+injected trust policy, checks every dependency commitment, and rejects graph
+conflicts or cycles before atomic publication. The Versioned Registry's
+injected trust policy owns cross-snapshot freshness and metadata history,
+including rollback, freeze, and equivocation detection. Grammar data cannot
+select, weaken, or replace that policy.
 
 The registry key, URI, semantic version, alias, and fingerprint are identifiers,
 not capabilities. Loading bytes grants no `Install`, `Publish`, `Reduce`, or
@@ -6141,12 +6472,404 @@ transition order, checkpoint roots, and replay evidence. This prevents a
 grammar import or apparently harmless FLT translation from escalating into
 ambient storage access.
 
+## Part XVIII — OSLF, Cost(Rho), and Self-Hosted Rholang 1.4
+
+This Part fixes the production end state. **MeTTaIL is the generalized
+OSLF-capable language-definition and semantic framework. Rholang 1.4 is its
+canonical self-hosted language instance.** They are related but not synonyms:
+OSLF supplies logical operational semantics, MeTTaIL compiles and checks those
+semantics, and Rholang 1.4 is the checked theory $`\mathsf{Cost}(\mathsf{Rho})`$
+executed by f1r3node.
+
+![The staged Rholang 1.4 bootstrap, OSLF extension path, and one-way f1r3node production seam](diagrams/14-rholang14-bootstrap-oslf-cost.svg)
+
+PlantUML source:
+[diagrams/14-rholang14-bootstrap-oslf-cost.puml](diagrams/14-rholang14-bootstrap-oslf-cost.puml).
+Palette and toolchain: [diagrams/PALETTE.md](diagrams/PALETTE.md).
+
+### XVIII.1 One language core, four derived machines
+
+The authoritative artifact is:
+
+```text
+LanguageCoreV1 {
+  abi: u16,
+  grammar: GrammarCoreV1,
+  theory: TheoryCoreV1
+}
+```
+
+`GrammarCoreV1` is the parser projection. `TheoryCoreV1` contains the
+source-neutral sorts, constructors, binders, equations, rewrites,
+observations, semantic actions, effects, interaction and continuation
+witnesses, OSLF judgments, theory morphisms, cost structure, limits, and
+checker ABI requirements. Runtime installation derives four replaceable,
+untrusted cache artifacts:
+
+1. `ParserImageV1`, for recognition and construction;
+2. `SemanticMachineImageV1`, for declared transitions and effects;
+3. `OslfImageV1`, for bounded judgment and certificate checking; and
+4. `CostImageV1`, for semantic grades and their host projection.
+
+Every image is verified against the canonical core and full-language
+fingerprint before use. The grammar fingerprint commits only to parser-relevant
+structure, permitting safe parser-cache reuse when theory-only data changes.
+The theory fingerprint commits to dynamics, judgments, effects, costs, limits,
+and checker ABIs. The language fingerprint binds both projections and is the
+identity carried by installed handles, FLTs, theorem channels, resource
+certificates, and replay records.
+
+### XVIII.2 The categorical construction
+
+Presentations and their structure-preserving morphisms form the base category
+described in §XVII.1; the functor, natural-transformation, monad, and monoidal
+terminology follows [Mac Lane 1998]. Interaction and continuation are
+additional structure, not properties inferred from a grammar:
+
+```math
+\mathsf{GSLT}
+\supsetneq
+\mathsf{InteractiveGSLT}
+\supsetneq
+\mathsf{ContinuedInteractiveGSLT}.
+```
+
+The second inclusion requires checked data for the interaction cuts
+$`K,K_p,K_e,K'`$, the `near` and `compute` maps, a canonical section, a
+wrappability witness, and quote faithfulness. Only then is
+$`\mathsf{Cost}(G)`$ defined. On this category, `Cost` is an endofunctor and,
+with unit $`\eta_G`$ and multiplication $`\mu_G`$, a monad:
+
+```math
+\mathsf{Cost}(\mathrm{id}_G)=\mathrm{id}_{\mathsf{Cost}(G)},
+\qquad
+\mathsf{Cost}(g\circ f)=\mathsf{Cost}(g)\circ\mathsf{Cost}(f),
+```
+
+```math
+\mu_G\circ\mathsf{Cost}(\eta_G)=\mathrm{id}
+=\mu_G\circ\eta_{\mathsf{Cost}(G)},
+\qquad
+\mu_G\circ\mathsf{Cost}(\mu_G)=\mu_G\circ\mu_{\mathsf{Cost}(G)}.
+```
+
+The signature product is a commutative monoid that preserves multiplicity; the
+temporal stack is a free monoid and is therefore ordered. These are deliberately
+different structures: combining authorities does not impose time, while a
+stack records which resource cell a transition must force next. Module join is
+a checked origin-preserving pushout. A join that invalidates interaction,
+continuation, quote, or cost witnesses fails unless the author explicitly
+forgets the affected structure and accepts the less capable resulting theory.
+The resource-sensitive reading is inherited from linear logic [Girard 1987],
+while the particular continuation and cost construction is specified by
+[Cost-Accounted Rho] and [Continued GSLT Cost].
+
+Rholang 1.4 is the explicit composition:
+
+```math
+\mathsf{Rholang}_{1.4}=\mathsf{Cost}(\mathsf{Rho}).
+```
+
+An unsigned Rholang process $`P`$ enters through $`\eta_{\mathsf{Rho}}(P)`$.
+That embedding adds no source annotation and changes no legacy syntax. Host
+protocol policy may still charge ordinary execution; the statement is that the
+semantic Cost(Rho) decoration is the unit, not that computation consumes no
+machine resources.
+
+### XVIII.3 One semantic transition kernel
+
+Recognition remains a parser responsibility. Execution and OSLF checking meet
+at one semantic boundary:
+
+```rust
+enum Decision<T> {
+    Proven(T),
+    Refuted,
+    Undetermined,
+}
+
+struct SemanticTransition {
+    next: CanonicalTerm,
+    grade: ResourceGrade,
+    observation: ObservationEvidence,
+    effects: EffectReceipt,
+}
+```
+
+The `SemanticTransitionKernel` verifies a declared action or enumerates bounded
+successors and returns `Decision`. Generated compile-time languages and
+runtime-installed languages implement the same neutral contract. OSLF queries
+that contract; it does not reinterpret the rewrite system. The f1r3node reducer
+remains the sole consensus evaluator, and the host settlement engine remains
+the sole ledger. Budget exhaustion, integer overflow, a missing witness, an
+unknown handler ABI, or an incomplete search returns `Undetermined` and fails
+closed at every admission, theorem, spending, or effect boundary.
+
+### XVIII.4 Normative Cost(Rho) surface
+
+The cost surface is part of the canonical Rholang 1.4 grammar in
+`languages/src/rholang.rs`. Its normative origin is Greg's BNFC grammar; the
+tree-sitter prototype is a compatibility corpus, not the production parser.
+
+```bnf
+SignedProc ::= "{%" Proc "%}" "[" Sig "]"
+             | Stk
+             | SignedProc "|" SignedProc
+             | "(" SignedProc ")"
+
+Sig ::= Sig1 "-o" Sig | Sig1
+Sig1 ::= Sig1 "(*)" Sig2 | Sig2
+Sig2 ::= Name | "#" Proc12 | "(" Sig ")"
+
+Stk ::= Stk "|" Stk1 | Stk1
+Stk1 ::= Sig "::" Stk1 | Stk2
+Stk2 ::= "(" ")" | "(" Stk ")"
+
+SignedProc ::= Name Send "(" SignedProc ")"
+             | "for" "(" SignedReceiptList ")" "{%" SignedProc "%}"
+SignedBind ::= "{%" BindPattern "<-" Name "%}" "[" Sig "]"
+```
+
+`(*)` associates left; `-o` associates right and is looser. Parentheses group
+signatures. `#` consumes the same binding-power boundary as the legacy
+`Proc12`, so a low-precedence process must be grouped. Bare `()` is the
+ordinary Unit process at a `Proc` root and the empty token stack only in a
+stack or signed-continuation context. A stack cell parses the full `Sig`
+grammar, after which the semantic predicate `Fundable(sig)` rejects a transfer
+as mintable fuel. This preserves the general grammar without confusing a
+capability transfer with a stored resource cell.
+
+The generated AST must retain signed terms, token stacks, signed receive binds,
+and the fact that a continuation body occupied a signed slot. It may reuse
+ordinary parallel and send constructors around those nodes, because their
+ordinary operational behavior already composes; it must never normalize the
+new nodes to an unsigned process, an empty process, or an ordinary bind.
+
+The elaborator is an explicit work/value-stack machine. It checks sorting and
+fundability, expands uniform signing and lollipop notation, and produces:
+
+```rust
+struct CostedProgram {
+    rho: CanonicalRhoIr,
+    cost_plan: CostTransitionPlan,
+    resource_certificate: ResourceCertificate,
+}
+```
+
+The three fields remain bound by the language fingerprint. A `Par` alone is
+not the result of lowering cost syntax.
+
+### XVIII.5 Cost rules, joins, and authority
+
+The generic Cost construction's rules R1–R3 are normative. The five
+Rholang-specific rules and join rules in the earlier cost-accounting
+presentation are derived instances and must not become a second semantic
+system. The proof establishes subject reduction for well-wrapped terms, the
+cost modulus equating the forced interaction cuts with the consumed stack
+prefix, and conservation of the signature multiset.
+
+For an $`n`$-ary COMM, the runtime constructs the complete candidate before
+mutation: all sends and receives, patterns and captures, guards, signature
+authority, token partitions, semantic grade, host demand, and proof receipts.
+One `check_commit` transaction either reserves and consumes the complete set
+and publishes all effects, or changes nothing. A false guard, stale capability,
+failed theorem, insufficient purse, invalid partition, cancellation, or
+`Undetermined` result consumes no datum, continuation, authority, or supply.
+
+Source syntax never provisions consensus supply. A token stack is resource
+evidence or an inert purse value until a host-granted `Provision` capability
+authorizes a supply mutation. Spending requires a distinct `Spend` capability.
+A ground signature can debit only a verified outer signer or an installed
+delegation in the current `AuthorityEnvironment`; $`\#P`$ is derived from the
+canonical section under the complete language fingerprint; `-o` transfers
+checked authority and cannot create it.
+
+### XVIII.6 Five cost axes that never collapse
+
+| Axis | Meaning | Permitted effect |
+| --- | --- | --- |
+| parse rank | semiring weight selecting a derivation | chooses among parser witnesses only |
+| logical work | deterministic lexer, parser, checker, and search work | exhausts an admission budget |
+| semantic grade | the $`\mathsf{Cost}(G)`$ resource consumed by a transition | appears in a checked semantic receipt |
+| validator demand | protocol funding demand such as `DemandEntry` | reserves host-accounted supply |
+| settlement | the actual atomic debit/refund recorded with effects | changes consensus state |
+
+Let $`\Delta_s(t)`$ be the semantic demand of term $`t`$ and
+$`\kappa`$ the protocol-pinned projection into host demand. The required
+commuting obligation is either exact:
+
+```math
+\kappa(\Delta_s(t))=\Delta_{\mathsf{host}}(\mathsf{lower}(t)),
+```
+
+or conservatively safe:
+
+```math
+\Delta_{\mathsf{host}}(\mathsf{lower}(t))\preceq
+\kappa(\Delta_s(t)).
+```
+
+An unproved projection is rejected in strict validation. Parser weights never
+spend funds; elapsed time never becomes semantic cost; a cache hit never skips
+authorization, theorem checking, funding, revocation, or settlement.
+
+### XVIII.7 Self-hosted bootstrap and its exact claim
+
+The canonical source `languages/specs/rholang-1.4.rho` uses the same
+`Module`/`Theory` syntax and `language/3` data available to ordinary Rholang
+applications. Conceptually it declares `Rho`, a generalized `Cost` theory, and
+the exported composition `Cost(Rho())`. Native behavior is named by versioned
+handler and effect URNs with closed manifests; pure DDL never contains Rust
+source or grants the named capability.
+
+The build is staged:
+
+1. a minimized audited seed parses and checks the canonical source once;
+2. structural DDL lowering produces canonical `LanguageCoreV1` without
+   rendering or reparsing;
+3. compilers derive and independently verify the parser, semantic, OSLF, and
+   cost images;
+4. the generated Rholang frontend parses the same canonical source;
+5. regeneration must reproduce the core and every image byte-for-byte;
+6. a clean build satisfying the Reproducible Builds definition and a diverse
+   independently built bootstrap path following DDC reproduce the same bundle
+   [Reproducible Builds; Wheeler 2005]; and
+7. production embeds or loads only the verified `LanguageBundleV1`.
+
+The fixed point proves that Rholang 1.4 reproducibly describes the artifact
+that reads and implements its description. It does **not** prove that the seed
+and generated parser accept identical arbitrary languages; equivalence of
+general context-free grammars is undecidable. The stronger compatibility claim
+therefore rests on compiler-refinement proofs and the differential corpus in
+§XVIII.9. The trusted computing base is limited to the seed, canonical codec,
+structural DDL elaborator, image compilers and verifiers, semantic kernel,
+neutral-Rho-to-`Par` adapter and canonical sorter, protobuf schema, reducer, and
+build toolchain.
+
+`LanguageMetadata::definition_source()` is diagnostics and development
+metadata only. No production initialization path may use `syn` to reconstruct
+the Rust `language!` body, format a term and parse it again, or repair a chosen
+forest representative by source round trip.
+
+### XVIII.8 The f1r3node production seam
+
+The frontend is a slim component with no dependency on f1r3node or RSpace:
+
+```rust
+fn compile(
+    source: &[u8],
+    registry: &RegistrySnapshot,
+    resolver: &dyn DeterministicUriResolver,
+    limits: CompileLimits,
+) -> Result<CompiledRholangV1, DiagnosticSetV1>;
+```
+
+`CompiledRholangV1` contains canonical neutral Rho IR, an
+`OccurrenceId`-indexed UTF-8 source map, bundle and semantic fingerprints, the
+cost plan, resource certificate, and stable diagnostics. Erasing the source map
+must leave semantic hashes and canonical `Par` bytes unchanged. The adapter in
+f1r3node constructs `models::Par`, verifies canonical sorting and exact
+protobuf bytes, and hands the process to the existing reducer.
+
+Funding uses a neutral provider/projector interface owned by f1r3node. The
+outer composition root injects the MeTTaIL implementation; f1r3node does not
+acquire a reverse dependency on the MeTTaIL workspace. Validators recompute
+the projection rather than trusting client-provided certificates. The legacy
+outer-payer projection remains byte-identical before protocol activation; after
+Rholang 1.4 activation strict funding is mandatory.
+
+No f1r3node source or dependency pin changes until the independently owned
+PathMap work supplies a reviewed clean commit and manifest fixing the
+`RhoTypes.proto` hash, PathMap version, EPM1 ABI, canonical encode/decode and
+legacy-read policy, zipper and collection semantics, deep-stack guarantees,
+malformed-input bounds, and performance thresholds. MeTTaIL must produce
+byte-identical PathMap values at that boundary.
+
+### XVIII.9 Legacy parity and cutover
+
+Replacement is gated at six observable levels:
+
+| Level | Required comparison |
+| --- | --- |
+| lexical and syntactic | accept/reject, lexical modes, comments, ambiguity, precedence |
+| structural | typed derivation, desugaring, binders, occurrence spans, diagnostics |
+| canonical | normalized neutral Rho IR and exact protobuf `Par` bytes |
+| operational | deploy result, COMM choices, effects, cost, event log |
+| consensus | funding, state roots, replay, cross-validator determinism |
+| resource | bounded work, fixed-small-stack depth, allocation and latency thresholds |
+
+The inventory covers every legacy process, send, receive, bind, source,
+collection, type, literal, operator, declaration, cost form, and diagnostic.
+Intentional Rholang 1.4 additions are marked extensions. Parser implementation
+artifacts are marked obsolete. A construct such as legacy `select`, which the
+legacy parser accepts but the production normalizer rejects, remains a stable
+unsupported diagnostic unless a separate semantics proposal is approved; the
+new frontend does not invent consensus behavior to make a syntax row green.
+
+Shadow comparison is permitted in tests and CI. Production has one parser and
+no fallback switch. Rollback selects the preceding complete node binary. After
+activation evidence passes, the external `rholang-parser`, tree-sitter grammar,
+parser-time AST/normalizer/desugaring and cost normalizer, temporary Cargo
+patches, lock entries, and build/license exceptions are removed. Licensed
+legacy examples may remain only as non-production conformance fixtures.
+
+### XVIII.10 OSLF language extension inside Rholang
+
+There are exactly two extension modes:
+
+1. a process defines and installs a guest theory, then uses its opaque handle in
+   prefixed FLTs; the Rholang parser remains immutable; or
+2. a process explicitly composes checked theories/modules and installs the
+   result under a new derived-language handle and fingerprint.
+
+Thus a regular-expression theory can define its grammar, matching judgments,
+effects, cost profile, and proof checker; an application can install it and use
+scoped regex FLTs to match text. The regex syntax is not spliced into the
+global Rholang lexer. Typed construction holes are positive structural inputs;
+pattern holes are negative typed captures; behavioral bidirectional
+communication carries explicit semantic and effect receipts. Independent guest
+parses may run in parallel after handle resolution, but scheduling and cache
+behavior are consensus-invisible.
+
+### XVIII.11 Formal and release obligations
+
+Formalization precedes each nontrivial Rust implementation and uses small,
+memory-capped Rocq modules with opaque intermediate lemmas and `Qed`. The
+required chain proves LanguageCore canonicalization and projection separation;
+bootstrap fixed-point stability; parser/lowering refinement; Cost functor and
+monad laws; well-wrapped subject reduction; cost modulus; derivation of the
+Rholang rules; join atomicity and multiset conservation; reject-safe OSLF;
+capability non-amplification; occurrence-map erasure; host-projection equality
+or conservativity; consensus replay; and explicit-work-stack equivalence and
+termination. Concurrent reserve/match/commit/refund and revocation are modeled
+as a bounded transition system.
+
+Release additionally requires malformed-artifact fuzzing, exhaustive and
+property corpora, ambiguity and Unicode boundaries, forged authority and stale
+capability attacks, deep and wide fixed-small-stack tests, deterministic clean
+and diverse builds, exact cross-node bytes and verdicts, and preregistered
+performance gates. Compile-time generated Rholang retains its direct AOT hot
+path; runtime-defined languages use verified images. Ordinary Rholang parser
+latency, allocation, and code size must remain within the agreed measurement
+thresholds before this Part is conformant.
+
 ## Implementation Evidence
 
 Non-normative. The implementation facts this proposal is constrained by.
 
 | Claim | Evidence |
 | --- | --- |
+| Nouveau Rholang already parses Greg/Mike DDL structurally as ordinary `Proc` forms | `languages/src/rholang.rs` declares closed `Ddl*` data categories and `DdlModule` / `DdlTheory` productions; `rholang-runtime/src/ddl_ast.rs` lowers the generated nodes without an opaque source carrier |
+| The rejected opaque DDL carrier has been retired | The current source tree contains no `DdlNode`, `DdlRegion`, `ddl_module`, or `ddl_theory` intrinsic; structural lifecycle and macro carrier-census tests cover the surviving path |
+| A source-neutral runtime parser seam already exists | `grammar-core/src/core.rs` defines `GrammarCoreV1` and ABI 1; `grammar-core/src/image.rs` defines verified `ParserImageV1` and ABI 1; `grammar-core/src/installed.rs` implements capability-scoped installed-language records |
+| Runtime compiler and Unicode identities are explicit | `prattail/src/runtime_backend.rs` declares `mettail-rtn/1` and `unicode-regex-syntax-0.8` and verifies both against executable images |
+| Production initialization still reconstructs language definitions from embedded Rust source | `rholang-runtime/src/rholang_ast.rs`, `rholang-runtime/src/bin/rholang.rs`, `rholang-runtime/src/bench_support.rs`, and `rholang-codegen/src/rho_net_cache.rs` call `definition_source()` and `reconstruct_language_def`; the latter documents its `syn` parse |
+| The temporary legacy parser remains in the dependency graph | The workspace root patches `rholang-parser` to the local cost-accounting parser; f1r3node additionally patches `rholang-tree-sitter` and its proc macro, while `rholang/Cargo.toml` names upstream revision `c163755` |
+| Cost syntax is not yet in the nouveau Rholang grammar | `languages/src/rholang.rs` has no signed-term, token-stack, cost-signature, or signed-bind production; the legacy reference is `rholang-tree-sitter/grammar.js` plus its parser AST |
+| The legacy cost normalizer validates and then erases inner cost structure | f1r3node `compiler/normalize.rs` and `normalize_drive.rs` map `SignedTerm`, `TokenStack`, and signed binds through `normalizer/cost_accounting`; its tests explicitly characterize a signed term as normalizing to its unsigned inner process |
+| The existing OSLF-named host trait is a Rholang funding adapter, not generalized OSLF | f1r3node `accounting/resource_logic.rs` defines `OslfResourceLogic<G>` but production acceptance is fixed to `RhoGslt`; MeTTaIL `rholang-adapter/src/gslt.rs` wraps `Par` and `logic.rs` delegates to `delta_sigma` |
+| Separate experimental join and settlement code is not the production host engine | `rholang-adapter/src/delta1.rs` and `settlement.rs` are library components; §XVIII requires either proof of equivalence and one composition-root wiring or quarantine from the production path |
+| The current PathMap boundary is not frozen for integration | f1r3node carries PathMap 0.2.2 and EPM1 version 1; the active MeTTaIL lock also contains PathMap 0.3.0 from the `feature/mettatron-fixes` branch, so §XVIII.8's clean external ABI gate is necessary |
 | `language!`'s full pipeline and its eight generator calls | `mettail-rust/macros/src/lib.rs`; `parse_macro_input!` at `:44` |
 | `LanguageDef` is the sole backend input | `mettail-rust/ast/src/language/model.rs` |
 | Reified RSpace storage foundation: agents, qualifiers, collection/storage variants, factories, runtime routing, tests, and Rocq models | `f1r3node-reified-rspaces/rholang/src/rust/interpreter/spaces/`; `f1r3node-reified-rspaces/formal/rocq/reified_rspaces/` |
@@ -6330,6 +7053,33 @@ Non-normative. The implementation facts this proposal is constrained by.
   observation relation, admissible observer category, context multicategory,
   relative-pushout transition theory, and structure-preserving translations
   used in §XVII.
+- **[Cost-Accounted Rho]** Meredith, L. G., and Michael Stay.
+  `publications/cost-accounting/cost-accounted-rho.tex`. Specifies the signed
+  process, signature, token-stack, continuation, and Rholang interaction rules
+  instantiated and consolidated in §XVIII.
+- **[Continued GSLT Cost]** Meredith, L. G., and Michael Stay.
+  `publications/cost-accounting-as-monad/continued-gslt-cost-v2.tex`.
+  Specifies continued interactive GSLTs and the generalized cost construction
+  treated as `Cost(G)` in §XVIII.
+- **[Mac Lane 1998]** Mac Lane, Saunders. *Categories for the Working
+  Mathematician*, second edition, Graduate Texts in Mathematics 5. Springer,
+  1998. DOI:
+  [`10.1007/978-1-4757-4721-8`](https://doi.org/10.1007/978-1-4757-4721-8).
+  Supplies the categorical, monoidal, and monadic vocabulary used in §§XVII–XVIII.
+- **[Girard 1987]** Girard, Jean-Yves. "Linear Logic." *Theoretical Computer
+  Science* 50(1), 1987, pp. 1–101. DOI:
+  [`10.1016/0304-3975(87)90045-4`](https://doi.org/10.1016/0304-3975(87)90045-4).
+  Grounds the resource-sensitive distinction between reusable structure and
+  linearly conserved authority in §XVIII.
+- **[Wheeler 2005]** Wheeler, David A. "Countering Trusting Trust through
+  Diverse Double-Compiling." *Proceedings of the Twenty-First Annual Computer
+  Security Applications Conference*, 2005, pp. 28–40. IEEE Computer Society.
+  [Official ACSAC paper](https://www.acsac.org/2005/papers/47.pdf). Supplies the
+  diverse bootstrap check required by §XVIII.7.
+- **[Reproducible Builds]** Reproducible Builds contributors. "Definitions."
+  [Official definition](https://reproducible-builds.org/docs/definition/).
+  Defines byte-for-byte reproduction from the same declared source, build
+  environment, and build instructions, as required by §XVIII.7.
 - **[Tree-sitter Grammar Documentation]** Tree-sitter contributors. "Writing
   the Grammar." [Official Tree-sitter documentation](https://tree-sitter.github.io/tree-sitter/creating-parsers/3-writing-the-grammar.html).
   Documents Tree-sitter's GLR basis and on-demand context-aware lexing, the

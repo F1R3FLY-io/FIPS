@@ -26,6 +26,7 @@ them in the order below.
 | 11 | `10-work-item-dag.puml` | component (dependency DAG) | §XIII.4 |
 | 12 | `12-runtime-grammar-pipeline.puml` | component / dataflow | §XVI.5 |
 | 13 | `13-categorical-installation.puml` | component / trust boundary | §XVII.6 |
+| 14 | `14-rholang14-bootstrap-oslf-cost.puml` | component / staged bootstrap and activation flow | §XVIII |
 
 The file-number suffix and the "# in document" column **do not agree for rows
 11 and 12**, and the table is ordered by the second: `11-debugging-stations`
@@ -92,7 +93,7 @@ The invariant is therefore **three-tier**, and every tier is mechanically
 checkable:
 
 1. **Hex → key is global and injective.** Every occurrence of `#DCFCE7` in any
-   figure is P5, and no other key uses `#DCFCE7`. This holds across all thirteen
+   figure is P5, and no other key uses `#DCFCE7`. This holds across all fourteen
    figures with no exceptions.
 2. **Every semantic FILL is legended in the figure that uses it.** This tier
    exists because tier 1 alone is unenforceable in practice: a check that reads
