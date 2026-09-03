@@ -1,0 +1,17 @@
+# FIPS commit scope (per feedback_fips_commit_scope memory): only
+# `2026-07-24-File-IO.md` and its diagrams are the reviewed / merged
+# spec artifacts.  Everything else in this directory is work-
+# tracking scratch (plans, handoffs, session summaries) — kept
+# locally for pickup between sessions but not committed.
+#
+# If a file below stops being scratch (e.g., ready for review),
+# `git add -f <file>` and drop its line from this .gitignore.
+
+implementation-plan.md
+
+# Handoff / plan-scratch pattern — most session-pickup notes and
+# design plans get regenerated per session; keep any of these
+# shapes untracked.
+handoff-*.md
+plan-*.md
+session-*.md
