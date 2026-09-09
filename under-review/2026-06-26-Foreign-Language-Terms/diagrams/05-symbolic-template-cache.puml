@@ -1,0 +1,52 @@
+@startuml
+skinparam backgroundColor #FAFBFF
+skinparam shadowing false
+skinparam sequence {
+  ArrowColor #36456B
+  LifeLineBorderColor #36456B
+  LifeLineBackgroundColor #EEF2FF
+  ParticipantBorderColor #36456B
+  ParticipantBackgroundColor #DCE6FF
+  ParticipantFontColor #17213A
+  GroupBorderColor #6072A3
+  GroupBackgroundColor #F3F6FF
+}
+
+actor "Rholang evaluator" as Eval #D9F2E6
+participant "Installed-language\nauthority gate" as Gate #FFE8B8
+participant "Bounded symbolic\ntemplate cache" as Cache #DDEBFF
+participant "Per-key iterative\nsingle-flight" as Flight #E8E0FF
+participant "Guest WPDA +\nstable host callbacks" as Parser #FFDCE5
+
+Eval -> Gate : parse template(handle, category, Text/Hole pieces)
+Gate -> Gate : authorize Parse + operation + derived effect row
+Gate -> Cache : key(language, parser, policy, host epoch, pieces)
+
+alt bounded cache hit
+  Cache --> Gate : immutable weighted symbolic template
+else cache miss
+  Cache -> Flight : enter(key, current owner)
+  alt same owner already computes key
+    Flight --> Gate : reject dependency cycle
+  else another owner computes key
+    Flight --> Cache : wait in predicate loop, then retry lookup
+    Cache --> Gate : immutable weighted symbolic template
+  else caller becomes owner
+    Flight -> Parser : compute without cache/table lock
+    Parser --> Flight : success, error, cancellation, or exhaustion
+    Flight -> Flight : recheck semantic commitments
+    Flight -> Cache : retain success if within count and weight bounds
+    Cache -> Cache : evict oldest in iterative loop
+    Cache --> Gate : computed result
+  end
+end
+
+Gate -> Gate : reauthorize complete profile and revocation epoch
+Gate --> Eval : symbolic template; graft fills separately
+
+legend right
+  <b>Security invariant</b>
+  A cache entry reuses computation only.
+  It never contains fills or grants authority.
+endlegend
+@enduml

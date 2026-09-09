@@ -95,6 +95,21 @@ selects one.
   instance indexed by an installed language handle and a committed theorem,
   storage, matching, qualifier, and replay profile. It is authority, not an FLT
   value.
+- **Language core**: the canonical pair of a parser-relevant `GrammarCore` and
+  a semantic `TheoryCore`. The full language fingerprint, rather than the
+  grammar fingerprint alone, indexes FLT judgments, effects, costs, and proof
+  evidence.
+- **OSLF judgment**: a checked proposition derived from a language's
+  Operational Semantics in Logical Form, such as parse, construction, match,
+  reduction, observation, or publication. A bounded judgment returns
+  `Proven`, `Refuted`, or `Undetermined` and exhaustion is never proof.
+- **Semantic resource grade**: the language-theoretic resource attached to a
+  transition of $`\mathsf{Cost}(G)`$. It is distinct from parser rank, logical
+  work, validator funding demand, and actual settlement.
+- **Transition receipt**: fingerprint-bound evidence that the one semantic
+  kernel checked a transition, its observation, effects, and resource grade.
+  Bidirectional FLT communication carries receipts rather than triggering a
+  second interpretation of the guest theory.
 
 ## Surface Syntax
 
@@ -311,6 +326,57 @@ is forbidden.
 
 PlantUML source:
 [diagrams/01-parse-pipeline.puml](diagrams/01-parse-pipeline.puml).
+
+### Symbolic template memoization
+
+The reusable parse product is the **symbolic guest template**, before any host
+values are grafted into its holes.  If `pieces` is the ordered sequence of
+`Text` and typed `Hole` terminals, the staged factorization is:
+
+```math
+\operatorname{parse}^{\mathrm{sym}}_h(s,\mathit{pieces}) = (w,T),
+\qquad
+\operatorname{construct}_h(T,\rho) = T[\rho].
+```
+
+Here $`h`$ is the installed-language handle, $`s`$ is the requested guest
+category, $`w`$ is the exact derivation weight, $`T`$ is an immutable scoped
+template, and $`\rho`$ is the fill environment.  Only the first operation may
+be memoized.  Fill values, bindings, authority, captures, and partially grafted
+terms are never cache keys or cache values.  Consequently, reuse commutes with
+construction: a cache hit followed by $`T[\rho]`$ must equal an uncached parse
+followed by the same structural substitution.
+
+The cache key commits to the installed language, parser-image ABI, compiler and
+Unicode profiles, effective parser policy, category, complete `Text`/`Hole`
+sequence, hole categories and telescopes, and the semantic commitments of every
+host callback or static adapter that can affect the result.  A stateful or
+effectful host is uncacheable by default.  It may opt in only by supplying a
+deterministic semantic-epoch commitment that changes before any result-affecting
+state change becomes visible.  A missing or changed commitment bypasses the
+cache; it never falls back to a weaker key.
+
+Memoization is a bounded, consensus-invisible optimization:
+
+- both an entry-count limit and a retained-logical-weight limit apply;
+- zero in either dimension disables retention, and an individually overweight
+  value is returned without being retained;
+- successful symbolic parses may be retained, while errors, cancellation, and
+  exhausted computations are not persistent cache entries;
+- deterministic oldest-first eviction uses an iterative queue;
+- concurrent computations of the same key use per-key single-flight; waiters
+  loop on an explicit state predicate, while same-owner re-entry is rejected as
+  a dependency cycle instead of recursing or deadlocking;
+- no cache or installed-language-table lock is held while invoking a parser or
+  host callback; and
+- the complete capability and revocation profile is checked immediately before
+  and after both a hit and a miss.  A hit is evidence of computation reuse, not
+  authority.
+
+![A structural FLT parse is authorized, keyed before fills, coordinated by bounded single-flight, parsed at most once per stable semantic epoch, and reauthorized before its result is returned](diagrams/05-symbolic-template-cache.svg)
+
+PlantUML source:
+[diagrams/05-symbolic-template-cache.puml](diagrams/05-symbolic-template-cache.puml).
 
 ### Holes
 
@@ -530,6 +596,123 @@ calling its declared runtime through the bridge specified in the sibling FIPS
 *Virtual Host Bridges for FLTs*. If the caller lacks `Reduce` or `Bridge`, the
 FLT remains inert data; an explicit attempt to step it returns a capability
 error and performs no effect.
+
+## OSLF Judgments and Costed FLTs
+
+Every installed `language/3` core may expose six separately authorized OSLF
+judgment families. Their concrete proposition vocabulary is declared by the
+theory, while their operational boundary is common:
+
+```math
+\begin{array}{ll}
+h\vdash_{\mathsf{parse}} b:s\Downarrow(t,\pi_p)
+  & \text{bytes and hole terminals form a term of sort }s,\\
+h\vdash_{\mathsf{construct}} T[\rho]:s\Downarrow(t,\pi_c)
+  & \text{typed structural substitution constructs }t,\\
+h\vdash_{\mathsf{match}} p\mathrel{\sim}t\Downarrow(\theta,\pi_m)
+  & \text{pattern }p\text{ yields a typed capture telescope},\\
+h\vdash_{\mathsf{reduce}} t\longrightarrow(t',g,o,e)
+  & \text{one checked transition yields grade, observation, effects},\\
+h\vdash_{\mathsf{observe}} C[t]\Downarrow o
+  & \text{an admitted snapshot-bound context observes }o,\\
+h\vdash_{\mathsf{publish}} (c,t)\Downarrow\pi_a
+  & \text{the channel theorem admits }t.
+\end{array}
+```
+
+Here $`h`$ is the opaque installed-language handle; $`b`$ is the structural
+text-and-hole token source; $`T`$ is a template; $`\rho`$ is a construction
+environment; $`\theta`$ is matcher-owned capture evidence; $`g`$ is a semantic
+resource grade; $`o`$ is observation evidence; $`e`$ is an effect receipt; and
+each $`\pi`$ is a checked certificate, not source provenance.
+
+Every judgment returns `Proven`, `Refuted`, or `Undetermined`. Exhausting a
+parser, proof, frontier, term, grade, or logical-work limit returns
+`Undetermined`; it cannot broaden a receive, admit a theorem, spend a purse,
+publish a result, or commit an effect. Classical Boolean conclusions are
+available only when the installed theory carries an exact decidability and
+exhaustion witness.
+
+The same `SemanticTransitionKernel` drives guest execution and OSLF reduction
+checking. It returns the next canonical term, effect and observation receipts,
+and semantic grade. The checker never implements a second interpretation of
+the rewrite theory. Compile-time generated languages retain direct calls at
+their declared semantic action boundaries; runtime-installed languages use a
+verified closed semantic image. Both produce the same neutral receipts.
+
+### Holes preserve judgments and grades
+
+A construction hole is a positive structural input and a pattern hole is a
+negative typed capture. If a template certificate proves
+$`h;\Gamma,x:s\vdash T:u`$ and the filled term certificate proves
+$`h;\Gamma\vdash t:s`$, their capture-avoiding substitution certificates compose:
+
+```math
+\frac{
+  h;\Gamma,x:s\vdash T:u
+  \qquad
+  h;\Gamma\vdash t:s
+}{
+  h;\Gamma\vdash T[t/x]:u
+}.
+```
+
+The composite resource grade is the theory-declared monoidal composition of
+the enclosing template grade and each inserted term grade. It is never a
+parser weight and never inferred from rendered source. Repeated pattern holes
+alpha-compare their captured structural terms and cannot duplicate linear
+resource evidence. A cross-language fill additionally requires a verified
+morphism preserving sorts, substitution, observations, effects, and grades.
+
+Bidirectional communication is behavioral rather than textual. A guest step
+or bridge response carries a fingerprint-bound transition/effect receipt; the
+receiving theory verifies the declared morphism and capability before using
+it. No reply causes the host parser to re-enter the original guest source.
+
+### Cost, funding, and atomic commit
+
+Rholang 1.4 itself is the self-hosted theory
+$`\mathsf{Cost}(\mathsf{Rho})`$, but an arbitrary guest acquires cost semantics
+only through an explicit checked construction $`\mathsf{Cost}(G)`$. An FLT is
+therefore funded according to its own complete language fingerprint, not by
+inheriting the host grammar's annotations or by matching a string tag.
+
+The implementation keeps five quantities distinct: parse rank, deterministic
+logical work, semantic $`\mathsf{Cost}(G)`$ grade, validator funding demand,
+and actual settlement. A protocol-pinned projection $`\kappa`$ must satisfy an
+equality or conservative commuting obligation:
+
+```math
+\Delta_{\mathsf{host}}(\mathsf{lower}(t))\preceq
+\kappa(\Delta_s(t)).
+```
+
+Validators recompute this projection. Untrusted DDL never supplies validator
+code, chooses a wallet, provisions supply, or turns a transfer signature into
+fuel. `Provision` and `Spend` are separate host-granted capabilities.
+
+FLT parsing, construction, theorem admission, matching, guards, grade
+projection, resource reservation, and revocation revalidation all complete
+before one RSpace `check_commit`. The transaction then consumes all selected
+data, continuations, and authorized resources and publishes all effects, or it
+changes nothing. This rule also governs $`n`$-ary joins: no participant can be
+charged or consumed before the whole authority multiset and token partition is
+proved valid.
+
+### Cache and parallelism rules
+
+Immutable parsed FLTs, parser images, semantic images, and checked
+certificates may be cached by complete commitments. A cache entry is data, not
+a handle. Every use rechecks the live handle, exact operation right, language
+and checker fingerprints, limit profile, and revocation epoch; every effectful
+use also repeats theorem and funding checks before commit.
+
+After the host parser has built structural `FltTemplate`s and the dependency
+graph has resolved their handles, independent pure guest parses may run in
+parallel. A guest body is parsed exactly once by its selected guest parser.
+Scheduling, worker count, cache hit rate, and completion order are
+consensus-invisible; logical charging, result order, ambiguity policy, and
+published receipts are deterministic.
 
 ## Interlanguage Communication
 
@@ -794,11 +977,81 @@ bridge operations. Node configuration, injected capabilities, trusted roots,
 and hard host limits are outside attacker control.
 
 An installed handle grants independent rights: `Parse`, `Construct`, `Match`,
-`Observe`, `ReflectAst`, `Reduce`, `Bridge`, `Publish`, and `Introspect`. Rights
+`Observe`, `ReflectAst`, `Reduce`, `Bridge`, `Publish`, `Introspect`, `Check`,
+`SearchProof`, and `Spend`. Rights
 are checked at the operation boundary and are never inferred from possession of
 source, a fingerprint, registry URI, alias, reflected tag, or term. A DDL may
 request rights; only the host may grant them. Composition joins requirements and
 cannot amplify authority.
+
+#### Parser effect rows
+
+Parsing a runtime grammar is pure only when its admitted GrammarCore has no
+host-evaluation or foreign-delegation edge.  The installer therefore derives a
+closed **parser effect row** $`\epsilon(G)`$ from the validated grammar rather
+than trusting a DDL-supplied claim:
+
+```math
+\begin{aligned}
+\epsilon(\mathsf{native\ evaluation})
+  &= \{\mathsf{Reduce}\},\\
+\epsilon(\mathsf{capability\ token\ decoder})
+  &= \{\mathsf{Reduce}\},\\
+\epsilon(\mathsf{foreign\ language})
+  &= \{\mathsf{Bridge}\},\\
+\epsilon(G_1 \circ G_2)
+  &= \epsilon(G_1) \cup \epsilon(G_2).
+\end{aligned}
+```
+
+Before a parser or host callback runs, the installed-language gate authorizes
+`Parse`, the requested operation right, and every right in $`\epsilon(G)`$.
+It repeats the same complete check after the callback and before publishing the
+result.  Thus a parse-only handle is inert with respect to native evaluation
+and foreign bridges: an effectful grammar fails before either callback can run.
+Composition can add required effects by set union but cannot grant them.
+Runtime-authored grammars cannot under-declare this row.  A trusted statically
+injected parser adapter must commit its own effect row as part of installation.
+
+#### Exact callback manifests
+
+An effect right authorizes a *class* of action; it does not identify the code
+that will perform it. Every external token decoder, native evaluator, and
+foreign bridge is therefore bound independently under the key
+$`k=(F,mathsf{kind},mathsf{name})`$, where $`F`$ is the installed language
+fingerprint. The grammar requests $`k`$ but never supplies its implementation.
+An injected host catalog selects the immutable manifest
+
+```math
+M_k = (k,mathsf{codeHash},mathsf{abi},epsilon_k,q_k),
+\qquad
+q_k=(b,p_{mathrm{byte}},p_{mathrm{value}},m).
+```
+
+The exact integer cost of one invocation with $`x`$ input bytes and $`n`$
+structural values is
+
+```math
+q_k(x,n)=b+p_{mathrm{byte}}x+p_{mathrm{value}}n,
+\qquad q_k(x,n)leq m,
+```
+
+with checked arithmetic. The charge also consumes the enclosing shared logical
+work budget; the per-invocation maximum is not a second source of fuel.
+
+Installation collects requirements by an explicit syntax worklist into a
+canonically ordered set, resolves every key, validates its required effect, and
+then re-reads the complete catalog before one atomic publication. Missing,
+duplicate, malformed, changing, or under-declared manifests reject the whole
+batch. The canonical manifest-map commitment is part of the installed-language
+commitment and of every symbolic-template cache key.
+
+Immediately before a callback and again after it returns, the runtime requires
+`host.manifest(k) == M_k`. A mismatch, disappearance, revocation, cost overflow,
+or cancellation makes the result unpublishable. A cache hit never substitutes
+for either check. Pure closed built-in operators and carriers require no host
+manifest, and ordinary compile-time generated parsers retain their existing
+direct path.
 
 | Threat | Required control |
 | --- | --- |
@@ -814,7 +1067,10 @@ cannot amplify authority.
 | effect duplication or loss | linear effect grades, atomic RSpace commit, shared logical work budget |
 | bridge compromise | minimal context, typed codec, capability check, timeout/cancellation, no partial effect |
 | reified-space privilege confusion | distinct language, factory, and space capabilities; theory data never creates storage authority |
-| consensus divergence | exact integer weights; deterministic ordering; no filesystem, network, clock, randomness, float, or external bridge |
+| forged resource authority | source signatures resolve only through a verified authority environment; `Provision` and `Spend` are separate host grants |
+| cached-proof or cached-parse privilege reuse | cache values carry no authority; recheck handle, rights, fingerprint, revocation epoch, theorem, and funding before publication or commit |
+| semantic undercharging | protocol-pinned equality-preserving or conservative grade-to-host projection; `Undetermined` and unproved projections reject |
+| consensus divergence | exact integer weights and grades; deterministic ordering; no filesystem, network, clock, randomness, float, or external bridge |
 
 Grammar-declared bounds can only tighten host policy. Parser weights are not gas
 and cannot grant authority. Consensus cost uses a deterministic logical work
@@ -836,12 +1092,43 @@ containers is forbidden. Every fingerprint-visible channel, constructor tag,
 AC carrier, native-handler rendezvous, and bridge identity is scoped by the
 semantic language fingerprint.
 
+### Iterative operational refinement
+
+Every executable traversal whose depth can be selected by a deploy, DDL,
+grammar, FLT, proof, bridge response, or reflected datum uses an explicit
+bounded worklist, queue, graph stack, or pushdown store.  Recursive notation in
+the semantics is definitional; it does not authorize recursion on the native
+call stack.  The refinement carries a decreasing measure such as
+$`(f,w)`$, ordered lexicographically, where $`f`$ is remaining logical fuel and
+$`w`$ is pending work.  Each loop step consumes fuel, removes work, or replaces
+one item with finitely many children already charged to the resource budget.
+
+```text
+work ← [root]
+while work is not empty:
+  require fuel > 0
+  node ← pop(work)
+  fuel ← fuel - 1
+  check node's local arity and allocation charge
+  push node's children in the specified deterministic order
+return accumulated result
+```
+
+This rule covers grammar validation and effect-row derivation, token-lattice and
+WPDA execution, SPPF traversal, capture-avoiding graft planning, marker
+recomputation, dependency-DAG scheduling, cache eviction, bounded decoding, and
+theorem checking.  Cycles are detected by explicit visitation or ownership
+state.  Resource exhaustion and cycles fail atomically; neither may be handled
+by uncontrolled recursion, stack overflow, partial grafting, or partial space
+commit.
+
 ## Execution Strategies
 
 ### Native Guest
 
 A native guest language is defined either at compilation time by `language!` or
-at run time by a Rholang `Module`, `Theory`, or canonical `language/2` value.
+at run time by a Rholang `Module`, `Theory`, or canonical `language/2` or
+`language/3` value.
 Both paths install the same handle shape. FLTs parse to scoped terms, holes are
 filled and captured structurally, and reductions happen inside the
 MeTTaIL/Rholang reduction machinery.
@@ -936,6 +1223,14 @@ Certificates and derivations are decoded with the same depth, size, and
 allocation discipline as reflected terms. Failure to derive or check a theorem
 is a non-firing with no consumption, capture, or leaked partial proof.
 
+The neutral interface is an `AdmissionChecker` over the installed
+`TheoryCore`, canonical judgment, canonical term, optional proof certificate,
+and explicit work budget. It returns the same reject-safe three-way decision as
+the other OSLF judgments. A structural theorem checker is a compatibility
+implementation, not the interface type. When the theory is costed, admission
+also returns or validates the semantic grade and host-projection evidence used
+by the transaction; theorem admission cannot bypass funding.
+
 A proof cache is a pure acceleration keyed by the installed language identity,
 the theorem/profile identity, the canonical term hash, the checker ABI, and the
 limit profile. A cache hit never conveys a language, factory, space, or
@@ -943,7 +1238,8 @@ proof-search right. The transaction rechecks capability scope and the revocation
 epoch after preparation and immediately before commit.
 
 Language-handle rights (`Parse`, `Construct`, `Match`, `Observe`,
-`ReflectAst`, `Reduce`, `Bridge`, `Publish`, and `Introspect`) remain distinct
+`ReflectAst`, `Reduce`, `Bridge`, `Publish`, `Introspect`, `Check`,
+`SearchProof`, and `Spend`) remain distinct
 from space rights such as `Gensym`, `Produce`, `Consume`, `InstallContinuation`,
 `Checkpoint`, `Replay`, and `InspectSpace`. A language morphism does not move a
 live space or its history. Such transport requires a separately verified space
@@ -1003,6 +1299,11 @@ constrain the proposal.
 
 | Construct | Evidence |
 | --- | --- |
+| Canonical runtime grammar and installation foundation | `mettail-rust/grammar-core/src/{core.rs,image.rs,installed.rs,runtime.rs}` defines `GrammarCoreV1`, verified `ParserImageV1`, opaque installed handles, rights, and bounded runtime parsing |
+| Current theorem-channel implementation is structural and must be generalized | `mettail-rust/rholang-runtime/src/theorem_channel.rs` binds installed handles and grammar fingerprints but directly uses the structural checker rather than a neutral OSLF `AdmissionChecker` |
+| Current f1r3node resource seam is generic in its trait but fixed in production | `f1r3node-rust-mettail/rholang/src/rust/interpreter/accounting/resource_logic.rs` defines `OslfResourceLogic<G>`; acceptance and replay call sites instantiate `RhoGslt` |
+| Current MeTTaIL resource adapter is a Par/delta-sigma projection, not complete `Cost(G)` | `mettail-rust/rholang-adapter/src/{gslt.rs,logic.rs,conformance.rs}` wraps canonical `Par` and delegates host funding laws; `delta1.rs` and `settlement.rs` are not the live host settlement path |
+| Nouveau Rholang is not yet self-hosted or the f1r3node production parser | The MeTTaIL root still temporarily patches local `rholang-parser`; production helpers reconstruct `LanguageDef` from generated Rust source; the integrated DDL FIPS Part XVIII specifies the gated replacement |
 | Nouveau Rholang grammar, receive/guard terms, lexer modes, and current FLT captures | `mettail-rust/languages/src/rholang.rs` |
 | Reified RSpace foundation: space agents, qualifiers, factories, storage/collection variants, use-block routing, tests, and Rocq models | `f1r3node-reified-rspaces/rholang/src/rust/interpreter/spaces/`; `f1r3node-reified-rspaces/formal/rocq/reified_rspaces/` |
 | Current Reified RSpace theory gate is transitional rather than MeTTaIL theorem-based | `spaces/types/theory.rs::Theory::validate(&str)`; `SimpleTypeTheory` is labelled a placeholder, while `spaces/factory/theory.rs` rejects MeTTaIL file, inline, and URI loading as not implemented |
@@ -1055,7 +1356,15 @@ A conforming implementation includes all of the following:
 9. the Reified RSpace compatibility seam, with distinct language, factory, and
    space authority and no commitment yet to supersession, adaptation, or
    coexistence; and
-10. the formal and empirical verification matrix below.
+10. reject-safe OSLF parse, construct, match, reduce, observe, and publish
+    judgments through one semantic transition kernel;
+11. preservation and composition of effect, theorem, and resource evidence
+    through holes, morphisms, bridges, caches, and bidirectional communication;
+12. protocol-pinned equality-preserving or conservative projection from every
+    runtime FLT's semantic grade to host funding, followed by atomic settlement;
+13. self-hosted Rholang 1.4 `Cost(Rho)` integration through the canonical
+    language bundle and slim frontend seam; and
+14. the formal and empirical verification matrix below.
 
 ### Formal and empirical verification
 
@@ -1066,10 +1375,14 @@ A conforming implementation includes all of the following:
 | patterns | matcher soundness, capture completeness for admitted fragment, no partial environment |
 | reflection | reflect/decode round trip, hereditary-ground soundness, bounded decoder |
 | behavior | admissible-context preservation and explicit `ReflectAst` separation |
+| OSLF | execution/checker transition correspondence; `Undetermined` never authorizes; exact-decision witnesses justify Boolean conclusions |
+| Cost(G) | functor and monad laws; well-wrapped subject reduction; cost modulus; grade preservation through holes and morphisms |
 | interlanguage | fingerprint separation, morphism equivariance, R2 operational correspondence |
 | capability | no authority amplification, revoke races, bridge cancellation, effect linearity |
 | RSpace | match/guard/commit atomicity for linear, persistent, peek, join, and lookahead forms |
-| reified RSpace | theorem-admission and certificate-checker soundness; match-free post-operation invariant; qualifier and replay preservation; capability separation; adapter-versus-supersession differential tests |
+| reified RSpace | `AdmissionChecker` and certificate soundness; match-free post-operation invariant; qualifier, grade and replay preservation; capability separation; adapter-versus-supersession differential tests |
+| funding | grade-to-demand equality or conservativity; no undercount, overdraw, partial debit, double settlement, or cache bypass |
+| bootstrap | canonical Rholang 1.4 core/image fixed point, reproducible/diverse build, and precise separation from legacy equivalence claims |
 | consensus | determinism under allocation, traversal, cache, and scheduling variations |
 | robustness | property tests, compile-time differential tests, fuzzing, adversarial grammars, Miri, Loom, sanitizers, stack and allocation caps |
 | performance | existing typed-parser before/after regression gate; dynamic cold/warm install; VM parse throughput/tail latency and memory |
@@ -1081,6 +1394,19 @@ free of admissions.
 
 ## References
 
+- MeTTaIL Language Specifications in Rholang FIPS — canonical `language/3`,
+  `LanguageCore`, OSLF, `Cost(Rho)`, Rholang 1.4 bootstrap, frontend seam, and
+  production cutover:
+  `FIPS-mettail-in-rholang-specs/under-review/2026-07-25-MeTTaIL-Language-Specs-in-Rholang/2026-07-25-MeTTaIL-Language-Specs-in-Rholang.md`
+- Meredith, L. Gregory. *Cost-Accounted Rho Calculus: A Spectral Decomposition
+  of Phlogiston*. May 2026. Source:
+  `publications/cost-accounting/cost-accounted-rho.tex`. This is the normative
+  Rholang instantiation whose rules and syntax are integrated by the companion
+  DDL FIPS.
+- Meredith, L. G. *Continued Interactive GSLTs and the Cost Endofunctor: A
+  Construction One Level Up from Cost-Accounted Rholang*. May 2026. Source:
+  `publications/cost-accounting-as-monad/continued-gslt-cost-v2.tex`. This is
+  the generalized categorical construction used for guest-language grades.
 - Approved Reifying RSpaces FIPS — space agents, storage and collection
   strategies, qualifiers, replay, and the match-free post-operation invariant:
   [`../../approved/2025-09-26-Reifying-RSpaces/Reifying RSpaces.md`](../../approved/2025-09-26-Reifying-RSpaces/Reifying%20RSpaces.md)
