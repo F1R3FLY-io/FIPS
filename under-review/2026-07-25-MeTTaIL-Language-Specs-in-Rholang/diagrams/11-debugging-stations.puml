@@ -1,0 +1,59 @@
+@startuml
+title Four Failure Stations — Where a Specification Can Fail, and How Each Announces Itself
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+rectangle "specification value <latex>v</latex>" as V #E0E7FF
+
+package "Work outward from the cheapest" #F8FAFC {
+  rectangle "**1 — G1  shape**\nunknown tag · wrong arity · wrong scalar type\nunknown key · reserved or keyword label\n<latex>\rightarrow \texttt{SpecError}</latex> carrying a **value path**" as G1 #A7F3D0
+  rectangle "**2 — G2  well-formedness**\nundeclared category · dangling constructor\nfreshness variable unbound · negation cycle\n<latex>\rightarrow \texttt{ValidationError}</latex> carrying a **value path**" as G2 #A7F3D0
+  rectangle "**3 — installation**\nunregistered handler / carrier / theory URN\nadmission bound exceeded · backtracking regex\n<latex>\rightarrow</latex> a **capability** or **budget** error" as INST #A7F3D0
+  rectangle "**4 — it installs, and nothing fires**\n<b><color:#B91C1C>NO ERROR ANYWHERE</color></b>\nthe only symptom is silence" as SILENT #FDBA74
+}
+
+rectangle "**fix the VALUE**\nnavigate to <latex>\pi</latex>; the defect is there" as FIXV #E0E7FF
+rectangle "**fix the LANGUAGE**\nthe same diagnostics ""language!"" gives" as FIXL #DBEAFE
+rectangle "**fix the ENVIRONMENT**\nregister what the node lacks, or\nstop naming what it does not have" as FIXE #DDD6FE
+rectangle "**compare FINGERPRINTS**\nnever read the specification: print the\ninstaller's <latex>\mathcal{F}</latex> and the one the FLT tag resolves to" as FIXF #FBCFE8
+
+V --> G1
+G1 --> G2 : shape OK
+G2 --> INST : well-formed
+INST --> SILENT : installed
+
+G1 -[#DC2626]-> FIXV
+G2 -[#DC2626]-> FIXL
+INST -[#DC2626]-> FIXE
+SILENT -[#BE185D]-> FIXF
+
+note bottom of SILENT #F1F5F9
+  **Why station 4 is silent, and why that is correct.** It has exactly one cause:
+  <i>the fingerprint you are matching against is not the one that got installed.</i>
+  §IX.2 guarantees that a mismatch is a **non-firing** rather than a **wrong firing** —
+  that is the right guarantee, and this silence is its price.
+  Diagnose by comparing fingerprints; the five common causes are listed beneath
+  this figure, in the order they occur in practice.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#E0E7FF> | **P3** The value layer — the value under diagnosis, and the repair to it |
+  |<#A7F3D0> | **P9** Fail-closed gate — announces itself with an error |
+  |<#FDBA74> | **P12** The adversarial dimension — here, the failure that announces nothing |
+  |<#DBEAFE> | **P4** The ""LanguageDef"" seam — the layer a language-level repair acts on |
+  |<#DDD6FE> | **P11** The capability registry — the layer an environment repair acts on |
+  |<#FBCFE8> | **P10** Unforgeable identity — here, the only diagnosis for station 4 |
+  |<#F1F5F9> | **P14** Out-of-band note (scoping) |
+  ——
+  //A remedy is coloured by the LAYER it acts on, so the fan-out reads as//
+  //"which layer is wrong?" rather than as three interchangeable boxes.//
+  |= Arrow |= Meaning |
+  |<#334155> solid | **A1** ordinary flow — the previous station passed |
+  |<#DC2626> solid | **A2** rejection — a gate refusing an input |
+  |<#BE185D> solid | **A3** a diagnosis derived from the identity relation |
+endlegend
+@enduml

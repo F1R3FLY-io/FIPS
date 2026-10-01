@@ -1,0 +1,93 @@
+@startuml
+title Lifecycle of a Rholang-Authored Language Specification
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam sequenceArrowColor #334155
+skinparam ParticipantBorderColor #64748B
+
+participant "Rholang\nprocess" as P #E0E7FF
+participant "spec value\n<latex>v</latex>" as V #E0E7FF
+participant "elaborator\n<latex>\mathcal{E}</latex>\n**G1**" as E #A7F3D0
+participant "validator\n<latex>\mathcal{V}</latex>\n**G2**" as VAL #A7F3D0
+participant "identity\n<latex>\mathcal{F}</latex>" as FP #FBCFE8
+participant "versioned\nregistry" as REG #DDD6FE
+participant "backend\ngenerators" as BE #DCFCE7
+participant "RSpace /\nFLT resolver" as RS #BFDBFE
+
+== 1. Construction (pure — no COMM) ==
+P -> V : build nested Map / List / Tuple / String literals
+note right of V #E0E7FF
+  Constructing a spec is **value construction**: no send,
+  no receive, no name creation (§III.9). COMM is Rholang's
+  communication event — the rendezvous of a send with a
+  matching receive on the same channel. Two processes
+  building the same spec produce **equal** values, hence
+  equal fingerprints, hence identical machinery.
+end note
+
+== 2. Elaboration and validation (fail-closed) ==
+P -> E : <latex>\mathcal{E}(v)</latex>
+E -> E : canonicalize (§III.5), then gate the notation\nversion, the top-level key set, and every tag's arity
+E --> P : <latex>\texttt{Err(SpecError)}</latex> on any malformed node,\ncarrying the **value path** at which it failed
+E -> VAL : <latex>\texttt{LanguageDef}</latex>
+VAL -> VAL : composition, then the **reserved-label fence**,\nthen ""validate_language"", auto-injection,\nstratification
+note right of VAL #A7F3D0
+  ★ The name-and-label fence runs **AFTER composition**, not first.
+  ""extends"" / ""includes"" / ""mixins"" pull in a base language's whole
+  vocabulary, ""exports { A => B }"" renames a category to an arbitrary
+  string, and ""replacements"" mints a fresh label — so a gate on the
+  raw value would never see three of the ways a reserved name arrives.
+  The predicate is a **prefix**: a label is reserved iff it starts
+  with ""^"" (§IX.5.1).
+end note
+VAL --> P : <latex>\texttt{Err(ValidationError)}</latex> with a **value path**,\nnot a Rust ""Span""
+
+== 3. Identity ==
+VAL -> FP : augmented <latex>\texttt{LanguageDef}</latex>
+FP -> FP : <latex>\mathcal{F} = \texttt{mettail-langdef-v2:}\;\mathrm{blake3}(\mathrm{ident}(d))</latex>
+note right of FP #FBCFE8
+  Frontend-independent by construction: <latex>\mathcal{F}(\mathcal{E}(v))</latex> equals
+  <latex>\mathcal{F}(\texttt{reconstruct\_language\_def}(s))</latex> whenever <latex>v</latex> and <latex>s</latex> denote the
+  same language, because both route through the //same//
+  augmentation pipeline. It is **not** claimed that a v1
+  fingerprint is preserved across the v2 migration — see
+  §VI.3 and §XIII.2. What makes v1 and v2 tags non-confusable
+  is the version digit's **fixed offset** (tag index 30),
+  not the fingerprint's length (§IX.2.2).
+end note
+
+== 4. Registration — the VALUE is what is stored ==
+FP -> REG : ""insertVersion(ret, &#34;lib&#34;, deployer, id, ver, v)""
+REG --> P : <latex>\texttt{rho:lib:1.*:}\langle\mathit{pk}\rangle\texttt{:}\langle\mathit{id}\rangle\texttt{:}\langle\mathit{ver}\rangle</latex>
+
+== 5. Retrieval and installation — the gates run AGAIN ==
+P -> REG : fetch by registry URI
+REG --> P : the specification **value** <latex>v'</latex>\n(//not// a ""LanguageDef"": the registry stores data)
+P -> E : <latex>\mathcal{E}(v')</latex> — **G1 and G2 re-run on the retrieved value**
+note right of E #A7F3D0
+  There is **no shortcut** from the registry to the backends.
+  A retrieved specification is an ordinary untrusted value and
+  re-enters the same fail-closed door as a locally constructed
+  one. This is the whole point of §IX: the adversarial input
+  arrives here.
+end note
+E -> VAL : <latex>\texttt{LanguageDef}</latex>
+VAL -> BE : validated, augmented <latex>\texttt{LanguageDef}</latex>
+BE -> RS : <latex>\texttt{rhoapi::Par}</latex> driver network,\nset-automaton pattern DAG
+BE -> RS : reflected head tags <latex>\ulcorner \mathcal{F}\cdot L \urcorner</latex>
+
+== 6. Use ==
+P -> RS : FLT ""L`term`"" resolved by <latex>\mathcal{F}</latex>
+RS --> P : reduced reflected term
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#E0E7FF> | **P3** Rholang value path |
+  |<#A7F3D0> | **P9** Fail-closed gate |
+  |<#FBCFE8> | **P10** Unforgeable identity |
+  |<#DDD6FE> | **P11** Registry-resolved reference |
+  |<#DCFCE7> | **P5** Generator emitting installable DATA |
+  |<#BFDBFE> | **P8** Runtime substrate |
+endlegend
+@enduml

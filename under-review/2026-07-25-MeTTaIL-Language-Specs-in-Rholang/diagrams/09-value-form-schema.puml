@@ -1,0 +1,138 @@
+@startuml
+title The Canonical Value Form — Schema of the Specification Value
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+skinparam classAttributeIconSize 0
+skinparam ArrowColor #334155
+
+legend top
+  **How to read this.** Each box is one production of §III.4.2. A **Map** production is a
+  //record//: named, optional, extensible keys. A **List** production is an //ordered sequence//
+  whose order is semantically load-bearing. A **Tuple** production is a //tagged node//: the
+  first component is a tag string and the tag selects one elaborator arm.
+  ""?"" marks an optional map key.
+endlegend
+
+class "Spec  — Map" as Spec #E0E7FF {
+  + **""&#34;mettail&#34;""** : ""&#34;language/2&#34;""   //required//; the notation version
+  + **""&#34;name&#34;""** : Str   //a reserved-label-disjoint identifier//
+  + ""&#34;options&#34;""? : Map<Str, Scalar>   //the ten keys of §IV.2//
+  + ""&#34;semantics&#34;""? : Str | ("path", [Str, …])
+  --  ordered content (Lists — order is load-bearing)  --
+  + ""&#34;types&#34;""? : [TypeDecl, …]
+  + ""&#34;literals&#34;""? : [LiteralDecl, …]
+  + ""&#34;tokens&#34;""? : [TokenDecl, …]      + ""&#34;modes&#34;""? : [ModeDecl, …]
+  + ""&#34;sync&#34;""? : [SyncDecl, …]        + ""&#34;tree_invariants&#34;""? : [TreeInvariant, …]
+  + ""&#34;terms&#34;""? : [TermRule, …]
+  + ""&#34;equations&#34;""? : [Equation, …]   + ""&#34;rewrites&#34;""? : [Rewrite, …]
+  + ""&#34;relations&#34;""? : [RelationDecl, …]
+  --  composition and presentation algebra  --
+  + ""&#34;extends&#34;""? / ""&#34;includes&#34;""? / ""&#34;mixins&#34;""? : [Str, …]
+  + ""&#34;exports&#34;""? : [(Str, Str), …]   + ""&#34;replacements&#34;""? : [Replacement, …]
+  --  excluded from the fingerprint  --
+  + ""&#34;guards&#34;""? : GuardConfig
+  + ""&#34;context&#34;""? : Str     + ""&#34;doc&#34;""? : Str
+}
+
+class "TypeDecl  — Str | Map" as TypeDecl #E0E7FF {
+  Str  //a bare structural category//
+  --
+  + ""&#34;name&#34;"" : Str
+  + ""&#34;carrier&#34;""? : Carrier      //a closed alphabet, never a Rust path//
+  + ""&#34;collection&#34;""? : CollectionDecl
+  + ""&#34;refine&#34;""? : { var, base, pred : Pred }
+}
+
+class "TermRule  — Map" as TermRule #E0E7FF {
+  + ""&#34;label&#34;"" : Str      + ""&#34;category&#34;"" : Str
+  + ""&#34;context&#34;""? : [Param, …]        //the judgement form//
+  + ""&#34;syntax&#34;""? : [SyntaxItem, …]    //exclusive with ""&#34;items&#34;""//
+  + ""&#34;items&#34;""? : [BnfItem, …]        //the BNF form//
+  + ""&#34;eval&#34;""? : NativeEval    + ""&#34;mode&#34;""? : ""&#34;fold&#34;"" | ""&#34;step&#34;""
+  + ""&#34;assoc&#34;""? · ""&#34;prefix_bp&#34;""? · ""&#34;tier&#34;""? · ""&#34;doc&#34;""?
+}
+
+class "Param  — Tuple" as Param #DCFCE7 {
+  ""(&#34;param&#34;, name, TypeExpr [, quantifier])""
+  ""(&#34;binder&#34;, bound, body, TypeExpr)""
+  ""(&#34;binders&#34;, bound, body, TypeExpr)""
+  ""(&#34;guard&#34;, name)""
+  ""(&#34;optional&#34;, [Param, …])""
+}
+
+class "Pattern  — Str | Tuple" as Pattern #DCFCE7 {
+  Str                                //a metavariable//
+  ""(label, Pattern, …)""              //a constructor application//
+  ""(&#34;eval&#34;, …)""  //the ONE reserved head//
+  ""(&#34;^&#34;, …)""  ""(&#34;^*&#34;, …)""            //binders//
+  ""(&#34;coll&#34;, …)""  ""(&#34;coll_typed&#34;, …)""  //collections//
+  ""(&#34;pmap&#34;, …)""  ""(&#34;pzip&#34;, …)""        //meta-operators//
+  ""(&#34;lit&#34;, Carrier, Scalar)""        //a typed literal//
+}
+
+class "NativeEval  — Tuple" as NativeEval #DDD6FE {
+  ""(&#34;op&#34;, name)""                   //§V.3.1 — declarative operator//
+  ""(&#34;carrier&#34;, kind, params)""      //§V.3.2 — declarative literal//
+  ""(&#34;handler&#34;, urn)""               //§V.3.3 — named capability//
+  ""(&#34;src&#34;, semantics, text)""       //§V.3.4 — bootstrap escape//
+}
+
+class "TypeExpr  — Str | Tuple" as TypeExpr #DCFCE7 {
+  Str                                //a base category//
+  ""(&#34;arrow&#34;, TypeExpr, TypeExpr)""
+  ""(&#34;multi&#34;, TypeExpr)""
+  ""(&#34;vec&#34;|&#34;bag&#34;|&#34;set&#34;, TypeExpr)""
+  ""(&#34;map&#34;|&#34;pathmap&#34;, TypeExpr, TypeExpr)""
+}
+
+class "Equation / Rewrite  — Map" as Eq #E0E7FF {
+  + ""&#34;name&#34;"" : Str
+  + ""&#34;premises&#34;""? : [Premise, …]
+  + ""&#34;context&#34;""? : [(&#34;typed&#34;, Str, TypeExpr), …]
+  + ""&#34;left&#34;"" : Pattern     + ""&#34;right&#34;"" : Pattern
+}
+
+class "Premise  — Tuple" as Premise #DCFCE7 {
+  ""(&#34;fresh&#34;, x, P)""     ""(&#34;fresh_rest&#34;, x, rest)""
+  ""(&#34;~>&#34;, S, T)""        //rewrites only//
+  ""(&#34;rel&#34;, name, [args])""
+  ""(&#34;forall&#34;, coll, var, Premise)""
+  ""(&#34;guard&#34;, Pred)""     //§VII.3//
+}
+
+Spec *-- TypeDecl
+Spec *-- TermRule
+Spec *-- Eq
+TermRule *-- Param
+TermRule *-- NativeEval
+Param *-- TypeExpr
+Eq *-- Premise
+Eq *-- Pattern
+TypeDecl .[#334155].> TypeExpr : carriers and collections\nshare the type algebra
+
+note as N #F1F5F9
+  **Why these five Rholang shapes and no others** (§III.4.1). A **Map** is chosen wherever the
+  model has named, optional, extensible fields, because an absent key is the natural encoding
+  of ""Option<…>"" and named keys survive schema growth. A **List** is chosen wherever the model
+  has a ""Vec"" whose order is consulted — declaration order fixes infix binding power, the
+  ""max_infix_bp + 2"" prefix fallback, lexer maximal-munch tie-breaking, and the carrier a
+  numeral binds to. A **Tuple** is chosen for tagged nodes because a presentation nests
+  //sequences of tagged items// constantly, and ""[(…), (…)]"" is legible where ""[[…], […]]"" is not.
+
+  **Sets are deliberately absent.** Nothing in a presentation is a mathematical set, and
+  encoding an ordered sequence as one would destroy information the fingerprint must preserve.
+  ""options"" is the sole genuinely unordered member — and it is a Map already.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#E0E7FF> | **P3** A record (Map) in the value form |
+  |<#DCFCE7> | **P5** A tagged node or ordered element — fully declarative |
+  |<#DDD6FE> | **P11** The one production that may reference host machinery |
+  |<#F1F5F9> | **P14** Out-of-band note (design rationale) |
+  |= Arrow |= Meaning |
+  |<#334155> solid ◆ | **A1** composition — the production on the left CONTAINS the one on the right |
+  |<#334155> dotted | **A6** a non-containment reference — the two productions share a sub-algebra |
+endlegend
+@enduml

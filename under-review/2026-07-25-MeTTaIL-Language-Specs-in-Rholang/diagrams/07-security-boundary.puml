@@ -1,0 +1,77 @@
+@startuml
+title What a Malicious Specification Can and Cannot Do
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+actor "adversary" as ADV #FDBA74
+rectangle "hostile spec value <latex>v^{\dagger}</latex>\n(authored, published, //or retrieved//\nfrom the versioned registry)" as BAD #FDBA74
+
+package "Containment boundary — every gate re-runs on a retrieved value" #F8FAFC {
+  rectangle "**G1 — Shape gate**\n<latex>\mathcal{E}</latex> rejects any node whose tag is outside the\nclosed elaborator set, and also rejects **wrong arity**,\n**wrong scalar type**, **an unknown map key**,\nand any label in the reserved ""^"" namespace\n(§III.6, §IX.5)" as G1 #A7F3D0
+  rectangle "**G2 — Well-formedness gate**\n""validate_language"", composition,\nauto-injection, stratification" as G2 #A7F3D0
+  rectangle "**G3 — Identity gate**\ntags become <latex>\texttt{GPrivate}(\texttt{mettail.term.}\mathcal{F}^{\dagger}\texttt{.}L)</latex>\n**sound only if** <latex>\mathcal{F}</latex> **is collision-resistant** —\nwhich is why W-7 (BLAKE3 v2) //precedes// any\nnon-local specification (§IX.3 R-1)" as G3 #A7F3D0
+  rectangle "**G4 — Capability gate**\n""(&#34;handler&#34;, urn)"" resolves only against an\n**already-registered** evaluator, and the URN must\ncommit to a **content hash of that evaluator**,\nnot merely to the language's fingerprint" as G4 #A7F3D0
+  rectangle "**G5 — Budget gate**\nan **admission bound** on <latex>|v|</latex>, rule count,\nalternation count and regex class //before// <latex>\mathcal{E}</latex> runs;\na **runtime parse-fuel** budget; cross-language\nreduction fuel; guard metering" as G5 #A7F3D0
+}
+
+rectangle "victim language <latex>L</latex>\nterms and drivers under <latex>\mathcal{F}_L</latex>" as VICTIM #C7D2FE
+rectangle "host Rholang state\n(names, RSpace data)" as HOST #C7D2FE
+
+ADV --> BAD : authors and publishes
+BAD --> G1
+G1 --> G2 : shape OK
+G2 --> G3 : well-formed
+G3 --> G4
+G4 --> G5
+
+G1 -[#DC2626]-> ADV : **reject** unknown tag, bad arity,\nwrong scalar type, reserved label
+G2 -[#DC2626]-> ADV : **reject** undeclared category,\nnegation cycle, dangling label
+G4 -[#DC2626]-> ADV : unregistered URN <latex>\Rightarrow</latex> **inert**
+G5 -[#DC2626]-> ADV : oversized or divergent theory <latex>\Rightarrow</latex>\n**refused at admission**, or **starves itself**
+
+G3 -[#BE185D]-> VICTIM : **protects** — cannot forge <latex>\mathcal{F}_L</latex>;\n<latex>A</latex>-patterns simply never match a <latex>\mathcal{F}_B</latex>-tagged node
+
+BAD -[#DC2626,dashed]-> HOST : ✗ **no such path** at //elaboration// —\nit performs no COMM and creates no name.\n**Installation is a different matter**: see the note.
+
+note bottom #F1F5F9
+  **Scope, stated exactly.** <latex>\mathcal{E}</latex> itself is pure: no send, no receive, no name creation, so a
+  //specification value// cannot read the tuplespace, acquire a name, or emit.
+  **Installation is not pure, and must not be described as if it were.** Installing a language
+  mints system-process ""Definition""s into the node's URN map, rests receivers on channels, and
+  — for ""(&#34;src&#34;, …)"" — it
+  writes and compiles files. §IX.3 R-5 scopes the guarantee to elaboration and states the
+  installation obligations separately; §IX.5 lists the four requirements that must hold
+  before the diagram's boundary is real: the reserved-label fence, the reflected-tag grammar,
+  fingerprint-scoped native channels, and canonical reflected-collection encoding.
+  ——
+  ★ **A check the reader may expect here is deliberately absent.** G1 does **not** reject a
+  //duplicated map key//, and cannot: Rholang's normalizer deduplicates ""EMap"" entries before
+  any value reaches <latex>\mathcal{E}</latex>, so by the time G1 looks there is nothing left to detect
+  (§III.5.3). The obligation is on the **producer** — assemble key-wise, never by map union —
+  and §XII.1 gives the safe idiom. Drawing a gate that cannot fire would credit this boundary
+  with a defence it does not have.
+  ——
+  ★ **The G3 arrow protects TERM TAGS, not the machinery channels.** §IX.6.1 records a
+  cross-fingerprint **wrong firing** that needs no collision, because the FIRING-VISIBLE
+  ""sa:pattern/"" and ""sa:scalar/"" dispatch channels AND the CARRIER ""ac:{op}"" bag channel
+  are all fingerprint-INDEPENDENT today. The AC one is the cheaper attack: it needs only a
+  shared constructor **name**, so two co-installed process calculi that each declare ""PPar""
+  collide by default. Putting <latex>\mathcal{F}</latex> in every such name is a **v1 blocker**
+  (**W-12**, an invariant over 20 emitters), not a scoped open item.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#FDBA74> | **P12** Adversary and adversary-supplied data |
+  |<#A7F3D0> | **P9** Fail-closed gate |
+  |<#C7D2FE> | **P13** Protected asset |
+  |<#F1F5F9> | **P14** Out-of-band note (scoping) |
+  |= Arrow |= Meaning |
+  |<#DC2626> solid | **A2** rejection — a gate refusing an input |
+  |<#BE185D> solid | **A3** a protection derived from the identity relation |
+  |<#DC2626> dashed, ✗ | **A5** a path that does not exist |
+endlegend
+@enduml

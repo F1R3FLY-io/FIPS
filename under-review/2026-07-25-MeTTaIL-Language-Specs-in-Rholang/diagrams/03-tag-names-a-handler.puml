@@ -1,0 +1,62 @@
+@startuml
+title A Tag Names a Handler — One MeTTaIL Mechanism at Two Levels
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundcorner 8
+skinparam defaultFontName SansSerif
+skinparam ArrowColor #334155
+
+rectangle "**Level 1 — Foreign Language Term**\n(FLT FIPS, 2026-06-26)" as FLT #F8FAFC {
+  rectangle "the //element//\n""lam`App(${f}, K)`""\n""perl:Str{ &#34;hello&#34; }""" as FLTex #BFDBFE
+  rectangle "the tag ""lam"" selects\n**a guest grammar + reflector**\nkeyed by the fingerprint <latex>\mathcal{F}</latex>" as FLTres #DDD6FE
+  rectangle "what is interpreted:\n**raw guest source**, bounded by\nan author-chosen delimiter" as FLTel #BFDBFE
+}
+
+rectangle "**Level 2 — Language specification**\n(this FIPS)" as SPEC #F8FAFC {
+  rectangle "the //element//\n""(&#34;arrow&#34;, &#34;Term&#34;, &#34;Term&#34;)""\n""(&#34;App&#34;, &#34;M0&#34;, &#34;N&#34;)""" as SPECex #E0E7FF
+  rectangle "the tag ""&#34;arrow&#34;"" selects\n**an elaborator arm**\nfrom a closed, versioned set" as SPECres #DDD6FE
+  rectangle "what is interpreted:\n**an already-parsed Rholang value**" as SPECel #E0E7FF
+}
+
+rectangle "**The unforgeable realisation**\n<latex>\ulcorner \mathcal{F} \cdot L \urcorner \;=\; \texttt{GPrivate}(\texttt{mettail.term.}\mathcal{F}\texttt{.}L)</latex>\n""reflect_tag"" in rholang-codegen/src/rho_net_lower.rs" as TAG #FBCFE8
+
+FLTex --> FLTres : names
+FLTres --> FLTel : interprets
+SPECex --> SPECres : names
+SPECres --> SPECel : interprets
+
+FLTres -[#BE185D]-> TAG : resolved through
+SPECres -[#BE185D]-> TAG : **installs** the tags\nthat level 1 resolves
+
+note bottom of TAG #FBCFE8
+  A conventional namespace can be squatted; a ""GPrivate"" derived from
+  the definition fingerprint cannot — //given an injective// <latex>\mathcal{F}</latex>. Cross-language
+  matching therefore fails **closed**: a mismatch is a //non//-firing, never a
+  //wrong// firing. §IX.2 states the exact scope of that guarantee, and §IX.3 R-1
+  records the one way it can be defeated: a fingerprint collision, which is
+  why W-7 makes <latex>\mathcal{F}</latex> a wide cryptographic digest before any specification
+  of non-local provenance may elaborate.
+end note
+
+note as N #F1F5F9
+  **Where the two levels differ, honestly.** Level 1 interprets //source text//, so it is a
+  reader-level construct and inherits the modal-lexer delimiter obligations catalogued in
+  the FLT FIPS — fence run lengths, heredoc words, escape tracking. Level 2 interprets
+  //values//, so it needs no lexer at all: Rholang's parser has produced the value before any
+  tag is examined. The shared content is the resolution discipline —
+  <latex>\tau \cdot e \mapsto H(\tau)(e)</latex> with <latex>H</latex> keyed by an unforgeable identity — not the syntax.
+end note
+
+legend right
+  |= Colour |= Concept (pinned palette, diagrams/PALETTE.md) |
+  |<#BFDBFE> | **P8** Runtime substrate — here, level 1's guest source and its reader |
+  |<#E0E7FF> | **P3** The value layer — here, level 2's value and the value it interprets |
+  |<#DDD6FE> | **P11** Capability resolved against a registry — **the shared mechanism**, |
+  | | one colour at both levels because it is one mechanism |
+  |<#FBCFE8> | **P10** Unforgeable identity — the shared realisation |
+  |<#F1F5F9> | **P14** Out-of-band note (scoping) |
+  ——
+  //The two level boxes are CONTAINERS and carry the neutral container wash//
+  //""#F8FAFC"", not a semantic fill; the levels are named by their titles.//
+endlegend
+@enduml
